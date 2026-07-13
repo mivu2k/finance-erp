@@ -32,6 +32,44 @@ public static class ExportEndpoints
             return Results.File(xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "general-ledger.xlsx");
         });
 
+        group.MapGet("/day-book", async (IReportService reports, IExportService export,
+            DateOnly? from, DateOnly? to, int? voucherType, string format = "xlsx") =>
+        {
+            var rows = await reports.GeneralLedgerAsync(new ReportFilter
+            {
+                From = from, To = to,
+                VoucherType = voucherType is null ? null : (FinanceERP.Domain.Enums.VoucherType)voucherType
+            });
+            string[] headers = ["Date", "Voucher", "Account", "Description", "Debit", "Credit"];
+
+            // Group by voucher: header row per voucher, then its lines, then a grand total.
+            var pdfRows = new List<string[]>();
+            var xlsxRows = new List<object?[]>();
+            foreach (var g in rows.GroupBy(r => r.VoucherNo))
+            {
+                var first = g.First();
+                pdfRows.Add([first.Date.ToString("yyyy-MM-dd"), g.Key, "", "", "", ""]);
+                xlsxRows.Add([first.Date, g.Key, null, null, null, null]);
+                foreach (var r in g)
+                {
+                    pdfRows.Add(["", "", $"{r.AccountCode} {r.AccountName}", r.Description ?? "",
+                        r.Debit == 0 ? "" : r.Debit.ToString("N2"), r.Credit == 0 ? "" : r.Credit.ToString("N2")]);
+                    xlsxRows.Add([null, null, $"{r.AccountCode} {r.AccountName}", r.Description,
+                        r.Debit == 0 ? null : r.Debit, r.Credit == 0 ? null : (object)r.Credit]);
+                }
+            }
+            var totalD = rows.Sum(r => r.Debit);
+            var totalC = rows.Sum(r => r.Credit);
+            pdfRows.Add(["", "", "", "GRAND TOTAL", totalD.ToString("N2"), totalC.ToString("N2")]);
+            xlsxRows.Add([null, null, null, "GRAND TOTAL", totalD, totalC]);
+
+            if (format == "pdf")
+                return Results.File(export.TableToPdf("Day Book — Combined Ledger", $"{from} — {to}", headers, pdfRows),
+                    "application/pdf", "day-book.pdf");
+            return Results.File(export.TableToExcel("Day Book", headers, xlsxRows),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "day-book.xlsx");
+        });
+
         group.MapGet("/trial-balance", async (IReportService reports, IExportService export,
             DateOnly? asOf, string format = "xlsx") =>
         {

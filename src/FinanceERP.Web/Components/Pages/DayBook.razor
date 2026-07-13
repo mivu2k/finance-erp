@@ -1,0 +1,109 @@
+@page "/day-book"
+@attribute [Authorize(Policy = Permissions.LedgerView)]
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>Day Book</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Day Book — Combined Ledger</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@Permissions.ReportsExport">
+        <MudButtonGroup Variant="Variant.Outlined">
+            <MudButton StartIcon="@Icons.Material.Filled.PictureAsPdf" OnClick="@(() => Export("pdf"))">PDF</MudButton>
+            <MudButton StartIcon="@Icons.Material.Filled.GridOn" OnClick="@(() => Export("xlsx"))">Excel</MudButton>
+        </MudButtonGroup>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="6" md="2"><MudDatePicker Label="From" @bind-Date="_from" /></MudItem>
+        <MudItem xs="6" md="2"><MudDatePicker Label="To" @bind-Date="_to" /></MudItem>
+        <MudItem xs="6" md="3">
+            <MudSelect T="VoucherType?" @bind-Value="_type" Label="Voucher type" Clearable="true">
+                @foreach (VoucherType t in Enum.GetValues<VoucherType>())
+                {
+                    <MudSelectItem T="VoucherType?" Value="@t">@t</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" md="2" Class="d-flex align-end">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAsync">Run</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true">
+        <thead>
+            <tr>
+                <th>Date</th><th>Voucher</th><th>Account</th><th>Description</th>
+                <th style="text-align:right">Debit</th><th style="text-align:right">Credit</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var group in _rows.GroupBy(r => r.VoucherNo))
+            {
+                var first = group.First();
+                <tr style="background:var(--mud-palette-background-gray)">
+                    <td>@first.Date.ToString("yyyy-MM-dd")</td>
+                    <td colspan="5">
+                        <MudLink Href="@($"/vouchers/{first.VoucherId}")"><b>@group.Key</b></MudLink>
+                    </td>
+                </tr>
+                @foreach (var r in group)
+                {
+                    <tr>
+                        <td></td>
+                        <td></td>
+                        <td>@r.AccountCode — @r.AccountName</td>
+                        <td>@r.Description</td>
+                        <td style="text-align:right">@(r.Debit == 0 ? "" : r.Debit.ToString("N2"))</td>
+                        <td style="text-align:right">@(r.Credit == 0 ? "" : r.Credit.ToString("N2"))</td>
+                    </tr>
+                }
+            }
+            @if (_rows.Count == 0)
+            {
+                <tr><td colspan="6">No posted entries in the selected period.</td></tr>
+            }
+        </tbody>
+        <tfoot>
+            <tr style="font-weight:700;border-top:2px solid var(--mud-palette-lines-default)">
+                <td colspan="4">Grand Total (@_rows.GroupBy(r => r.VoucherNo).Count() vouchers, @_rows.Count entries)</td>
+                <td style="text-align:right">@_rows.Sum(r => r.Debit).ToString("N2")</td>
+                <td style="text-align:right">@_rows.Sum(r => r.Credit).ToString("N2")</td>
+            </tr>
+        </tfoot>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private DateTime? _from = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime? _to = DateTime.Today;
+    private VoucherType? _type;
+    private List<LedgerRowDto> _rows = [];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _rows = await scope.ServiceProvider.GetRequiredService<IReportService>().GeneralLedgerAsync(new ReportFilter
+        {
+            From = _from is null ? null : DateOnly.FromDateTime(_from.Value),
+            To = _to is null ? null : DateOnly.FromDateTime(_to.Value),
+            VoucherType = _type
+        });
+    }
+
+    private void Export(string format)
+    {
+        var from = _from is null ? "" : DateOnly.FromDateTime(_from.Value).ToString("yyyy-MM-dd");
+        var to = _to is null ? "" : DateOnly.FromDateTime(_to.Value).ToString("yyyy-MM-dd");
+        var url = $"/export/day-book?format={format}&from={from}&to={to}"
+                  + (_type is null ? "" : $"&voucherType={(int)_type}");
+        Nav.NavigateTo(url, forceLoad: true);
+    }
+}

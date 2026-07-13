@@ -12,6 +12,7 @@
             </AuthorizeView>
             <AuthorizeView Policy="@Permissions.LedgerView" Context="l">
                 <MudNavLink Href="/ledger" Icon="@Icons.Material.Filled.MenuBook">General Ledger</MudNavLink>
+                <MudNavLink Href="/day-book" Icon="@Icons.Material.Filled.AutoStories">Day Book</MudNavLink>
             </AuthorizeView>
             <AuthorizeView Policy="@Permissions.PettyCashView" Context="p">
                 <MudNavLink Href="/petty-cash" Icon="@Icons.Material.Filled.Payments">Petty Cash</MudNavLink>
