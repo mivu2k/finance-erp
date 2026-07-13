@@ -2,6 +2,7 @@
 
 <MudNavMenu Bordered="true">
     <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+    <MudNavLink Href="/notifications" Icon="@Icons.Material.Filled.Notifications">Notifications</MudNavLink>
 
     <AuthorizeView Policy="@Permissions.AccountsView">
         <MudNavGroup Title="Accounting" Icon="@Icons.Material.Filled.AccountBalance" Expanded="true">
@@ -64,6 +65,9 @@
             </AuthorizeView>
             <AuthorizeView Policy="@Permissions.AuditView" Context="au">
                 <MudNavLink Href="/admin/audit" Icon="@Icons.Material.Filled.History">Audit Trail</MudNavLink>
+            </AuthorizeView>
+            <AuthorizeView Policy="@Permissions.SettingsManage" Context="st">
+                <MudNavLink Href="/admin/settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
             </AuthorizeView>
         </MudNavGroup>
     </AuthorizeView>

@@ -49,6 +49,7 @@
     private MudTable<PaymentRequest>? _table;
     private string _search = "";
     private string? _userId;
+    private readonly List<RequestStatus> _actionableStages = [];
 
     private string Mode => Nav.Uri.Contains("/approvals") ? "approvals"
         : Nav.Uri.Contains("/requests/my") ? "my"
@@ -69,6 +70,13 @@
         {
             var auth = await AuthState;
             _userId = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            // The approvals queue shows every stage the current user can act on.
+            if (auth.User.HasClaim(Permissions.ClaimType, Permissions.RequestsApproveManager))
+                _actionableStages.Add(RequestStatus.PendingManager);
+            if (auth.User.HasClaim(Permissions.ClaimType, Permissions.RequestsApproveAdmin))
+                _actionableStages.Add(RequestStatus.PendingAdmin);
+            if (auth.User.HasClaim(Permissions.ClaimType, Permissions.RequestsPay))
+                _actionableStages.Add(RequestStatus.PendingAccountant);
         }
     }
 
@@ -81,10 +89,14 @@
         PagedResult<PaymentRequest> result = Mode switch
         {
             "my" => await svc.ListAsync(filter, _userId),
-            "approvals" => await svc.ListAsync(filter, null, RequestStatus.PendingManager),
             _ => await svc.ListAsync(filter)
         };
-        var items = Mode == "director" ? result.Items.Where(r => r.IsDirectorRequest).ToList() : result.Items.ToList();
+        var items = Mode switch
+        {
+            "director" => result.Items.Where(r => r.IsDirectorRequest).ToList(),
+            "approvals" => result.Items.Where(r => _actionableStages.Contains(r.Status)).ToList(),
+            _ => result.Items.ToList()
+        };
         return new TableData<PaymentRequest> { Items = items, TotalItems = result.TotalCount };
     }
 }

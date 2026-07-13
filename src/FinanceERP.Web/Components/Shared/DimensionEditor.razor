@@ -1,0 +1,35 @@
+<div class="d-flex gap-2 mb-3 mt-3">
+    <MudTextField @bind-Value="_newName" Label="New name" Margin="Margin.Dense" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Add">Add</MudButton>
+</div>
+<MudSimpleTable Dense="true" Hover="true">
+    <thead><tr><th>Name</th><th>Active</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var item in Items)
+        {
+            <tr>
+                <td>@item.Name</td>
+                <td>@(item.Active ? "Yes" : "No")</td>
+                <td>
+                    <MudButton Size="Size.Small" Variant="Variant.Text"
+                               OnClick="@(() => OnToggle.InvokeAsync(item.Id))">
+                        @(item.Active ? "Deactivate" : "Activate")
+                    </MudButton>
+                </td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+@code {
+    [Parameter] public List<(int Id, string Name, bool Active)> Items { get; set; } = [];
+    [Parameter] public EventCallback<string> OnAdd { get; set; }
+    [Parameter] public EventCallback<int> OnToggle { get; set; }
+    private string _newName = "";
+
+    private async Task Add()
+    {
+        await OnAdd.InvokeAsync(_newName);
+        _newName = "";
+    }
+}

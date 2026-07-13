@@ -1,0 +1,85 @@
+@page "/notifications"
+@attribute [Authorize]
+@using Microsoft.EntityFrameworkCore
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>Notifications</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h5">Notifications</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Outlined" OnClick="MarkAllRead" Disabled="@(!_items.Any(n => !n.IsRead))">Mark all read</MudButton>
+</div>
+
+<MudPaper Class="pa-2">
+    <MudList T="Notification" Dense="true">
+        @foreach (var n in _items)
+        {
+            <MudListItem T="Notification" OnClick="@(() => Open(n))" Style="@(n.IsRead ? "opacity:.65" : "")">
+                <div class="d-flex align-center gap-3">
+                    <MudIcon Icon="@IconFor(n.Type)" Color="@(n.IsRead ? Color.Default : Color.Primary)" />
+                    <div style="min-width:0">
+                        <MudText Typo="Typo.body1">@n.Title</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">@n.Message</MudText>
+                        <MudText Typo="Typo.caption">@n.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudText>
+                    </div>
+                </div>
+            </MudListItem>
+        }
+        @if (_items.Count == 0)
+        {
+            <MudListItem T="Notification">No notifications yet.</MudListItem>
+        }
+    </MudList>
+</MudPaper>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+    private List<Notification> _items = [];
+    private string? _userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is null) return;
+        var auth = await AuthState;
+        _userId = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_userId is null) return;
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
+        _items = await db.Notifications.AsNoTracking()
+            .Where(n => n.UserId == _userId)
+            .OrderByDescending(n => n.Id).Take(100).ToListAsync();
+    }
+
+    private async Task Open(Notification n)
+    {
+        using (var scope = ScopeFactory.CreateScope())
+            await scope.ServiceProvider.GetRequiredService<INotificationService>().MarkReadAsync(n.Id);
+        if (!string.IsNullOrEmpty(n.Link)) { Nav.NavigateTo(n.Link); return; }
+        await LoadAsync();
+    }
+
+    private async Task MarkAllRead()
+    {
+        if (_userId is null) return;
+        using (var scope = ScopeFactory.CreateScope())
+            await scope.ServiceProvider.GetRequiredService<INotificationService>().MarkAllReadAsync(_userId);
+        await LoadAsync();
+    }
+
+    private static string IconFor(NotificationType t) => t switch
+    {
+        NotificationType.ApprovalRequest => Icons.Material.Filled.HowToVote,
+        NotificationType.Approved => Icons.Material.Filled.CheckCircle,
+        NotificationType.Rejected => Icons.Material.Filled.Cancel,
+        NotificationType.AdvanceDue or NotificationType.LoanDue or NotificationType.PaymentDue => Icons.Material.Filled.Alarm,
+        NotificationType.LowCash => Icons.Material.Filled.Warning,
+        _ => Icons.Material.Filled.Info
+    };
+}

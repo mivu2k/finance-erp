@@ -1,0 +1,110 @@
+@page "/admin/settings"
+@attribute [Authorize(Policy = Permissions.SettingsManage)]
+@using Microsoft.EntityFrameworkCore
+@using FinanceERP.Infrastructure.Persistence
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Settings</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Settings</MudText>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Company</MudText>
+            <MudTextField @bind-Value="_companyName" Label="Company name" Class="mb-2" />
+            <MudTextField @bind-Value="_currency" Label="Currency code (e.g. PKR, USD)" Class="mb-2" />
+            <MudNumericField T="decimal" @bind-Value="_lowCashThreshold" Label="Low cash alert threshold" Format="N2" Min="0" Class="mb-2"
+                             HelperText="Accountants and directors are notified when cash in hand falls below this." />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings">Save</MudButton>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-4">
+            <MudTabs Elevation="0" ApplyEffectsToContainer="true">
+                <MudTabPanel Text="Departments">
+                    <DimensionEditor Items="_departments" OnAdd="@(name => AddDim("dept", name))" OnToggle="@(id => ToggleDim("dept", id))" />
+                </MudTabPanel>
+                <MudTabPanel Text="Cost Centers">
+                    <DimensionEditor Items="_costCenters" OnAdd="@(name => AddDim("cc", name))" OnToggle="@(id => ToggleDim("cc", id))" />
+                </MudTabPanel>
+                <MudTabPanel Text="Projects">
+                    <DimensionEditor Items="_projects" OnAdd="@(name => AddDim("proj", name))" OnToggle="@(id => ToggleDim("proj", id))" />
+                </MudTabPanel>
+            </MudTabs>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private string _companyName = "";
+    private string _currency = "";
+    private decimal _lowCashThreshold;
+    private List<(int Id, string Name, bool Active)> _departments = [];
+    private List<(int Id, string Name, bool Active)> _costCenters = [];
+    private List<(int Id, string Name, bool Active)> _projects = [];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var settings = await db.AppSettings.AsNoTracking().ToDictionaryAsync(s => s.Key, s => s.Value);
+        _companyName = settings.GetValueOrDefault(SettingKeys.CompanyName, "");
+        _currency = settings.GetValueOrDefault(SettingKeys.Currency, "");
+        decimal.TryParse(settings.GetValueOrDefault(SettingKeys.LowCashThreshold, "0"), out _lowCashThreshold);
+        _departments = (await db.Departments.AsNoTracking().OrderBy(d => d.Name).ToListAsync()).Select(d => (d.Id, d.Name, d.IsActive)).ToList();
+        _costCenters = (await db.CostCenters.AsNoTracking().OrderBy(c => c.Name).ToListAsync()).Select(c => (c.Id, c.Name, c.IsActive)).ToList();
+        _projects = (await db.Projects.AsNoTracking().OrderBy(p => p.Name).ToListAsync()).Select(p => (p.Id, p.Name, p.IsActive)).ToList();
+        StateHasChanged();
+    }
+
+    private async Task SaveSettings()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        async Task Set(string key, string value)
+        {
+            var s = await db.AppSettings.FirstOrDefaultAsync(x => x.Key == key);
+            if (s is null) db.AppSettings.Add(new AppSetting { Key = key, Value = value });
+            else s.Value = value;
+        }
+        await Set(SettingKeys.CompanyName, _companyName);
+        await Set(SettingKeys.Currency, _currency);
+        await Set(SettingKeys.LowCashThreshold, _lowCashThreshold.ToString("0.##"));
+        await db.SaveChangesAsync();
+        Snackbar.Add("Settings saved.", Severity.Success);
+    }
+
+    private async Task AddDim(string kind, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return;
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        switch (kind)
+        {
+            case "dept": db.Departments.Add(new Department { Name = name.Trim() }); break;
+            case "cc": db.CostCenters.Add(new CostCenter { Name = name.Trim() }); break;
+            case "proj": db.Projects.Add(new Project { Name = name.Trim() }); break;
+        }
+        await db.SaveChangesAsync();
+        await LoadAsync();
+    }
+
+    private async Task ToggleDim(string kind, int id)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        switch (kind)
+        {
+            case "dept": { var e = await db.Departments.FirstAsync(x => x.Id == id); e.IsActive = !e.IsActive; break; }
+            case "cc": { var e = await db.CostCenters.FirstAsync(x => x.Id == id); e.IsActive = !e.IsActive; break; }
+            case "proj": { var e = await db.Projects.FirstAsync(x => x.Id == id); e.IsActive = !e.IsActive; break; }
+        }
+        await db.SaveChangesAsync();
+        await LoadAsync();
+    }
+}

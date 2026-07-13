@@ -58,6 +58,8 @@ builder.Services.AddAuthorization();
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 builder.Services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
 
+builder.Services.AddHostedService<FinanceERP.Web.Services.AlertsBackgroundService>();
+
 var app = builder.Build();
 
 // Apply migrations and seed roles/permissions/COA/admin on startup.

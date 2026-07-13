@@ -29,6 +29,7 @@
                     <MudDivider />
                     <MudMenuItem OnClick="MarkAllRead">Mark all read</MudMenuItem>
                 }
+                <MudMenuItem OnClick="@(() => Nav.NavigateTo("/notifications"))">View all</MudMenuItem>
             </ChildContent>
         </MudMenu>
     </Authorized>
