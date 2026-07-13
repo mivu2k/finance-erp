@@ -1,0 +1,117 @@
+@page "/ledger"
+@attribute [Authorize(Policy = Permissions.LedgerView)]
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>General Ledger</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h5">General Ledger</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@Permissions.ReportsExport">
+        <MudButtonGroup Variant="Variant.Outlined">
+            <MudButton StartIcon="@Icons.Material.Filled.PictureAsPdf" OnClick="@(() => Export("pdf"))">PDF</MudButton>
+            <MudButton StartIcon="@Icons.Material.Filled.GridOn" OnClick="@(() => Export("xlsx"))">Excel</MudButton>
+        </MudButtonGroup>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="6" md="2"><MudDatePicker Label="From" @bind-Date="_from" /></MudItem>
+        <MudItem xs="6" md="2"><MudDatePicker Label="To" @bind-Date="_to" /></MudItem>
+        <MudItem xs="12" md="4">
+            <MudSelect T="int?" @bind-Value="_accountId" Label="Account" Clearable="true">
+                @foreach (var a in _accounts)
+                {
+                    <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" md="2">
+            <MudSelect T="int?" @bind-Value="_departmentId" Label="Department" Clearable="true">
+                @foreach (var d in _departments)
+                {
+                    <MudSelectItem T="int?" Value="@d.Id">@d.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" md="2" Class="d-flex align-end">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAsync">Run</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr>
+                <th>Date</th><th>Voucher</th><th>Account</th><th>Description</th>
+                <th style="text-align:right">Debit</th><th style="text-align:right">Credit</th>
+                <th style="text-align:right">Balance</th><th>Dept</th><th>CC</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in _rows)
+            {
+                <tr>
+                    <td>@r.Date.ToString("yyyy-MM-dd")</td>
+                    <td><MudLink Href="@($"/vouchers/{r.VoucherId}")">@r.VoucherNo</MudLink></td>
+                    <td>@r.AccountCode @r.AccountName</td>
+                    <td>@r.Description</td>
+                    <td style="text-align:right">@(r.Debit == 0 ? "" : r.Debit.ToString("N2"))</td>
+                    <td style="text-align:right">@(r.Credit == 0 ? "" : r.Credit.ToString("N2"))</td>
+                    <td style="text-align:right">@r.RunningBalance.ToString("N2")</td>
+                    <td>@r.Department</td>
+                    <td>@r.CostCenter</td>
+                </tr>
+            }
+            @if (_rows.Count == 0)
+            {
+                <tr><td colspan="9">No entries for the selected filters.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private DateTime? _from = DateTime.Today.AddMonths(-1);
+    private DateTime? _to = DateTime.Today;
+    private int? _accountId;
+    private int? _departmentId;
+    private List<Account> _accounts = [];
+    private List<Department> _departments = [];
+    private List<LedgerRowDto> _rows = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _accounts = await scope.ServiceProvider.GetRequiredService<IAccountService>().GetPostableAsync();
+        var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
+        _departments = db.Departments.OrderBy(d => d.Name).ToList();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _rows = await scope.ServiceProvider.GetRequiredService<IReportService>().GeneralLedgerAsync(new ReportFilter
+        {
+            From = _from is null ? null : DateOnly.FromDateTime(_from.Value),
+            To = _to is null ? null : DateOnly.FromDateTime(_to.Value),
+            AccountId = _accountId,
+            DepartmentId = _departmentId
+        });
+    }
+
+    private void Export(string format)
+    {
+        var from = _from is null ? "" : DateOnly.FromDateTime(_from.Value).ToString("yyyy-MM-dd");
+        var to = _to is null ? "" : DateOnly.FromDateTime(_to.Value).ToString("yyyy-MM-dd");
+        var url = $"/export/ledger?format={format}&from={from}&to={to}"
+                  + (_accountId is null ? "" : $"&accountId={_accountId}")
+                  + (_departmentId is null ? "" : $"&departmentId={_departmentId}");
+        Nav.NavigateTo(url, forceLoad: true);
+    }
+}

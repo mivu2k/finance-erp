@@ -1,0 +1,173 @@
+@page "/advances/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Advance Detail</PageTitle>
+
+@if (_advance is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <div class="d-flex align-center mb-4 gap-2 flex-wrap">
+        <MudText Typo="Typo.h5">@_advance.AdvanceNo</MudText>
+        <MudChip T="string" Size="Size.Small" Color="Color.Info">@_advance.Status</MudChip>
+        <MudSpacer />
+        @if (_advance.Status == AdvanceStatus.PendingApproval)
+        {
+            <AuthorizeView Policy="@Permissions.AdvancesApprove">
+                <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="Approve">Approve</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="Reject" Class="ml-2">Reject</MudButton>
+            </AuthorizeView>
+        }
+        @if (_advance.Status == AdvanceStatus.Approved)
+        {
+            <AuthorizeView Policy="@Permissions.AdvancesManage">
+                <MudSelect T="int?" @bind-Value="_cashAccountId" Label="Pay from" Style="max-width:220px" Dense="true">
+                    @foreach (var a in _cashAccounts)
+                    {
+                        <MudSelectItem T="int?" Value="@a.Id">@a.Name</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Disburse" Class="ml-2"
+                           Disabled="@(_cashAccountId is null)">Disburse</MudButton>
+            </AuthorizeView>
+        }
+    </div>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4">
+                <MudSimpleTable Dense="true">
+                    <tbody>
+                        <tr><td>Employee</td><td><b>@_advance.EmployeeName</b></td></tr>
+                        <tr><td>Amount</td><td>@_advance.Amount.ToString("N2")</td></tr>
+                        <tr><td>Reason</td><td>@_advance.Reason</td></tr>
+                        <tr><td>Monthly Deduction</td><td>@_advance.MonthlyDeduction.ToString("N2")</td></tr>
+                        <tr><td>Repaid</td><td>@_advance.RepaidAmount.ToString("N2")</td></tr>
+                        <tr><td>Outstanding</td><td><b>@_advance.OutstandingBalance.ToString("N2")</b></td></tr>
+                        <tr><td>Due Date</td><td>@(_advance.DueDate?.ToString("yyyy-MM-dd") ?? "—")</td></tr>
+                        <tr><td>Approved By</td><td>@(_advance.ApprovedBy ?? "—")</td></tr>
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="8">
+            <MudPaper Class="pa-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Installment Schedule</MudText>
+                <MudSimpleTable Dense="true" Hover="true">
+                    <thead>
+                        <tr><th>#</th><th>Due Date</th><th style="text-align:right">Amount</th>
+                            <th style="text-align:right">Paid</th><th>Late Days</th><th>Status</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var i in _advance.Installments)
+                        {
+                            var lateDays = i.Status != InstallmentStatus.Paid && i.DueDate < DateOnly.FromDateTime(DateTime.Today)
+                                ? DateOnly.FromDateTime(DateTime.Today).DayNumber - i.DueDate.DayNumber : 0;
+                            <tr>
+                                <td>@i.Number</td>
+                                <td>@i.DueDate.ToString("yyyy-MM-dd")</td>
+                                <td style="text-align:right">@i.Amount.ToString("N2")</td>
+                                <td style="text-align:right">@i.PaidAmount.ToString("N2")</td>
+                                <td>@(lateDays > 0 ? lateDays.ToString() : "—")</td>
+                                <td>
+                                    <MudChip T="string" Size="Size.Small"
+                                             Color="@(i.Status == InstallmentStatus.Paid ? Color.Success : lateDays > 0 ? Color.Error : Color.Default)">
+                                        @(lateDays > 0 && i.Status != InstallmentStatus.Paid ? "Overdue" : i.Status.ToString())
+                                    </MudChip>
+                                </td>
+                                <td>
+                                    <AuthorizeView Policy="@Permissions.AdvancesManage" Context="m">
+                                        @if (i.Status != InstallmentStatus.Paid && _advance.Status is AdvanceStatus.Disbursed or AdvanceStatus.Repaying)
+                                        {
+                                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                                       OnClick="@(() => Repay(i))">Record repayment</MudButton>
+                                        }
+                                    </AuthorizeView>
+                                </td>
+                            </tr>
+                        }
+                        @if (_advance.Installments.Count == 0)
+                        {
+                            <tr><td colspan="7">Schedule is created when the advance is disbursed.</td></tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private EmployeeAdvance? _advance;
+    private List<Account> _cashAccounts = [];
+    private int? _cashAccountId;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _advance = await scope.ServiceProvider.GetRequiredService<IAdvanceService>().GetAsync(Id);
+        var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
+        _cashAccounts = db.Accounts.Where(a => a.Code == "1100" || a.Code == "1201").ToList();
+        _cashAccountId ??= _cashAccounts.FirstOrDefault()?.Id;
+        StateHasChanged();
+    }
+
+    private async Task Approve()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IAdvanceService>().ApproveAsync(Id);
+            Snackbar.Add("Advance approved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Reject()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IAdvanceService>().RejectAsync(Id, null);
+            Snackbar.Add("Advance rejected.", Severity.Warning);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Disburse()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var voucher = await scope.ServiceProvider.GetRequiredService<IAdvanceService>()
+                .DisburseAsync(Id, _cashAccountId!.Value);
+            Snackbar.Add($"Disbursed — voucher {voucher.VoucherNo} posted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Repay(AdvanceInstallment installment)
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var voucher = await scope.ServiceProvider.GetRequiredService<IAdvanceService>()
+                .RepayInstallmentAsync(installment.Id, installment.Amount - installment.PaidAmount,
+                    _cashAccountId ?? _cashAccounts.First().Id, DateOnly.FromDateTime(DateTime.Today));
+            Snackbar.Add($"Repayment recorded — voucher {voucher.VoucherNo}.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

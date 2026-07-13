@@ -1,0 +1,170 @@
+@page "/reports"
+@attribute [Authorize(Policy = Permissions.ReportsView)]
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>Reports</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Reports</MudText>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="3">
+            <MudSelect T="string" @bind-Value="_report" Label="Report">
+                <MudSelectItem Value="@("trial-balance")">Trial Balance</MudSelectItem>
+                <MudSelectItem Value="@("income-statement")">Income Statement</MudSelectItem>
+                <MudSelectItem Value="@("balance-sheet")">Balance Sheet</MudSelectItem>
+                <MudSelectItem Value="@("cash-book")">Cash Book</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" md="2">
+            <MudSelect T="string" Value="_preset" ValueChanged="ApplyPreset" Label="Period">
+                <MudSelectItem Value="@("today")">Today</MudSelectItem>
+                <MudSelectItem Value="@("week")">This Week</MudSelectItem>
+                <MudSelectItem Value="@("month")">This Month</MudSelectItem>
+                <MudSelectItem Value="@("quarter")">This Quarter</MudSelectItem>
+                <MudSelectItem Value="@("half")">Last 6 Months</MudSelectItem>
+                <MudSelectItem Value="@("year")">This Year</MudSelectItem>
+                <MudSelectItem Value="@("custom")">Custom</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" md="2"><MudDatePicker Label="From" @bind-Date="_from" /></MudItem>
+        <MudItem xs="6" md="2"><MudDatePicker Label="To" @bind-Date="_to" /></MudItem>
+        <MudItem xs="6" md="3" Class="d-flex align-end gap-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Run">Run</MudButton>
+            <AuthorizeView Policy="@Permissions.ReportsExport">
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PictureAsPdf" OnClick="@(() => Export("pdf"))">PDF</MudButton>
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.GridOn" OnClick="@(() => Export("xlsx"))">Excel</MudButton>
+            </AuthorizeView>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-4" Style="overflow-x:auto">
+    @if (_report == "cash-book")
+    {
+        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+            <thead><tr><th>Date</th><th>Voucher</th><th>Account</th><th>Description</th>
+                <th style="text-align:right">Receipt</th><th style="text-align:right">Payment</th><th style="text-align:right">Balance</th></tr></thead>
+            <tbody>
+                @foreach (var r in _ledgerRows)
+                {
+                    <tr>
+                        <td>@r.Date.ToString("yyyy-MM-dd")</td>
+                        <td>@r.VoucherNo</td>
+                        <td>@r.AccountName</td>
+                        <td>@r.Description</td>
+                        <td style="text-align:right">@(r.Debit == 0 ? "" : r.Debit.ToString("N2"))</td>
+                        <td style="text-align:right">@(r.Credit == 0 ? "" : r.Credit.ToString("N2"))</td>
+                        <td style="text-align:right">@r.RunningBalance.ToString("N2")</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    }
+    else
+    {
+        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+            <thead>
+                <tr><th>Code</th><th>Account</th><th>Type</th>
+                    <th style="text-align:right">@LeftHeader</th><th style="text-align:right">@RightHeader</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _rows)
+                {
+                    <tr>
+                        <td>@r.Code</td><td>@r.Name</td><td>@r.Type</td>
+                        <td style="text-align:right">@(r.Debit == 0 ? "" : r.Debit.ToString("N2"))</td>
+                        <td style="text-align:right">@(r.Credit == 0 ? "" : r.Credit.ToString("N2"))</td>
+                    </tr>
+                }
+                <tr style="font-weight:700;border-top:2px solid var(--mud-palette-lines-default)">
+                    <td colspan="3">Total</td>
+                    <td style="text-align:right">@_rows.Sum(r => r.Debit).ToString("N2")</td>
+                    <td style="text-align:right">@_rows.Sum(r => r.Credit).ToString("N2")</td>
+                </tr>
+                @if (_report == "income-statement")
+                {
+                    var net = _rows.Sum(r => r.Credit) - _rows.Sum(r => r.Debit);
+                    <tr style="font-weight:700">
+                        <td colspan="3">@(net >= 0 ? "Net Profit" : "Net Loss")</td>
+                        <td colspan="2" style="text-align:right">@Math.Abs(net).ToString("N2")</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    }
+</MudPaper>
+
+@code {
+    private string _report = "trial-balance";
+    private string _preset = "month";
+    private DateTime? _from = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime? _to = DateTime.Today;
+    private List<TrialBalanceRowDto> _rows = [];
+    private List<LedgerRowDto> _ledgerRows = [];
+
+    private string LeftHeader => _report switch
+    {
+        "income-statement" => "Expense",
+        "balance-sheet" => "Assets",
+        _ => "Debit"
+    };
+    private string RightHeader => _report switch
+    {
+        "income-statement" => "Income",
+        "balance-sheet" => "Liabilities & Equity",
+        _ => "Credit"
+    };
+
+    protected override Task OnInitializedAsync() => Run();
+
+    private void ApplyPreset(string preset)
+    {
+        _preset = preset;
+        var today = DateTime.Today;
+        (_from, _to) = preset switch
+        {
+            "today" => (today, today),
+            "week" => (today.AddDays(-(int)today.DayOfWeek), today),
+            "month" => (new DateTime(today.Year, today.Month, 1), today),
+            "quarter" => (new DateTime(today.Year, ((today.Month - 1) / 3) * 3 + 1, 1), today),
+            "half" => (today.AddMonths(-6), today),
+            "year" => (new DateTime(today.Year, 1, 1), today),
+            _ => (_from, _to)
+        };
+    }
+
+    private async Task Run()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<IReportService>();
+        var from = DateOnly.FromDateTime(_from ?? DateTime.Today);
+        var to = DateOnly.FromDateTime(_to ?? DateTime.Today);
+        _ledgerRows = [];
+        _rows = [];
+        switch (_report)
+        {
+            case "trial-balance": _rows = await svc.TrialBalanceAsync(to); break;
+            case "income-statement": _rows = await svc.IncomeStatementAsync(from, to); break;
+            case "balance-sheet": _rows = await svc.BalanceSheetAsync(to); break;
+            case "cash-book": _ledgerRows = await svc.CashBookAsync(new ReportFilter { From = from, To = to }); break;
+        }
+    }
+
+    private void Export(string format)
+    {
+        var from = DateOnly.FromDateTime(_from ?? DateTime.Today).ToString("yyyy-MM-dd");
+        var to = DateOnly.FromDateTime(_to ?? DateTime.Today).ToString("yyyy-MM-dd");
+        var url = _report switch
+        {
+            "trial-balance" => $"/export/trial-balance?format={format}&asOf={to}",
+            "income-statement" => $"/export/income-statement?format={format}&from={from}&to={to}",
+            "balance-sheet" => $"/export/balance-sheet?format={format}&asOf={to}",
+            "cash-book" => $"/export/cash-book?format={format}&from={from}&to={to}",
+            _ => "/reports"
+        };
+        Nav.NavigateTo(url, forceLoad: true);
+    }
+}

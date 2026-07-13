@@ -1,0 +1,149 @@
+@page "/investments"
+@attribute [Authorize(Policy = Permissions.InvestmentsView)]
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Investments</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h5">Investments</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@Permissions.InvestmentsManage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => _newOpen = true)">New Investment</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudTable @ref="_table" T="Investment" ServerData="LoadData" Dense="true" Hover="true" Striped="true">
+    <HeaderContent>
+        <MudTh>Name</MudTh><MudTh>Type</MudTh><MudTh Style="text-align:right">Amount</MudTh>
+        <MudTh Style="text-align:right">ROI %</MudTh><MudTh Style="text-align:right">Profit</MudTh>
+        <MudTh Style="text-align:right">Withdrawn</MudTh><MudTh>Status</MudTh><MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.Name</MudTd>
+        <MudTd>@context.InvestmentType</MudTd>
+        <MudTd Style="text-align:right">@context.Amount.ToString("N2")</MudTd>
+        <MudTd Style="text-align:right">@context.ExpectedRoiPercent.ToString("0.##")</MudTd>
+        <MudTd Style="text-align:right">@context.TotalProfit.ToString("N2")</MudTd>
+        <MudTd Style="text-align:right">@context.TotalWithdrawn.ToString("N2")</MudTd>
+        <MudTd><MudChip T="string" Size="Size.Small" Color="Color.Info">@context.Status</MudChip></MudTd>
+        <MudTd>
+            <AuthorizeView Policy="@Permissions.InvestmentsManage" Context="m">
+                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => OpenTxn(context))">Add txn</MudButton>
+            </AuthorizeView>
+        </MudTd>
+    </RowTemplate>
+    <PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+
+@if (_newOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:440px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">New Investment</MudText>
+            <MudTextField @bind-Value="_new.Name" Label="Name" Class="mb-2" />
+            <MudTextField @bind-Value="_new.InvestmentType" Label="Type (e.g. Mutual Fund, Property)" Class="mb-2" />
+            <MudNumericField T="decimal" @bind-Value="_new.Amount" Label="Amount" Min="0" Format="N2" Class="mb-2" />
+            <MudNumericField T="decimal" @bind-Value="_new.ExpectedRoiPercent" Label="Expected ROI %" Min="0" Class="mb-2" />
+            <MudSelect T="int?" @bind-Value="_cashAccountId" Label="Pay from" Class="mb-2">
+                @foreach (var a in _cashAccounts)
+                {
+                    <MudSelectItem T="int?" Value="@a.Id">@a.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _newOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Create"
+                           Disabled="@(_cashAccountId is null || _new.Amount <= 0)">Create &amp; Post</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_txnFor is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:440px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">@_txnFor.Name — Transaction</MudText>
+            <MudSelect T="InvestmentTxnType" @bind-Value="_txnType" Label="Type" Class="mb-2">
+                @foreach (InvestmentTxnType t in Enum.GetValues<InvestmentTxnType>())
+                {
+                    <MudSelectItem Value="@t">@t</MudSelectItem>
+                }
+            </MudSelect>
+            <MudNumericField T="decimal" @bind-Value="_txnAmount" Label="Amount" Min="0" Format="N2" Class="mb-2" />
+            <MudSelect T="int?" @bind-Value="_cashAccountId" Label="Cash/Bank account" Class="mb-2">
+                @foreach (var a in _cashAccounts)
+                {
+                    <MudSelectItem T="int?" Value="@a.Id">@a.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _txnFor = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddTxn"
+                           Disabled="@(_cashAccountId is null || _txnAmount <= 0)">Post</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    private MudTable<Investment>? _table;
+    private bool _newOpen;
+    private Investment _new = new() { StartDate = DateOnly.FromDateTime(DateTime.Today) };
+    private Investment? _txnFor;
+    private InvestmentTxnType _txnType = InvestmentTxnType.Profit;
+    private decimal _txnAmount;
+    private List<Account> _cashAccounts = [];
+    private int? _cashAccountId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
+        _cashAccounts = db.Accounts.Where(a => a.Code == "1100" || a.Code == "1201").ToList();
+        _cashAccountId = _cashAccounts.FirstOrDefault()?.Id;
+        await Task.CompletedTask;
+    }
+
+    private async Task<TableData<Investment>> LoadData(TableState state, CancellationToken ct)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var result = await scope.ServiceProvider.GetRequiredService<IInvestmentService>()
+            .ListAsync(new ReportFilter { Page = state.Page + 1, PageSize = state.PageSize });
+        return new TableData<Investment> { Items = result.Items, TotalItems = result.TotalCount };
+    }
+
+    private void OpenTxn(Investment inv) { _txnFor = inv; _txnAmount = 0; }
+
+    private async Task Create()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IInvestmentService>().CreateAsync(_new, _cashAccountId!.Value);
+            Snackbar.Add("Investment created and posted.", Severity.Success);
+            _newOpen = false;
+            _new = new Investment { StartDate = DateOnly.FromDateTime(DateTime.Today) };
+            await _table!.ReloadServerData();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AddTxn()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var voucher = await scope.ServiceProvider.GetRequiredService<IInvestmentService>()
+                .AddTransactionAsync(_txnFor!.Id, _txnType, _txnAmount,
+                    DateOnly.FromDateTime(DateTime.Today), _cashAccountId!.Value, null);
+            Snackbar.Add($"Transaction posted — voucher {voucher.VoucherNo}.", Severity.Success);
+            _txnFor = null;
+            await _table!.ReloadServerData();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

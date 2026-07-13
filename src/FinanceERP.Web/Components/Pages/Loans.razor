@@ -1,0 +1,180 @@
+@page "/loans"
+@attribute [Authorize(Policy = Permissions.LoansView)]
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Loans</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h5">Loans</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@Permissions.LoansManage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => _newOpen = true)">New Loan</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudTable @ref="_table" T="Loan" ServerData="LoadData" Dense="true" Hover="true" Striped="true">
+    <HeaderContent>
+        <MudTh>No</MudTh><MudTh>Direction</MudTh><MudTh>Party</MudTh>
+        <MudTh Style="text-align:right">Principal</MudTh><MudTh Style="text-align:right">Interest %</MudTh>
+        <MudTh Style="text-align:right">Remaining</MudTh><MudTh>Due</MudTh><MudTh>Status</MudTh><MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.LoanNo</MudTd>
+        <MudTd>@context.Direction</MudTd>
+        <MudTd>@context.ThirdParty.Name</MudTd>
+        <MudTd Style="text-align:right">@context.Principal.ToString("N2")</MudTd>
+        <MudTd Style="text-align:right">@context.InterestRatePercent.ToString("0.##")</MudTd>
+        <MudTd Style="text-align:right">@context.RemainingBalance.ToString("N2")</MudTd>
+        <MudTd>@(context.DueDate?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
+        <MudTd>
+            <MudChip T="string" Size="Size.Small"
+                     Color="@(context.Status == LoanStatus.Settled ? Color.Success : Color.Warning)">@context.Status</MudChip>
+        </MudTd>
+        <MudTd>
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => ToggleDetail(context))">
+                @(_detail?.Id == context.Id ? "Hide" : "Schedule")
+            </MudButton>
+        </MudTd>
+    </RowTemplate>
+    <ChildRowContent>
+        @if (_detail?.Id == context.Id)
+        {
+            <MudTr>
+                <td colspan="9" style="padding:16px;background:var(--mud-palette-background-gray)">
+                    <MudSimpleTable Dense="true">
+                        <thead><tr><th>#</th><th>Due</th><th style="text-align:right">Amount</th><th style="text-align:right">Interest</th><th style="text-align:right">Paid</th><th>Status</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var i in _detail.Installments)
+                            {
+                                <tr>
+                                    <td>@i.Number</td>
+                                    <td>@i.DueDate.ToString("yyyy-MM-dd")</td>
+                                    <td style="text-align:right">@i.Amount.ToString("N2")</td>
+                                    <td style="text-align:right">@i.InterestPortion.ToString("N2")</td>
+                                    <td style="text-align:right">@i.PaidAmount.ToString("N2")</td>
+                                    <td>@i.Status</td>
+                                    <td>
+                                        <AuthorizeView Policy="@Permissions.LoansManage" Context="m">
+                                            @if (i.Status != InstallmentStatus.Paid)
+                                            {
+                                                <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                                           OnClick="@(() => PayInstallment(i))">Record payment</MudButton>
+                                            }
+                                        </AuthorizeView>
+                                    </td>
+                                </tr>
+                            }
+                            @if (_detail.Installments.Count == 0)
+                            {
+                                <tr><td colspan="7">No installment schedule.</td></tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </td>
+            </MudTr>
+        }
+    </ChildRowContent>
+    <PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+
+@if (_newOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:480px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">New Loan</MudText>
+            <MudSelect T="LoanDirection" @bind-Value="_new.Direction" Label="Direction" Class="mb-2">
+                <MudSelectItem Value="@LoanDirection.Given">Loan Given (we lend)</MudSelectItem>
+                <MudSelectItem Value="@LoanDirection.Taken">Loan Taken (we borrow)</MudSelectItem>
+            </MudSelect>
+            <MudSelect T="int" @bind-Value="_new.ThirdPartyId" Label="Third party" Class="mb-2">
+                @foreach (var t in _thirdParties)
+                {
+                    <MudSelectItem Value="@t.Id">@t.Name (@t.Type)</MudSelectItem>
+                }
+            </MudSelect>
+            <MudNumericField T="decimal" @bind-Value="_new.Principal" Label="Principal" Min="0" Format="N2" Class="mb-2" />
+            <MudNumericField T="decimal" @bind-Value="_new.InterestRatePercent" Label="Interest rate % (flat, total)" Min="0" Class="mb-2" />
+            <MudDatePicker Label="Start date" Date="@_new.StartDate.ToDateTime(TimeOnly.MinValue)"
+                           DateChanged="@(d => { if (d is not null) _new.StartDate = DateOnly.FromDateTime(d.Value); })" Class="mb-2" />
+            <MudDatePicker Label="Due date" Date="@(_new.DueDate?.ToDateTime(TimeOnly.MinValue))"
+                           DateChanged="@(d => _new.DueDate = d is null ? null : DateOnly.FromDateTime(d.Value))" Class="mb-2" />
+            <MudSelect T="int?" @bind-Value="_cashAccountId" Label="Cash/Bank account" Class="mb-2">
+                @foreach (var a in _cashAccounts)
+                {
+                    <MudSelectItem T="int?" Value="@a.Id">@a.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _newOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Create"
+                           Disabled="@(_new.ThirdPartyId == 0 || _cashAccountId is null)">Create &amp; Post</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    private MudTable<Loan>? _table;
+    private Loan? _detail;
+    private bool _newOpen;
+    private Loan _new = new() { StartDate = DateOnly.FromDateTime(DateTime.Today) };
+    private List<ThirdParty> _thirdParties = [];
+    private List<Account> _cashAccounts = [];
+    private int? _cashAccountId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
+        _thirdParties = db.ThirdParties.OrderBy(t => t.Name).ToList();
+        _cashAccounts = db.Accounts.Where(a => a.Code == "1100" || a.Code == "1201").ToList();
+        _cashAccountId = _cashAccounts.FirstOrDefault()?.Id;
+    }
+
+    private async Task<TableData<Loan>> LoadData(TableState state, CancellationToken ct)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var result = await scope.ServiceProvider.GetRequiredService<ILoanService>()
+            .ListAsync(new ReportFilter { Page = state.Page + 1, PageSize = state.PageSize });
+        return new TableData<Loan> { Items = result.Items, TotalItems = result.TotalCount };
+    }
+
+    private async Task ToggleDetail(Loan loan)
+    {
+        if (_detail?.Id == loan.Id) { _detail = null; return; }
+        using var scope = ScopeFactory.CreateScope();
+        _detail = await scope.ServiceProvider.GetRequiredService<ILoanService>().GetAsync(loan.Id);
+    }
+
+    private async Task Create()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var loan = await scope.ServiceProvider.GetRequiredService<ILoanService>().CreateAsync(_new, _cashAccountId!.Value);
+            Snackbar.Add($"{loan.LoanNo} created and posted to ledger.", Severity.Success);
+            _newOpen = false;
+            _new = new Loan { StartDate = DateOnly.FromDateTime(DateTime.Today) };
+            await _table!.ReloadServerData();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task PayInstallment(LoanInstallment installment)
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var voucher = await scope.ServiceProvider.GetRequiredService<ILoanService>()
+                .PayInstallmentAsync(installment.Id, installment.Amount - installment.PaidAmount,
+                    _cashAccountId ?? _cashAccounts.First().Id, DateOnly.FromDateTime(DateTime.Today));
+            Snackbar.Add($"Payment recorded — voucher {voucher.VoucherNo}.", Severity.Success);
+            _detail = null;
+            await _table!.ReloadServerData();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

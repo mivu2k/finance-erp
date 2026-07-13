@@ -1,0 +1,22 @@
+<MudChip T="string" Size="Size.Small" Color="@ChipColor" Variant="Variant.Filled">@Label</MudChip>
+
+@code {
+    [Parameter] public RequestStatus Status { get; set; }
+
+    private string Label => Status switch
+    {
+        RequestStatus.PendingManager => "Pending Manager",
+        RequestStatus.PendingAdmin => "Pending Admin",
+        RequestStatus.PendingAccountant => "Pending Accountant",
+        _ => Status.ToString()
+    };
+
+    private Color ChipColor => Status switch
+    {
+        RequestStatus.Draft => Color.Default,
+        RequestStatus.Paid => Color.Success,
+        RequestStatus.Rejected => Color.Error,
+        RequestStatus.Cancelled => Color.Dark,
+        _ => Color.Warning
+    };
+}

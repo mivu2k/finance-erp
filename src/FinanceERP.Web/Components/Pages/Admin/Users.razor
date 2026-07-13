@@ -1,0 +1,164 @@
+@page "/admin/users"
+@attribute [Authorize(Policy = Permissions.UsersManage)]
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using FinanceERP.Infrastructure.Identity
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Users</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h5">Users</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd"
+               OnClick="@(() => OpenEditor(null))">New User</MudButton>
+</div>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr><th>Name</th><th>Email</th><th>Employee Code</th><th>Roles</th><th>Active</th><th>Locked</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var u in _users)
+            {
+                <tr>
+                    <td>@u.User.FullName</td>
+                    <td>@u.User.Email</td>
+                    <td>@u.User.EmployeeCode</td>
+                    <td>@string.Join(", ", u.Roles)</td>
+                    <td>@(u.User.IsActive ? "Yes" : "No")</td>
+                    <td>@(u.User.LockoutEnd > DateTimeOffset.UtcNow ? "Yes" : "No")</td>
+                    <td style="white-space:nowrap">
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit" OnClick="@(() => OpenEditor(u))" />
+                        <MudIconButton Size="Size.Small"
+                                       Icon="@(u.User.LockoutEnd > DateTimeOffset.UtcNow ? Icons.Material.Filled.LockOpen : Icons.Material.Filled.Lock)"
+                                       Color="Color.Warning" OnClick="@(() => ToggleLock(u.User))" />
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@if (_editorOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:520px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_isNew ? "New User" : _fullName)</MudText>
+            <MudTextField @bind-Value="_fullName" Label="Full name" Class="mb-2" />
+            <MudTextField @bind-Value="_email" Label="Email" Disabled="@(!_isNew)" Class="mb-2" />
+            <MudTextField @bind-Value="_employeeCode" Label="Employee code" Class="mb-2" />
+            @if (_isNew)
+            {
+                <MudTextField @bind-Value="_password" Label="Initial password" InputType="InputType.Password" Class="mb-2"
+                              HelperText="Min 8 chars incl. digit, upper, lower, symbol" />
+            }
+            <MudSelect T="string" MultiSelection="true" @bind-SelectedValues="_selectedRoles" Label="Roles" Class="mb-2">
+                @foreach (var r in AppRoles.All)
+                {
+                    <MudSelectItem Value="@r">@r</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSwitch T="bool" @bind-Value="_isActive" Label="Active" Color="Color.Primary" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _editorOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    private record UserRow(ApplicationUser User, List<string> Roles);
+
+    private List<UserRow> _users = [];
+    private bool _editorOpen;
+    private bool _isNew;
+    private string? _editUserId;
+    private string _fullName = "";
+    private string _email = "";
+    private string? _employeeCode;
+    private string _password = "";
+    private bool _isActive = true;
+    private IEnumerable<string> _selectedRoles = [];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var users = await userManager.Users.OrderBy(u => u.FullName).ToListAsync();
+        _users = [];
+        foreach (var u in users)
+            _users.Add(new UserRow(u, (await userManager.GetRolesAsync(u)).ToList()));
+        StateHasChanged();
+    }
+
+    private void OpenEditor(UserRow? row)
+    {
+        _isNew = row is null;
+        _editUserId = row?.User.Id;
+        _fullName = row?.User.FullName ?? "";
+        _email = row?.User.Email ?? "";
+        _employeeCode = row?.User.EmployeeCode;
+        _isActive = row?.User.IsActive ?? true;
+        _selectedRoles = row?.Roles ?? [AppRoles.Employee];
+        _password = "";
+        _editorOpen = true;
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+
+            ApplicationUser user;
+            if (_isNew)
+            {
+                user = new ApplicationUser
+                {
+                    UserName = _email, Email = _email, EmailConfirmed = true,
+                    FullName = _fullName, EmployeeCode = _employeeCode, IsActive = _isActive
+                };
+                var create = await userManager.CreateAsync(user, _password);
+                if (!create.Succeeded)
+                    throw new InvalidOperationException(string.Join("; ", create.Errors.Select(e => e.Description)));
+            }
+            else
+            {
+                user = (await userManager.FindByIdAsync(_editUserId!))!;
+                user.FullName = _fullName;
+                user.EmployeeCode = _employeeCode;
+                user.IsActive = _isActive;
+                await userManager.UpdateAsync(user);
+            }
+
+            var current = await userManager.GetRolesAsync(user);
+            await userManager.RemoveFromRolesAsync(user, current.Except(_selectedRoles));
+            await userManager.AddToRolesAsync(user, _selectedRoles.Except(current));
+
+            Snackbar.Add("User saved.", Severity.Success);
+            _editorOpen = false;
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task ToggleLock(ApplicationUser user)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var target = (await userManager.FindByIdAsync(user.Id))!;
+        var locked = target.LockoutEnd > DateTimeOffset.UtcNow;
+        await userManager.SetLockoutEnabledAsync(target, true);
+        await userManager.SetLockoutEndDateAsync(target, locked ? null : DateTimeOffset.UtcNow.AddYears(100));
+        Snackbar.Add(locked ? "User unlocked." : "User locked.", Severity.Info);
+        await LoadAsync();
+    }
+}

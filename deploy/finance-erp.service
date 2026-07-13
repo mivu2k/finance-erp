@@ -1,0 +1,18 @@
+[Unit]
+Description=Finance ERP (ASP.NET Core + Blazor)
+After=network.target mysql.service
+
+[Service]
+WorkingDirectory=/opt/finance-erp
+ExecStart=/usr/bin/dotnet /opt/finance-erp/FinanceERP.Web.dll
+Restart=always
+RestartSec=10
+KillSignal=SIGINT
+SyslogIdentifier=finance-erp
+User=finance-erp
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://127.0.0.1:5000
+Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
+
+[Install]
+WantedBy=multi-user.target

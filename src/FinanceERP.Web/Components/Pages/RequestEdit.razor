@@ -1,0 +1,127 @@
+@page "/requests/new"
+@page "/requests/{Id:int}/edit"
+@attribute [Authorize(Policy = Permissions.RequestsCreate)]
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Payment Request</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">@(_model.Id == 0 ? (_isDirector ? "New Director Fund Request" : "New Payment Request") : $"Edit {_model.RequestNo}")</MudText>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="8"><MudTextField @bind-Value="_model.Purpose" Label="Purpose" /></MudItem>
+        <MudItem xs="12" md="4">
+            <MudSelect T="int?" @bind-Value="_model.DepartmentId" Label="Department" Clearable="true">
+                @foreach (var d in _departments)
+                {
+                    <MudSelectItem T="int?" Value="@d.Id">@d.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-4">
+    <MudText Typo="Typo.subtitle1" Class="mb-2">Line items</MudText>
+    <div style="overflow-x:auto">
+        <table style="width:100%;min-width:800px;border-collapse:collapse">
+            <thead>
+                <tr style="text-align:left">
+                    <th style="width:28%">Account head</th>
+                    <th style="width:15%">Category</th>
+                    <th style="width:12%">Amount</th>
+                    <th style="width:20%">Reason</th>
+                    <th style="width:22%">Description</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var line in _model.Lines)
+                {
+                    <tr>
+                        <td>
+                            <MudSelect T="int" @bind-Value="line.AccountId" Dense="true" Margin="Margin.Dense">
+                                @foreach (var a in _expenseAccounts)
+                                {
+                                    <MudSelectItem Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </td>
+                        <td><MudTextField @bind-Value="line.Category" Margin="Margin.Dense" /></td>
+                        <td><MudNumericField T="decimal" @bind-Value="line.Amount" Min="0" Format="N2" Margin="Margin.Dense" /></td>
+                        <td><MudTextField @bind-Value="line.Reason" Margin="Margin.Dense" /></td>
+                        <td><MudTextField @bind-Value="line.Description" Margin="Margin.Dense" /></td>
+                        <td>
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Close" Color="Color.Error"
+                                           OnClick="@(() => _model.Lines.Remove(line))" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot>
+                <tr style="font-weight:600">
+                    <td colspan="2" style="text-align:right;padding:8px">Total</td>
+                    <td style="padding:8px">@_model.Lines.Sum(l => l.Amount).ToString("N2")</td>
+                    <td colspan="3"></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    <div class="d-flex gap-2 mt-4 flex-wrap">
+        <MudButton StartIcon="@Icons.Material.Filled.Add" Variant="Variant.Outlined"
+                   OnClick="@(() => _model.Lines.Add(new PaymentRequestLine()))">Add Item</MudButton>
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="@(() => Save(false))">Save Draft</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => Save(true))"
+                   Disabled="@(_model.Lines.Sum(l => l.Amount) <= 0)">Submit for Approval</MudButton>
+    </div>
+</MudPaper>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+    [SupplyParameterFromQuery(Name = "director")] public bool _isDirector { get; set; }
+
+    private PaymentRequest _model = new();
+    private List<Account> _expenseAccounts = [];
+    private List<Department> _departments = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var accounts = await scope.ServiceProvider.GetRequiredService<IAccountService>().GetPostableAsync();
+        _expenseAccounts = accounts.Where(a => a.Type == AccountType.Expense || a.Type == AccountType.Asset).ToList();
+        var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
+        _departments = db.Departments.Where(d => d.IsActive).OrderBy(d => d.Name).ToList();
+
+        if (Id is not null)
+        {
+            var existing = await scope.ServiceProvider.GetRequiredService<IPaymentRequestService>().GetAsync(Id.Value);
+            if (existing is null || existing.Status != RequestStatus.Draft) { Nav.NavigateTo("/requests/my"); return; }
+            _model = existing;
+        }
+        else
+        {
+            _model.IsDirectorRequest = _isDirector;
+            _model.Lines.Add(new PaymentRequestLine());
+        }
+    }
+
+    private async Task Save(bool submit)
+    {
+        try
+        {
+            _model.Lines = _model.Lines.Where(l => l.AccountId != 0 && l.Amount > 0).ToList();
+            if (_model.Lines.Count == 0) throw new InvalidOperationException("Add at least one line with account and amount.");
+            using var scope = ScopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<IPaymentRequestService>();
+            var saved = await svc.SaveDraftAsync(_model);
+            if (submit) await svc.SubmitAsync(saved.Id);
+            Snackbar.Add(submit ? $"{saved.RequestNo} submitted for approval." : $"{saved.RequestNo} saved as draft.", Severity.Success);
+            Nav.NavigateTo(_model.IsDirectorRequest ? "/director-funds" : "/requests/my");
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

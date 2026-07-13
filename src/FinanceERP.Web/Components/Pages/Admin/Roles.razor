@@ -1,0 +1,110 @@
+@page "/admin/roles"
+@attribute [Authorize(Policy = Permissions.RolesManage)]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Roles &amp; Permissions</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Roles &amp; Permissions</MudText>
+    <MudSpacer />
+    <MudTextField @bind-Value="_newRole" Label="New role name" Style="max-width:220px" Margin="Margin.Dense" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddRole">Add Role</MudButton>
+</div>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <table style="border-collapse:collapse;min-width:900px">
+        <thead>
+            <tr>
+                <th style="text-align:left;padding:8px;position:sticky;left:0;background:var(--mud-palette-surface)">Permission</th>
+                @foreach (var role in _roles)
+                {
+                    <th style="padding:8px;writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap">@role</th>
+                }
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var group in Permissions.All.GroupBy(p => p.Split('.')[0]))
+            {
+                <tr><td colspan="@(_roles.Count + 1)" style="padding:8px;font-weight:700">@group.Key</td></tr>
+                @foreach (var perm in group)
+                {
+                    <tr>
+                        <td style="padding:4px 8px;position:sticky;left:0;background:var(--mud-palette-surface)">@perm</td>
+                        @foreach (var role in _roles)
+                        {
+                            var r = role; var p = perm;
+                            <td style="text-align:center">
+                                <MudCheckBox T="bool" Dense="true"
+                                             Value="@(_matrix.Contains((r, p)))"
+                                             ValueChanged="@(v => Toggle(r, p, v))"
+                                             Disabled="@(r == AppRoles.SuperAdmin)" />
+                            </td>
+                        }
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</MudPaper>
+
+@code {
+    private List<string> _roles = [];
+    private HashSet<(string Role, string Permission)> _matrix = [];
+    private string _newRole = "";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+        var roles = await roleManager.Roles.OrderBy(r => r.Name).ToListAsync();
+        _roles = roles.Select(r => r.Name!).ToList();
+        _matrix = [];
+        foreach (var role in roles)
+        {
+            var claims = await roleManager.GetClaimsAsync(role);
+            foreach (var c in claims.Where(c => c.Type == Permissions.ClaimType))
+                _matrix.Add((role.Name!, c.Value));
+        }
+        StateHasChanged();
+    }
+
+    private async Task Toggle(string roleName, string permission, bool granted)
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+            var role = await roleManager.FindByNameAsync(roleName);
+            if (role is null) return;
+            if (granted)
+            {
+                await roleManager.AddClaimAsync(role, new Claim(Permissions.ClaimType, permission));
+                _matrix.Add((roleName, permission));
+            }
+            else
+            {
+                await roleManager.RemoveClaimAsync(role, new Claim(Permissions.ClaimType, permission));
+                _matrix.Remove((roleName, permission));
+            }
+            Snackbar.Add($"{roleName}: {permission} {(granted ? "granted" : "revoked")}. Users must re-login to pick up changes.", Severity.Info);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AddRole()
+    {
+        if (string.IsNullOrWhiteSpace(_newRole)) return;
+        using var scope = ScopeFactory.CreateScope();
+        var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+        var result = await roleManager.CreateAsync(new IdentityRole(_newRole.Trim()));
+        if (result.Succeeded) { Snackbar.Add("Role created.", Severity.Success); _newRole = ""; await LoadAsync(); }
+        else Snackbar.Add(string.Join("; ", result.Errors.Select(e => e.Description)), Severity.Error);
+    }
+}

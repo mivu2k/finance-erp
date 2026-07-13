@@ -1,0 +1,193 @@
+@page "/vouchers/new"
+@page "/vouchers/{Id:int}"
+@attribute [Authorize(Policy = Permissions.VouchersView)]
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Voucher</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">@(_voucherNo is null ? "New Voucher" : $"Voucher {_voucherNo}")</MudText>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="6" md="3">
+            <MudSelect T="VoucherType" @bind-Value="_model.Type" Label="Voucher type" Disabled="@_readOnly">
+                @foreach (VoucherType t in Enum.GetValues<VoucherType>())
+                {
+                    <MudSelectItem Value="@t">@t</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudDatePicker Label="Date" Date="@_model.Date.ToDateTime(TimeOnly.MinValue)"
+                           DateChanged="@(d => { if (d is not null) _model.Date = DateOnly.FromDateTime(d.Value); })"
+                           Disabled="@_readOnly" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudTextField @bind-Value="_model.Narration" Label="Narration" Disabled="@_readOnly" />
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-4">
+    <div style="overflow-x:auto">
+        <table class="mud-table-root" style="width:100%; min-width:900px; border-collapse:collapse">
+            <thead>
+                <tr style="text-align:left">
+                    <th style="width:26%">Account</th>
+                    <th style="width:20%">Description</th>
+                    <th style="width:10%">Debit</th>
+                    <th style="width:10%">Credit</th>
+                    <th style="width:11%">Cost Center</th>
+                    <th style="width:11%">Department</th>
+                    <th style="width:11%">Project</th>
+                    <th style="width:1%"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var line in _model.Lines)
+                {
+                    <tr>
+                        <td>
+                            <MudSelect T="int?" @bind-Value="line.AccountId" Dense="true" Margin="Margin.Dense" Disabled="@_readOnly">
+                                @foreach (var a in _accounts)
+                                {
+                                    <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </td>
+                        <td><MudTextField @bind-Value="line.Description" Margin="Margin.Dense" Disabled="@_readOnly" /></td>
+                        <td><MudNumericField T="decimal" @bind-Value="line.Debit" Margin="Margin.Dense" Min="0" Format="N2" Disabled="@_readOnly" /></td>
+                        <td><MudNumericField T="decimal" @bind-Value="line.Credit" Margin="Margin.Dense" Min="0" Format="N2" Disabled="@_readOnly" /></td>
+                        <td>
+                            <MudSelect T="int?" @bind-Value="line.CostCenterId" Dense="true" Margin="Margin.Dense" Clearable="true" Disabled="@_readOnly">
+                                @foreach (var c in _costCenters)
+                                {
+                                    <MudSelectItem T="int?" Value="@c.Id">@c.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </td>
+                        <td>
+                            <MudSelect T="int?" @bind-Value="line.DepartmentId" Dense="true" Margin="Margin.Dense" Clearable="true" Disabled="@_readOnly">
+                                @foreach (var d in _departments)
+                                {
+                                    <MudSelectItem T="int?" Value="@d.Id">@d.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </td>
+                        <td>
+                            <MudSelect T="int?" @bind-Value="line.ProjectId" Dense="true" Margin="Margin.Dense" Clearable="true" Disabled="@_readOnly">
+                                @foreach (var p in _projects)
+                                {
+                                    <MudSelectItem T="int?" Value="@p.Id">@p.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </td>
+                        <td>
+                            @if (!_readOnly)
+                            {
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Close" Color="Color.Error"
+                                               OnClick="@(() => _model.Lines.Remove(line))" />
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot>
+                <tr style="font-weight:600">
+                    <td colspan="2" style="text-align:right;padding:8px">Totals</td>
+                    <td style="padding:8px">@TotalDebit.ToString("N2")</td>
+                    <td style="padding:8px">@TotalCredit.ToString("N2")</td>
+                    <td colspan="4">
+                        @if (TotalDebit != TotalCredit)
+                        {
+                            <MudChip T="string" Color="Color.Error" Size="Size.Small">Out of balance: @((TotalDebit - TotalCredit).ToString("N2"))</MudChip>
+                        }
+                        else if (TotalDebit > 0)
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small">Balanced</MudChip>
+                        }
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    @if (!_readOnly)
+    {
+        <div class="d-flex gap-2 mt-4 flex-wrap">
+            <MudButton StartIcon="@Icons.Material.Filled.Add" Variant="Variant.Outlined" OnClick="AddRow">Add Row</MudButton>
+            <MudSpacer />
+            <AuthorizeView Policy="@Permissions.VouchersCreate">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="@(() => Save(false))">Save Draft</MudButton>
+            </AuthorizeView>
+            <AuthorizeView Policy="@Permissions.VouchersPost">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(TotalDebit != TotalCredit || TotalDebit == 0)"
+                           OnClick="@(() => Save(true))">Save &amp; Post</MudButton>
+            </AuthorizeView>
+        </div>
+    }
+</MudPaper>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private VoucherEditDto _model = new();
+    private string? _voucherNo;
+    private bool _readOnly;
+    private List<Account> _accounts = [];
+    private List<CostCenter> _costCenters = [];
+    private List<Department> _departments = [];
+    private List<Project> _projects = [];
+
+    private decimal TotalDebit => _model.Lines.Sum(l => l.Debit);
+    private decimal TotalCredit => _model.Lines.Sum(l => l.Credit);
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _accounts = await scope.ServiceProvider.GetRequiredService<IAccountService>().GetPostableAsync();
+        var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
+        _costCenters = db.CostCenters.Where(c => c.IsActive).OrderBy(c => c.Name).ToList();
+        _departments = db.Departments.Where(d => d.IsActive).OrderBy(d => d.Name).ToList();
+        _projects = db.Projects.Where(p => p.IsActive).OrderBy(p => p.Name).ToList();
+
+        if (Id is not null)
+        {
+            var voucher = await scope.ServiceProvider.GetRequiredService<IVoucherService>().GetAsync(Id.Value);
+            if (voucher is null) { Nav.NavigateTo("/vouchers"); return; }
+            _voucherNo = voucher.VoucherNo;
+            _readOnly = voucher.Status != VoucherStatus.Draft;
+            _model = new VoucherEditDto
+            {
+                Id = voucher.Id, Type = voucher.Type, Date = voucher.Date, Narration = voucher.Narration,
+                Lines = voucher.Lines.OrderBy(l => l.LineNo).Select(l => new VoucherLineEditDto
+                {
+                    Id = l.Id, AccountId = l.AccountId, Description = l.Description,
+                    Debit = l.Debit, Credit = l.Credit, CostCenterId = l.CostCenterId,
+                    DepartmentId = l.DepartmentId, ProjectId = l.ProjectId
+                }).ToList()
+            };
+        }
+        else
+        {
+            AddRow(); AddRow();
+        }
+    }
+
+    private void AddRow() => _model.Lines.Add(new VoucherLineEditDto());
+
+    private async Task Save(bool post)
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var voucher = await scope.ServiceProvider.GetRequiredService<IVoucherService>().SaveAsync(_model, post);
+            Snackbar.Add(post ? $"Voucher {voucher.VoucherNo} posted." : $"Voucher {voucher.VoucherNo} saved as draft.", Severity.Success);
+            Nav.NavigateTo("/vouchers");
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

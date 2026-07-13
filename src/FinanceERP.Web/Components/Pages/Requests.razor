@@ -1,0 +1,91 @@
+@page "/requests"
+@page "/requests/my"
+@page "/approvals"
+@page "/director-funds"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>@Title</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">@Title</MudText>
+    <MudSpacer />
+    @if (Mode is "my" or "director")
+    {
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   Href="@(Mode == "director" ? "/requests/new?director=true" : "/requests/new")">New Request</MudButton>
+    }
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="8" md="4"><MudTextField @bind-Value="_search" Label="Search" Immediate="true" /></MudItem>
+        <MudItem xs="4" md="2" Class="d-flex align-end">
+            <MudButton Variant="Variant.Outlined" OnClick="@(() => _table!.ReloadServerData())">Search</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudTable @ref="_table" T="PaymentRequest" ServerData="LoadData" Dense="true" Hover="true" Striped="true"
+          OnRowClick="@(args => Nav.NavigateTo($"/requests/{args.Item!.Id}"))" RowStyle="cursor:pointer">
+    <HeaderContent>
+        <MudTh>Request No</MudTh><MudTh>Requester</MudTh><MudTh>Purpose</MudTh>
+        <MudTh Style="text-align:right">Amount</MudTh><MudTh>Status</MudTh><MudTh>Created</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.RequestNo</MudTd>
+        <MudTd>@context.RequesterName</MudTd>
+        <MudTd>@context.Purpose</MudTd>
+        <MudTd Style="text-align:right">@context.TotalAmount.ToString("N2")</MudTd>
+        <MudTd><StatusChip Status="@context.Status" /></MudTd>
+        <MudTd>@context.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudTd>
+    </RowTemplate>
+    <PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+    private MudTable<PaymentRequest>? _table;
+    private string _search = "";
+    private string? _userId;
+
+    private string Mode => Nav.Uri.Contains("/approvals") ? "approvals"
+        : Nav.Uri.Contains("/requests/my") ? "my"
+        : Nav.Uri.Contains("/director-funds") ? "director"
+        : "all";
+
+    private string Title => Mode switch
+    {
+        "approvals" => "Pending Approvals",
+        "my" => "My Requests",
+        "director" => "Director Fund Requests",
+        _ => "Payment Requests"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            var auth = await AuthState;
+            _userId = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        }
+    }
+
+    private async Task<TableData<PaymentRequest>> LoadData(TableState state, CancellationToken ct)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<IPaymentRequestService>();
+        var filter = new ReportFilter { Search = _search, Page = state.Page + 1, PageSize = state.PageSize };
+
+        PagedResult<PaymentRequest> result = Mode switch
+        {
+            "my" => await svc.ListAsync(filter, _userId),
+            "approvals" => await svc.ListAsync(filter, null, RequestStatus.PendingManager),
+            _ => await svc.ListAsync(filter)
+        };
+        var items = Mode == "director" ? result.Items.Where(r => r.IsDirectorRequest).ToList() : result.Items.ToList();
+        return new TableData<PaymentRequest> { Items = items, TotalItems = result.TotalCount };
+    }
+}

@@ -1,0 +1,71 @@
+@page "/admin/audit"
+@attribute [Authorize(Policy = Permissions.AuditView)]
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Audit Trail</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Audit Trail</MudText>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="6" md="3"><MudTextField @bind-Value="_entity" Label="Entity" Immediate="true" /></MudItem>
+        <MudItem xs="6" md="3"><MudTextField @bind-Value="_user" Label="User" Immediate="true" /></MudItem>
+        <MudItem xs="6" md="3" Class="d-flex align-end">
+            <MudButton Variant="Variant.Outlined" OnClick="@(() => _table!.ReloadServerData())">Filter</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudTable @ref="_table" T="AuditLog" ServerData="LoadData" Dense="true" Hover="true" Striped="true">
+    <HeaderContent>
+        <MudTh>Time (UTC)</MudTh><MudTh>User</MudTh><MudTh>IP</MudTh><MudTh>Action</MudTh>
+        <MudTh>Entity</MudTh><MudTh>Id</MudTh><MudTh>Changes</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.TimestampUtc.ToString("yyyy-MM-dd HH:mm:ss")</MudTd>
+        <MudTd>@context.UserName</MudTd>
+        <MudTd>@context.IpAddress</MudTd>
+        <MudTd>
+            <MudChip T="string" Size="Size.Small"
+                     Color="@(context.Action == "Created" ? Color.Success : context.Action.Contains("Delete") ? Color.Error : Color.Info)">
+                @context.Action
+            </MudChip>
+        </MudTd>
+        <MudTd>@context.EntityName</MudTd>
+        <MudTd>@context.EntityId</MudTd>
+        <MudTd Style="max-width:420px">
+            @if (context.OldValues is not null)
+            {
+                <MudText Typo="Typo.caption" Style="word-break:break-all"><b>Old:</b> @Truncate(context.OldValues)</MudText>
+            }
+            @if (context.NewValues is not null)
+            {
+                <MudText Typo="Typo.caption" Style="word-break:break-all"><b>New:</b> @Truncate(context.NewValues)</MudText>
+            }
+        </MudTd>
+    </RowTemplate>
+    <PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+
+@code {
+    private MudTable<AuditLog>? _table;
+    private string _entity = "";
+    private string _user = "";
+
+    private static string Truncate(string s) => s.Length > 300 ? s[..300] + "…" : s;
+
+    private async Task<TableData<AuditLog>> LoadData(TableState state, CancellationToken ct)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
+        var q = db.AuditLogs.AsNoTracking().AsQueryable();
+        if (!string.IsNullOrWhiteSpace(_entity)) q = q.Where(a => a.EntityName.Contains(_entity));
+        if (!string.IsNullOrWhiteSpace(_user)) q = q.Where(a => a.UserName != null && a.UserName.Contains(_user));
+        var total = await q.CountAsync(ct);
+        var items = await q.OrderByDescending(a => a.Id)
+            .Skip(state.Page * state.PageSize).Take(state.PageSize).ToListAsync(ct);
+        return new TableData<AuditLog> { Items = items, TotalItems = total };
+    }
+}

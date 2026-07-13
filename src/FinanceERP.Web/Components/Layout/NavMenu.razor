@@ -1,0 +1,70 @@
+@using FinanceERP.Domain.Security
+
+<MudNavMenu Bordered="true">
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+
+    <AuthorizeView Policy="@Permissions.AccountsView">
+        <MudNavGroup Title="Accounting" Icon="@Icons.Material.Filled.AccountBalance" Expanded="true">
+            <MudNavLink Href="/accounts" Icon="@Icons.Material.Filled.AccountTree">Chart of Accounts</MudNavLink>
+            <AuthorizeView Policy="@Permissions.VouchersView" Context="v">
+                <MudNavLink Href="/vouchers" Icon="@Icons.Material.Filled.ReceiptLong">Vouchers</MudNavLink>
+            </AuthorizeView>
+            <AuthorizeView Policy="@Permissions.LedgerView" Context="l">
+                <MudNavLink Href="/ledger" Icon="@Icons.Material.Filled.MenuBook">General Ledger</MudNavLink>
+            </AuthorizeView>
+            <AuthorizeView Policy="@Permissions.PettyCashView" Context="p">
+                <MudNavLink Href="/petty-cash" Icon="@Icons.Material.Filled.Payments">Petty Cash</MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@Permissions.RequestsCreate">
+        <MudNavLink Href="/requests/my" Icon="@Icons.Material.Filled.RequestQuote">My Requests</MudNavLink>
+    </AuthorizeView>
+    <AuthorizeView Policy="@Permissions.AdvancesCreate">
+        <MudNavLink Href="/advances/my" Icon="@Icons.Material.Filled.CreditScore">My Advances</MudNavLink>
+    </AuthorizeView>
+    <AuthorizeView Policy="@Permissions.DirectorFundsRequest">
+        <MudNavLink Href="/director-funds" Icon="@Icons.Material.Filled.AccountBalanceWallet">Director Funds</MudNavLink>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@Permissions.RequestsViewAll">
+        <MudNavGroup Title="Workflow" Icon="@Icons.Material.Filled.Approval" Expanded="true">
+            <MudNavLink Href="/requests" Icon="@Icons.Material.Filled.FactCheck">Payment Requests</MudNavLink>
+            <AuthorizeView Policy="@Permissions.AdvancesViewAll" Context="a">
+                <MudNavLink Href="/advances" Icon="@Icons.Material.Filled.CreditCard">Employee Advances</MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
+    </AuthorizeView>
+    <AuthorizeView Policy="@Permissions.RequestsApproveManager">
+        <MudNavLink Href="/approvals" Icon="@Icons.Material.Filled.HowToVote">Approvals</MudNavLink>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@Permissions.ThirdPartiesView">
+        <MudNavGroup Title="Partners &amp; Portfolio" Icon="@Icons.Material.Filled.Handshake">
+            <MudNavLink Href="/third-parties" Icon="@Icons.Material.Filled.Groups">Third Parties</MudNavLink>
+            <AuthorizeView Policy="@Permissions.LoansView" Context="lo">
+                <MudNavLink Href="/loans" Icon="@Icons.Material.Filled.RealEstateAgent">Loans</MudNavLink>
+            </AuthorizeView>
+            <AuthorizeView Policy="@Permissions.InvestmentsView" Context="inv">
+                <MudNavLink Href="/investments" Icon="@Icons.Material.Filled.TrendingUp">Investments</MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@Permissions.ReportsView">
+        <MudNavLink Href="/reports" Icon="@Icons.Material.Filled.Assessment">Reports</MudNavLink>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@Permissions.UsersManage">
+        <MudNavGroup Title="Administration" Icon="@Icons.Material.Filled.AdminPanelSettings">
+            <MudNavLink Href="/admin/users" Icon="@Icons.Material.Filled.ManageAccounts">Users</MudNavLink>
+            <AuthorizeView Policy="@Permissions.RolesManage" Context="r">
+                <MudNavLink Href="/admin/roles" Icon="@Icons.Material.Filled.Security">Roles &amp; Permissions</MudNavLink>
+            </AuthorizeView>
+            <AuthorizeView Policy="@Permissions.AuditView" Context="au">
+                <MudNavLink Href="/admin/audit" Icon="@Icons.Material.Filled.History">Audit Trail</MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
+    </AuthorizeView>
+</MudNavMenu>

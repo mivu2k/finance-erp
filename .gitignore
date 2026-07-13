@@ -1,0 +1,22 @@
+## .NET
+bin/
+obj/
+out/
+publish/
+*.user
+*.suo
+
+## Logs & local data
+logs/
+*.log
+*.db
+
+## IDE
+.vs/
+.vscode/
+.idea/
+.DS_Store
+
+## Secrets — never commit real credentials
+appsettings.Production.json
+appsettings.*.local.json

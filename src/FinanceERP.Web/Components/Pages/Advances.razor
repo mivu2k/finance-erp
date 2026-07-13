@@ -1,0 +1,107 @@
+@page "/advances"
+@page "/advances/my"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Employee Advances</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">@(IsMy ? "My Advances" : "Employee Advances")</MudText>
+    <MudSpacer />
+    @if (IsMy)
+    {
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => _newOpen = true)">Request Advance</MudButton>
+    }
+</div>
+
+<MudTable @ref="_table" T="EmployeeAdvance" ServerData="LoadData" Dense="true" Hover="true" Striped="true"
+          OnRowClick="@(args => Nav.NavigateTo($"/advances/{args.Item!.Id}"))" RowStyle="cursor:pointer">
+    <HeaderContent>
+        <MudTh>No</MudTh><MudTh>Employee</MudTh><MudTh Style="text-align:right">Amount</MudTh>
+        <MudTh Style="text-align:right">Repaid</MudTh><MudTh Style="text-align:right">Outstanding</MudTh>
+        <MudTh>Installments</MudTh><MudTh>Status</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.AdvanceNo</MudTd>
+        <MudTd>@context.EmployeeName</MudTd>
+        <MudTd Style="text-align:right">@context.Amount.ToString("N2")</MudTd>
+        <MudTd Style="text-align:right">@context.RepaidAmount.ToString("N2")</MudTd>
+        <MudTd Style="text-align:right">@context.OutstandingBalance.ToString("N2")</MudTd>
+        <MudTd>@context.InstallmentCount × @context.MonthlyDeduction.ToString("N2")</MudTd>
+        <MudTd>
+            <MudChip T="string" Size="Size.Small"
+                     Color="@(context.Status switch { AdvanceStatus.Settled => Color.Success, AdvanceStatus.Rejected => Color.Error, AdvanceStatus.Draft => Color.Default, _ => Color.Warning })">
+                @context.Status
+            </MudChip>
+        </MudTd>
+    </RowTemplate>
+    <PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+
+@if (_newOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:440px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">Request Advance</MudText>
+            <MudNumericField T="decimal" @bind-Value="_new.Amount" Label="Amount" Min="0" Format="N2" Class="mb-2" />
+            <MudTextField @bind-Value="_new.Reason" Label="Reason" Class="mb-2" />
+            <MudNumericField T="int" @bind-Value="_new.InstallmentCount" Label="Repay over (months)" Min="1" Max="36" Class="mb-2" />
+            <MudDatePicker Label="Due date (optional)"
+                           Date="@(_new.DueDate?.ToDateTime(TimeOnly.MinValue))"
+                           DateChanged="@(d => _new.DueDate = d is null ? null : DateOnly.FromDateTime(d.Value))" Class="mb-2" />
+            <MudText Typo="Typo.caption">Monthly deduction: @((_new.InstallmentCount > 0 ? _new.Amount / _new.InstallmentCount : 0).ToString("N2"))</MudText>
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _newOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SubmitNew">Submit</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+    private MudTable<EmployeeAdvance>? _table;
+    private bool _newOpen;
+    private EmployeeAdvance _new = new() { InstallmentCount = 1 };
+    private string? _userId;
+
+    private bool IsMy => Nav.Uri.Contains("/advances/my");
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            var auth = await AuthState;
+            _userId = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        }
+    }
+
+    private async Task<TableData<EmployeeAdvance>> LoadData(TableState state, CancellationToken ct)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<IAdvanceService>();
+        var result = await svc.ListAsync(new ReportFilter { Page = state.Page + 1, PageSize = state.PageSize },
+            IsMy ? _userId : null);
+        return new TableData<EmployeeAdvance> { Items = result.Items, TotalItems = result.TotalCount };
+    }
+
+    private async Task SubmitNew()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<IAdvanceService>();
+            var saved = await svc.SaveDraftAsync(_new);
+            await svc.SubmitAsync(saved.Id);
+            Snackbar.Add($"{saved.AdvanceNo} submitted for approval.", Severity.Success);
+            _newOpen = false;
+            _new = new EmployeeAdvance { InstallmentCount = 1 };
+            await _table!.ReloadServerData();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

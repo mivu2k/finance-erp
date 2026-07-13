@@ -1,0 +1,137 @@
+@page "/petty-cash"
+@attribute [Authorize(Policy = Permissions.PettyCashView)]
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Petty Cash</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Petty Cash</MudText>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Daily Cash Book</MudText>
+            <MudDatePicker Label="Date" @bind-Date="_date" Class="mb-3" />
+            <MudButton Variant="Variant.Outlined" OnClick="LoadDayBook" Class="mb-3">Load</MudButton>
+            <MudSimpleTable Dense="true">
+                <tbody>
+                    <tr><td>Opening Balance</td><td style="text-align:right">@_dayBook.Opening.ToString("N2")</td></tr>
+                    <tr><td>Cash Received</td><td style="text-align:right">@_dayBook.Received.ToString("N2")</td></tr>
+                    <tr><td>Cash Paid</td><td style="text-align:right">@_dayBook.Paid.ToString("N2")</td></tr>
+                    <tr style="font-weight:600"><td>Closing Balance</td><td style="text-align:right">@_dayBook.Closing.ToString("N2")</td></tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <AuthorizeView Policy="@Permissions.PettyCashAssign">
+        <MudItem xs="12" md="7">
+            <MudPaper Class="pa-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Assign Petty Cash Float</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="string" @bind-Value="_assignAccountantId" Label="Accountant">
+                            @foreach (var u in _accountants)
+                            {
+                                <MudSelectItem Value="@u.Id">@u.FullName (@u.Email)</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6" md="3"><MudNumericField T="decimal" @bind-Value="_assignAmount" Label="Amount" Min="0" Format="N2" /></MudItem>
+                    <MudItem xs="6" md="3">
+                        <MudSelect T="int?" @bind-Value="_sourceAccountId" Label="Pay from">
+                            @foreach (var a in _cashAccounts)
+                            {
+                                <MudSelectItem T="int?" Value="@a.Id">@a.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Assign">Assign &amp; Post</MudButton>
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+        </MudItem>
+    </AuthorizeView>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Recent Assignments</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>Date</th><th>Accountant</th><th style="text-align:right">Amount</th><th>Notes</th></tr></thead>
+                <tbody>
+                    @foreach (var p in _assignments)
+                    {
+                        <tr>
+                            <td>@p.Date.ToString("yyyy-MM-dd")</td>
+                            <td>@p.AccountantName</td>
+                            <td style="text-align:right">@p.Amount.ToString("N2")</td>
+                            <td>@p.Notes</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private DateTime? _date = DateTime.Today;
+    private (decimal Opening, decimal Received, decimal Paid, decimal Closing) _dayBook;
+    private List<PettyCashAssignment> _assignments = [];
+    private List<Account> _cashAccounts = [];
+    private List<FinanceERP.Infrastructure.Identity.ApplicationUser> _accountants = [];
+    private int? _pettyCashAccountId;
+    private int? _sourceAccountId;
+    private string? _assignAccountantId;
+    private decimal _assignAmount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
+        _pettyCashAccountId = db.Accounts.FirstOrDefault(a => a.Code == "1300")?.Id;
+        _cashAccounts = db.Accounts.Where(a => a.Code == "1100" || a.Code == "1201").ToList();
+        _sourceAccountId = _cashAccounts.FirstOrDefault()?.Id;
+        _accountants = (from ur in db.UserRoles
+                        join r in db.Roles on ur.RoleId equals r.Id
+                        join u in db.Users on ur.UserId equals u.Id
+                        where r.Name == AppRoles.Accountant || r.Name == AppRoles.SuperAdmin
+                        select u).Distinct().ToList();
+        _assignments = await scope.ServiceProvider.GetRequiredService<IPettyCashService>().ListAssignmentsAsync();
+        await LoadDayBook();
+    }
+
+    private async Task LoadDayBook()
+    {
+        if (_pettyCashAccountId is null || _date is null) return;
+        using var scope = ScopeFactory.CreateScope();
+        _dayBook = await scope.ServiceProvider.GetRequiredService<IPettyCashService>()
+            .GetDayBookAsync(_pettyCashAccountId.Value, DateOnly.FromDateTime(_date.Value));
+    }
+
+    private async Task Assign()
+    {
+        try
+        {
+            if (_assignAccountantId is null || _sourceAccountId is null || _pettyCashAccountId is null)
+                throw new InvalidOperationException("Select accountant and source account.");
+            var accountant = _accountants.First(a => a.Id == _assignAccountantId);
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IPettyCashService>().AssignAsync(new PettyCashAssignment
+            {
+                AccountantId = accountant.Id,
+                AccountantName = accountant.FullName,
+                PettyCashAccountId = _pettyCashAccountId.Value,
+                Amount = _assignAmount,
+                Date = DateOnly.FromDateTime(DateTime.Today)
+            }, _sourceAccountId.Value);
+            Snackbar.Add("Petty cash assigned and voucher posted.", Severity.Success);
+            _assignAmount = 0;
+            _assignments = await scope.ServiceProvider.GetRequiredService<IPettyCashService>().ListAssignmentsAsync();
+            await LoadDayBook();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

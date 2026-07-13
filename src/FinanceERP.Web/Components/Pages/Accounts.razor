@@ -1,0 +1,156 @@
+@page "/accounts"
+@attribute [Authorize(Policy = Permissions.AccountsView)]
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Chart of Accounts</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h5">Chart of Accounts</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@Permissions.AccountsManage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => OpenEditor(null))">New Account</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4">
+    <MudTextField T="string" @bind-Value="_search" Placeholder="Search accounts…" Immediate="true"
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-3" />
+    <MudSimpleTable Dense="true" Hover="true" Style="overflow-x:auto">
+        <thead>
+            <tr><th>Code</th><th>Name</th><th>Type</th><th>Postable</th><th>Active</th><th style="text-align:right">Balance</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var (a, depth) in Flatten())
+            {
+                <tr>
+                    <td>@a.Code</td>
+                    <td style="padding-left:@(16 + depth * 24)px">
+                        @if (a.Children.Count > 0){<b>@a.Name</b>} else {@a.Name}
+                    </td>
+                    <td>@a.Type</td>
+                    <td>@(a.IsPostable ? "Yes" : "—")</td>
+                    <td>@(a.IsActive ? "Yes" : "No")</td>
+                    <td style="text-align:right">@(_balances.TryGetValue(a.Id, out var b) ? b.ToString("N2") : "")</td>
+                    <td style="white-space:nowrap">
+                        <AuthorizeView Policy="@Permissions.AccountsManage" Context="m">
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit" OnClick="@(() => OpenEditor(a))" />
+                            @if (!a.IsSystem)
+                            {
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => Delete(a))" />
+                            }
+                        </AuthorizeView>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@if (_editing is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:480px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_editing.Id == 0 ? "New Account" : $"Edit {_editing.Code}")</MudText>
+            <MudTextField @bind-Value="_editing.Code" Label="Code" Class="mb-2" />
+            <MudTextField @bind-Value="_editing.Name" Label="Name" Class="mb-2" />
+            <MudSelect T="AccountType" @bind-Value="_editing.Type" Label="Type" Class="mb-2">
+                @foreach (AccountType t in Enum.GetValues<AccountType>())
+                {
+                    <MudSelectItem Value="@t">@t</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSelect T="int?" @bind-Value="_editing.ParentId" Label="Parent account" Clearable="true" Class="mb-2">
+                @foreach (var a in _accounts.Where(x => x.Id != _editing.Id))
+                {
+                    <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSwitch T="bool" @bind-Value="_editing.IsPostable" Label="Postable (can hold entries)" Color="Color.Primary" />
+            <MudSwitch T="bool" @bind-Value="_editing.IsActive" Label="Active" Color="Color.Primary" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _editing = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    private List<Account> _accounts = [];
+    private Dictionary<int, decimal> _balances = [];
+    private Account? _editing;
+    private string _search = "";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<IAccountService>();
+        _accounts = await svc.GetTreeAsync();
+        _balances = [];
+        foreach (var a in _accounts.Where(a => a.IsPostable))
+            _balances[a.Id] = await svc.GetBalanceAsync(a.Id);
+        StateHasChanged();
+    }
+
+    private IEnumerable<(Account, int)> Flatten()
+    {
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            foreach (var a in _accounts.Where(a =>
+                a.Name.Contains(_search, StringComparison.OrdinalIgnoreCase) || a.Code.Contains(_search)))
+                yield return (a, 0);
+            yield break;
+        }
+        var byParent = _accounts.ToLookup(a => a.ParentId);
+        foreach (var item in Walk(null, 0, byParent)) yield return item;
+    }
+
+    private static IEnumerable<(Account, int)> Walk(int? parentId, int depth, ILookup<int?, Account> byParent)
+    {
+        foreach (var a in byParent[parentId].OrderBy(a => a.Code))
+        {
+            yield return (a, depth);
+            foreach (var child in Walk(a.Id, depth + 1, byParent)) yield return child;
+        }
+    }
+
+    private void OpenEditor(Account? account) =>
+        _editing = account is null
+            ? new Account()
+            : new Account
+            {
+                Id = account.Id, Code = account.Code, Name = account.Name, Type = account.Type,
+                ParentId = account.ParentId, IsPostable = account.IsPostable, IsActive = account.IsActive,
+                IsSystem = account.IsSystem, Description = account.Description
+            };
+
+    private async Task Save()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IAccountService>().SaveAsync(_editing!);
+            Snackbar.Add("Account saved.", Severity.Success);
+            _editing = null;
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Delete(Account account)
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IAccountService>().DeleteAsync(account.Id);
+            Snackbar.Add("Account deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

@@ -1,0 +1,74 @@
+@using System.Security.Claims
+@using FinanceERP.Application.Interfaces
+@using FinanceERP.Domain.Entities
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<AuthorizeView>
+    <Authorized>
+        <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Dense="true">
+            <ActivatorContent>
+                <MudBadge Content="@_items.Count" Color="Color.Error" Overlap="true" Visible="@(_items.Count > 0)">
+                    <MudIconButton Icon="@Icons.Material.Filled.Notifications" Color="Color.Inherit" />
+                </MudBadge>
+            </ActivatorContent>
+            <ChildContent>
+                @if (_items.Count == 0)
+                {
+                    <MudMenuItem Disabled="true">No new notifications</MudMenuItem>
+                }
+                @foreach (var n in _items)
+                {
+                    <MudMenuItem OnClick="@(() => Open(n))">
+                        <MudText Typo="Typo.body2"><b>@n.Title</b></MudText>
+                        <MudText Typo="Typo.caption">@n.Message</MudText>
+                    </MudMenuItem>
+                }
+                @if (_items.Count > 0)
+                {
+                    <MudDivider />
+                    <MudMenuItem OnClick="MarkAllRead">Mark all read</MudMenuItem>
+                }
+            </ChildContent>
+        </MudMenu>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+    private List<Notification> _items = [];
+    private string? _userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is null) return;
+        var auth = await AuthState;
+        _userId = auth.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_userId is null) return;
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<INotificationService>();
+        _items = await svc.GetUnreadAsync(_userId);
+    }
+
+    private async Task Open(Notification n)
+    {
+        using (var scope = ScopeFactory.CreateScope())
+            await scope.ServiceProvider.GetRequiredService<INotificationService>().MarkReadAsync(n.Id);
+        if (!string.IsNullOrEmpty(n.Link)) Nav.NavigateTo(n.Link);
+        await LoadAsync();
+    }
+
+    private async Task MarkAllRead()
+    {
+        if (_userId is null) return;
+        using (var scope = ScopeFactory.CreateScope())
+            await scope.ServiceProvider.GetRequiredService<INotificationService>().MarkAllReadAsync(_userId);
+        await LoadAsync();
+    }
+}

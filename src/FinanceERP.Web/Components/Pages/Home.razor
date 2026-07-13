@@ -1,0 +1,148 @@
+@page "/"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Dashboard</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Dashboard</MudText>
+
+@if (_summary is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <MudGrid Spacing="3">
+        <AuthorizeView Policy="@Permissions.LedgerView">
+            <DashCard Title="Cash in Hand" Value="@_summary.CashInHand" Icon="@Icons.Material.Filled.Money" Color="Color.Success" />
+            <DashCard Title="Bank Balance" Value="@_summary.BankBalance" Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Info" />
+            <DashCard Title="Petty Cash" Value="@_summary.PettyCash" Icon="@Icons.Material.Filled.Payments" Color="Color.Warning" />
+            <DashCard Title="Today's Debit" Value="@_summary.TodayDebit" Icon="@Icons.Material.Filled.ArrowUpward" Color="Color.Error" />
+            <DashCard Title="Today's Credit" Value="@_summary.TodayCredit" Icon="@Icons.Material.Filled.ArrowDownward" Color="Color.Primary" />
+            <DashCard Title="Outstanding Advances" Value="@_summary.OutstandingAdvances" Icon="@Icons.Material.Filled.CreditCard" Color="Color.Secondary" />
+            <DashCard Title="Loans Given" Value="@_summary.LoansReceivable" Icon="@Icons.Material.Filled.CallMade" Color="Color.Tertiary" />
+            <DashCard Title="Loans Taken" Value="@_summary.LoansPayable" Icon="@Icons.Material.Filled.CallReceived" Color="Color.Dark" />
+            <DashCard Title="Investments" Value="@_summary.Investments" Icon="@Icons.Material.Filled.TrendingUp" Color="Color.Success" />
+        </AuthorizeView>
+
+        <AuthorizeView Policy="@Permissions.RequestsViewAll">
+            <MudItem xs="6" sm="4" md="3">
+                <MudPaper Class="pa-4">
+                    <MudText Typo="Typo.caption">Pending Payments</MudText>
+                    <MudText Typo="Typo.h5">@_summary.PendingRequests</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" sm="4" md="3">
+                <MudPaper Class="pa-4">
+                    <MudText Typo="Typo.caption">Pending Approvals</MudText>
+                    <MudText Typo="Typo.h5">@_summary.PendingApprovals</MudText>
+                </MudPaper>
+            </MudItem>
+        </AuthorizeView>
+
+        <AuthorizeView Policy="@Permissions.LedgerView">
+            <MudItem xs="12" md="7">
+                <MudPaper Class="pa-4">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">Cash Flow (last 30 days)</MudText>
+                    @if (_cashFlow.Count > 0)
+                    {
+                        <MudChart ChartType="ChartType.Line" ChartSeries="@_cashFlowSeries" XAxisLabels="@_cashFlowLabels"
+                                  Width="100%" Height="280px" ChartOptions="@(new ChartOptions { YAxisTicks = 5 })" />
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">No cash movements yet.</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="5">
+                <MudPaper Class="pa-4">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">Expense Breakdown (this month)</MudText>
+                    @if (_expenses.Count > 0)
+                    {
+                        <MudChart ChartType="ChartType.Donut" InputData="@_expenseData" InputLabels="@_expenseLabels"
+                                  Width="100%" Height="280px" />
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">No expenses recorded this month.</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+        </AuthorizeView>
+
+        <AuthorizeView Policy="@Permissions.RequestsViewOwn">
+            <MudItem xs="12">
+                <MudPaper Class="pa-4">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">My recent requests</MudText>
+                    <MudSimpleTable Dense="true" Hover="true">
+                        <thead>
+                            <tr><th>No</th><th>Purpose</th><th style="text-align:right">Amount</th><th>Status</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in _myRequests)
+                            {
+                                <tr>
+                                    <td><MudLink Href="@($"/requests/{r.Id}")">@r.RequestNo</MudLink></td>
+                                    <td>@r.Purpose</td>
+                                    <td style="text-align:right">@r.TotalAmount.ToString("N2")</td>
+                                    <td><StatusChip Status="@r.Status" /></td>
+                                </tr>
+                            }
+                            @if (_myRequests.Count == 0)
+                            {
+                                <tr><td colspan="4">No requests yet — create one from "My Requests".</td></tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </MudPaper>
+            </MudItem>
+        </AuthorizeView>
+    </MudGrid>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private DailySummaryDto? _summary;
+    private List<CashFlowPointDto> _cashFlow = [];
+    private List<ExpenseBreakdownDto> _expenses = [];
+    private List<PaymentRequest> _myRequests = [];
+
+    private List<ChartSeries> _cashFlowSeries = [];
+    private string[] _cashFlowLabels = [];
+    private double[] _expenseData = [];
+    private string[] _expenseLabels = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var reports = scope.ServiceProvider.GetRequiredService<IReportService>();
+        var today = DateOnly.FromDateTime(DateTime.Today);
+
+        _summary = await reports.DailySummaryAsync();
+        _cashFlow = await reports.CashFlowAsync(today.AddDays(-30), today);
+        _expenses = await reports.ExpenseBreakdownAsync(new DateOnly(today.Year, today.Month, 1), today);
+
+        _cashFlowLabels = _cashFlow.Select(p => p.Date.ToString("dd MMM")).ToArray();
+        _cashFlowSeries =
+        [
+            new ChartSeries { Name = "Inflow", Data = _cashFlow.Select(p => (double)p.Inflow).ToArray() },
+            new ChartSeries { Name = "Outflow", Data = _cashFlow.Select(p => (double)p.Outflow).ToArray() }
+        ];
+        _expenseData = _expenses.Take(8).Select(e => (double)e.Amount).ToArray();
+        _expenseLabels = _expenses.Take(8).Select(e => e.Category).ToArray();
+
+        if (AuthState is not null)
+        {
+            var auth = await AuthState;
+            var userId = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (userId is not null)
+            {
+                var requests = scope.ServiceProvider.GetRequiredService<IPaymentRequestService>();
+                _myRequests = (await requests.ListAsync(new ReportFilter { PageSize = 5 }, userId)).Items.ToList();
+            }
+        }
+    }
+}

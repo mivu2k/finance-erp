@@ -1,0 +1,112 @@
+@page "/vouchers"
+@attribute [Authorize(Policy = Permissions.VouchersView)]
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Vouchers</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Vouchers</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@Permissions.VouchersCreate">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   Href="/vouchers/new">New Voucher</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="6" md="2"><MudDatePicker Label="From" @bind-Date="_from" /></MudItem>
+        <MudItem xs="6" md="2"><MudDatePicker Label="To" @bind-Date="_to" /></MudItem>
+        <MudItem xs="6" md="2">
+            <MudSelect T="VoucherType?" @bind-Value="_type" Label="Type" Clearable="true">
+                @foreach (VoucherType t in Enum.GetValues<VoucherType>())
+                {
+                    <MudSelectItem T="VoucherType?" Value="@t">@t</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" md="2">
+            <MudSelect T="VoucherStatus?" @bind-Value="_status" Label="Status" Clearable="true">
+                @foreach (VoucherStatus s in Enum.GetValues<VoucherStatus>())
+                {
+                    <MudSelectItem T="VoucherStatus?" Value="@s">@s</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="8" md="3"><MudTextField @bind-Value="_search" Label="Search" Immediate="true" /></MudItem>
+        <MudItem xs="4" md="1" Class="d-flex align-end">
+            <MudButton Variant="Variant.Outlined" OnClick="@(() => _table!.ReloadServerData())">Filter</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudTable @ref="_table" T="VoucherListItemDto" ServerData="LoadData" Dense="true" Hover="true" Striped="true">
+    <HeaderContent>
+        <MudTh>Voucher No</MudTh><MudTh>Date</MudTh><MudTh>Type</MudTh><MudTh>Status</MudTh>
+        <MudTh>Narration</MudTh><MudTh Style="text-align:right">Amount</MudTh><MudTh>Source</MudTh><MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd><MudLink Href="@($"/vouchers/{context.Id}")">@context.VoucherNo</MudLink></MudTd>
+        <MudTd>@context.Date.ToString("yyyy-MM-dd")</MudTd>
+        <MudTd>@context.Type</MudTd>
+        <MudTd>
+            <MudChip T="string" Size="Size.Small"
+                     Color="@(context.Status == VoucherStatus.Posted ? Color.Success : context.Status == VoucherStatus.Void ? Color.Error : Color.Default)">
+                @context.Status
+            </MudChip>
+        </MudTd>
+        <MudTd>@context.Narration</MudTd>
+        <MudTd Style="text-align:right">@context.Amount.ToString("N2")</MudTd>
+        <MudTd>@context.Source</MudTd>
+        <MudTd>
+            <AuthorizeView Policy="@Permissions.VouchersPost" Context="p">
+                @if (context.Status == VoucherStatus.Draft)
+                {
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success"
+                                   title="Post" OnClick="@(() => Post(context.Id))" />
+                }
+            </AuthorizeView>
+        </MudTd>
+    </RowTemplate>
+    <PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+
+@code {
+    private MudTable<VoucherListItemDto>? _table;
+    private DateTime? _from;
+    private DateTime? _to;
+    private VoucherType? _type;
+    private VoucherStatus? _status;
+    private string _search = "";
+
+    private async Task<TableData<VoucherListItemDto>> LoadData(TableState state, CancellationToken ct)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<IVoucherService>();
+        var result = await svc.ListAsync(new ReportFilter
+        {
+            From = _from is null ? null : DateOnly.FromDateTime(_from.Value),
+            To = _to is null ? null : DateOnly.FromDateTime(_to.Value),
+            VoucherType = _type,
+            VoucherStatus = _status,
+            Search = _search,
+            Page = state.Page + 1,
+            PageSize = state.PageSize
+        });
+        return new TableData<VoucherListItemDto> { Items = result.Items, TotalItems = result.TotalCount };
+    }
+
+    private async Task Post(int id)
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IVoucherService>().PostAsync(id);
+            Snackbar.Add("Voucher posted.", Severity.Success);
+            await _table!.ReloadServerData();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

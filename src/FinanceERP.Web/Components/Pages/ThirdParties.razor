@@ -1,0 +1,100 @@
+@page "/third-parties"
+@attribute [Authorize(Policy = Permissions.ThirdPartiesView)]
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Third Parties</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h5">Third Parties</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@Permissions.ThirdPartiesManage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => _editing = new ThirdParty())">New Third Party</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudTextField @bind-Value="_search" Label="Search by name or phone" Immediate="true"
+                  Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search"
+                  OnAdornmentClick="@(() => _table!.ReloadServerData())" />
+</MudPaper>
+
+<MudTable @ref="_table" T="ThirdParty" ServerData="LoadData" Dense="true" Hover="true" Striped="true">
+    <HeaderContent>
+        <MudTh>Name</MudTh><MudTh>Type</MudTh><MudTh>Phone</MudTh><MudTh>Email</MudTh>
+        <MudTh>Tax No</MudTh><MudTh Style="text-align:right">Ledger Balance</MudTh><MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.Name</MudTd>
+        <MudTd>@context.Type</MudTd>
+        <MudTd>@context.Phone</MudTd>
+        <MudTd>@context.Email</MudTd>
+        <MudTd>@context.TaxNumber</MudTd>
+        <MudTd Style="text-align:right">@(_balances.TryGetValue(context.Id, out var b) ? b.ToString("N2") : "—")</MudTd>
+        <MudTd>
+            <AuthorizeView Policy="@Permissions.ThirdPartiesManage" Context="m">
+                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit" OnClick="@(() => _editing = context)" />
+            </AuthorizeView>
+        </MudTd>
+    </RowTemplate>
+    <PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+
+@if (_editing is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:480px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_editing.Id == 0 ? "New Third Party" : _editing.Name)</MudText>
+            <MudTextField @bind-Value="_editing.Name" Label="Name" Class="mb-2" />
+            <MudSelect T="ThirdPartyType" @bind-Value="_editing.Type" Label="Type" Class="mb-2">
+                @foreach (ThirdPartyType t in Enum.GetValues<ThirdPartyType>())
+                {
+                    <MudSelectItem Value="@t">@t</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField @bind-Value="_editing.Phone" Label="Phone" Class="mb-2" />
+            <MudTextField @bind-Value="_editing.Email" Label="Email" Class="mb-2" />
+            <MudTextField @bind-Value="_editing.Address" Label="Address" Class="mb-2" />
+            <MudTextField @bind-Value="_editing.TaxNumber" Label="NTN / Tax Number" Class="mb-2" />
+            <MudTextField @bind-Value="_editing.Notes" Label="Notes" Lines="2" Class="mb-2" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _editing = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    private MudTable<ThirdParty>? _table;
+    private string _search = "";
+    private ThirdParty? _editing;
+    private Dictionary<int, decimal> _balances = [];
+
+    private async Task<TableData<ThirdParty>> LoadData(TableState state, CancellationToken ct)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var result = await scope.ServiceProvider.GetRequiredService<IThirdPartyService>()
+            .ListAsync(new ReportFilter { Search = _search, Page = state.Page + 1, PageSize = state.PageSize });
+        var accounts = scope.ServiceProvider.GetRequiredService<IAccountService>();
+        _balances = [];
+        foreach (var tp in result.Items.Where(t => t.AccountId is not null))
+            _balances[tp.Id] = await accounts.GetBalanceAsync(tp.AccountId!.Value);
+        return new TableData<ThirdParty> { Items = result.Items, TotalItems = result.TotalCount };
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IThirdPartyService>().SaveAsync(_editing!);
+            Snackbar.Add("Third party saved (ledger account auto-created).", Severity.Success);
+            _editing = null;
+            await _table!.ReloadServerData();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

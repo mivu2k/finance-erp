@@ -1,0 +1,17 @@
+<MudPaper Class="pa-4">
+    <MudText Typo="Typo.subtitle1" Class="mb-2">@Level Approval</MudText>
+    <MudTextField @bind-Value="_comment" Label="Comment (optional)" Class="mb-3" />
+    <div class="d-flex gap-2">
+        <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Check"
+                   OnClick="@(() => OnApprove.InvokeAsync((Level, _comment)))">Approve</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Close"
+                   OnClick="@(() => OnReject.InvokeAsync((Level, _comment)))">Reject</MudButton>
+    </div>
+</MudPaper>
+
+@code {
+    [Parameter] public string Level { get; set; } = "";
+    [Parameter] public EventCallback<(string, string?)> OnApprove { get; set; }
+    [Parameter] public EventCallback<(string, string?)> OnReject { get; set; }
+    private string? _comment;
+}
