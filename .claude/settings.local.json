@@ -6,7 +6,17 @@
       "Bash(dotnet new *)",
       "Bash(dotnet sln *)",
       "Bash(curl -s https://api.nuget.org/v3-flatcontainer/pomelo.entityframeworkcore.mysql/index.json)",
-      "Bash(dotnet build *)"
+      "Bash(dotnet build *)",
+      "Bash(LC_ALL=C sed -i '' 's|http://localhost:5000|http://localhost:5080|' src/FinanceERP.Web/appsettings.json)",
+      "Bash(LC_ALL=C sed -i '' 's/\"port\": 5000/\"port\": 5080/' .claude/launch.json)",
+      "Bash(curl -s -o /dev/null --max-time 2 http://localhost:5080/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code} %{url_effective}\\\\n\" -L http://localhost:5080/ --max-time 30)",
+      "Bash(python3 -)",
+      "Bash(curl -s -o /dev/null -w \"root: %{http_code}\\\\n\" http://localhost:5080/)",
+      "Bash(curl -s -o /dev/null -w \"mudcss: %{http_code}\\\\n\" http://localhost:5080/_content/MudBlazor/MudBlazor.min.css)",
+      "Bash(rm -rf src/*/bin src/*/obj && dotnet build FinanceERP.slnx 2>&1 | grep -cE \"error\" ; echo BUILD_DONE)",
+      "Bash(curl -s -o /dev/null -w \"blazorjs: %{http_code}\\\\n\" http://localhost:5080/_framework/blazor.web.js)",
+      "Bash(curl -s -b /tmp/none \"http://localhost:5080/export/trial-balance?format=pdf\" -o /dev/null -w \"unauth-export: %{http_code}\\\\n\")"
     ]
   }
 }

@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "finance-erp",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "cd src/FinanceERP.Web && ASPNETCORE_ENVIRONMENT=Development dotnet run --no-launch-profile"
+      ],
+      "port": 5080
+    }
+  ]
+}

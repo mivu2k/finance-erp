@@ -136,20 +136,23 @@ public class ReportService(AppDbContext db) : IReportService
             .Where(l => l.Voucher.Status == VoucherStatus.Posted && cashIds.Contains(l.AccountId)
                 && l.Voucher.Date >= from && l.Voucher.Date <= to)
             .GroupBy(l => l.Voucher.Date)
-            .Select(g => new CashFlowPointDto(g.Key, g.Sum(x => x.Debit), g.Sum(x => x.Credit)))
+            .Select(g => new { Date = g.Key, Inflow = g.Sum(x => x.Debit), Outflow = g.Sum(x => x.Credit) })
             .OrderBy(p => p.Date)
             .ToListAsync();
-        return points;
+        return points.Select(p => new CashFlowPointDto(p.Date, p.Inflow, p.Outflow)).ToList();
     }
 
-    public Task<List<ExpenseBreakdownDto>> ExpenseBreakdownAsync(DateOnly from, DateOnly to) =>
-        db.VoucherLines.AsNoTracking()
+    public async Task<List<ExpenseBreakdownDto>> ExpenseBreakdownAsync(DateOnly from, DateOnly to)
+    {
+        var rows = await db.VoucherLines.AsNoTracking()
             .Where(l => l.Voucher.Status == VoucherStatus.Posted && l.Account.Type == AccountType.Expense
                 && l.Voucher.Date >= from && l.Voucher.Date <= to)
             .GroupBy(l => l.Account.Name)
-            .Select(g => new ExpenseBreakdownDto(g.Key, g.Sum(x => x.Debit) - g.Sum(x => x.Credit)))
+            .Select(g => new { Category = g.Key, Amount = g.Sum(x => x.Debit) - g.Sum(x => x.Credit) })
             .OrderByDescending(e => e.Amount)
             .ToListAsync();
+        return rows.Select(r => new ExpenseBreakdownDto(r.Category, r.Amount)).ToList();
+    }
 
     public async Task<DailySummaryDto> DailySummaryAsync(string? forUserId = null)
     {
@@ -160,8 +163,11 @@ public class ReportService(AppDbContext db) : IReportService
             .GroupBy(_ => 1).Select(g => new { D = g.Sum(x => x.Debit), C = g.Sum(x => x.Credit) })
             .FirstOrDefaultAsync();
 
-        async Task<decimal> BalanceByCodes(params string[] codes)
+        // List<string> (not array): array Contains binds to a span overload on .NET 10
+        // that EF Core 9 cannot evaluate.
+        async Task<decimal> BalanceByCodes(params IEnumerable<string> codesIn)
         {
+            var codes = codesIn.ToList();
             var s = await posted.Where(l => codes.Contains(l.Account.Code) ||
                     (l.Account.Parent != null && codes.Contains(l.Account.Parent.Code)))
                 .GroupBy(_ => 1).Select(g => new { D = g.Sum(x => x.Debit), C = g.Sum(x => x.Credit) })

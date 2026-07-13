@@ -1,7 +1,6 @@
 @page "/vouchers/new"
 @page "/vouchers/{Id:int}"
 @attribute [Authorize(Policy = Permissions.VouchersView)]
-@rendermode InteractiveServer
 @inject IServiceScopeFactory ScopeFactory
 @inject ISnackbar Snackbar
 @inject NavigationManager Nav
