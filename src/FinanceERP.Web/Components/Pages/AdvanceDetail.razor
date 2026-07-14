@@ -75,18 +75,36 @@ else
                                 <td>@(lateDays > 0 ? lateDays.ToString() : "—")</td>
                                 <td>
                                     <MudChip T="string" Size="Size.Small"
-                                             Color="@(i.Status == InstallmentStatus.Paid ? Color.Success : lateDays > 0 ? Color.Error : Color.Default)">
-                                        @(lateDays > 0 && i.Status != InstallmentStatus.Paid ? "Overdue" : i.Status.ToString())
+                                             Color="@(i.Status == InstallmentStatus.Paid ? Color.Success : i.Status == InstallmentStatus.PendingConfirmation ? Color.Warning : lateDays > 0 ? Color.Error : Color.Default)">
+                                        @(i.Status == InstallmentStatus.PendingConfirmation ? "Awaiting Confirmation"
+                                            : lateDays > 0 && i.Status != InstallmentStatus.Paid ? "Overdue" : i.Status.ToString())
                                     </MudChip>
                                 </td>
-                                <td>
-                                    <AuthorizeView Policy="@Permissions.AdvancesManage" Context="m">
-                                        @if (i.Status != InstallmentStatus.Paid && _advance.Status is AdvanceStatus.Disbursed or AdvanceStatus.Repaying)
+                                <td style="white-space:nowrap">
+                                    @if (_advance.Status is AdvanceStatus.Disbursed or AdvanceStatus.Repaying)
+                                    {
+                                        @if (i.Status == InstallmentStatus.PendingConfirmation)
                                         {
-                                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
-                                                       OnClick="@(() => Repay(i))">Record repayment</MudButton>
+                                            <AuthorizeView Policy="@Permissions.AdvancesManage" Context="c">
+                                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                                                           Disabled="@_busy" OnClick="@(() => ConfirmClaim(i))">Confirm</MudButton>
+                                                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error"
+                                                           Disabled="@_busy" OnClick="@(() => RejectClaim(i))">Reject</MudButton>
+                                            </AuthorizeView>
                                         }
-                                    </AuthorizeView>
+                                        else if (i.Status != InstallmentStatus.Paid)
+                                        {
+                                            @if (_isOwner)
+                                            {
+                                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                                                           Disabled="@_busy" OnClick="@(() => Claim(i))">I've paid this</MudButton>
+                                            }
+                                            <AuthorizeView Policy="@Permissions.AdvancesManage" Context="m">
+                                                <MudButton Size="Size.Small" Variant="Variant.Text"
+                                                           Disabled="@_busy" OnClick="@(() => Repay(i))">Record repayment</MudButton>
+                                            </AuthorizeView>
+                                        }
+                                    }
                                 </td>
                             </tr>
                         }
@@ -103,9 +121,12 @@ else
 
 @code {
     [Parameter] public int Id { get; set; }
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
     private EmployeeAdvance? _advance;
     private List<Account> _cashAccounts = [];
     private int? _cashAccountId;
+    private bool _isOwner;
+    private bool _busy;
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -116,7 +137,58 @@ else
         var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
         _cashAccounts = db.Accounts.Where(a => a.Code == "1100" || a.Code == "1201").ToList();
         _cashAccountId ??= _cashAccounts.FirstOrDefault()?.Id;
+        if (AuthState is not null && _advance is not null)
+        {
+            var auth = await AuthState;
+            _isOwner = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value == _advance.EmployeeId;
+        }
         StateHasChanged();
+    }
+
+    private async Task Claim(AdvanceInstallment installment)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IAdvanceService>().ClaimInstallmentPaidAsync(installment.Id);
+            Snackbar.Add("Marked as paid — waiting for accounts to confirm.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private async Task ConfirmClaim(AdvanceInstallment installment)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var voucher = await scope.ServiceProvider.GetRequiredService<IAdvanceService>()
+                .ConfirmInstallmentClaimAsync(installment.Id, _cashAccountId ?? _cashAccounts.First().Id);
+            Snackbar.Add($"Confirmed — voucher {voucher.VoucherNo} posted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private async Task RejectClaim(AdvanceInstallment installment)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IAdvanceService>().RejectInstallmentClaimAsync(installment.Id, null);
+            Snackbar.Add("Claim rejected — employee notified.", Severity.Warning);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
     }
 
     private async Task Approve()

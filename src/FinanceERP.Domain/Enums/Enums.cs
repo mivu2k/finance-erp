@@ -80,7 +80,9 @@ public enum InstallmentStatus
     Pending = 0,
     PartiallyPaid = 1,
     Paid = 2,
-    Overdue = 3
+    Overdue = 3,
+    /// <summary>Employee claims this installment is paid; awaiting accountant confirmation.</summary>
+    PendingConfirmation = 4
 }
 
 public enum LoanDirection

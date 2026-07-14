@@ -58,6 +58,11 @@ public interface IAdvanceService
     Task RejectAsync(int id, string? reason);
     Task<Voucher> DisburseAsync(int id, int payFromAccountId);
     Task<Voucher> RepayInstallmentAsync(int installmentId, decimal amount, int receiveIntoAccountId, DateOnly date);
+
+    // Employee-initiated repayment: claim → accountant confirms (posts) or rejects.
+    Task ClaimInstallmentPaidAsync(int installmentId);
+    Task<Voucher> ConfirmInstallmentClaimAsync(int installmentId, int receiveIntoAccountId);
+    Task RejectInstallmentClaimAsync(int installmentId, string? reason);
 }
 
 public interface ILoanService

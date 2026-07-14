@@ -214,6 +214,15 @@ else
                 <AuthorizeView Policy="@Permissions.RequestsApproveAdmin">
                     <MudPaper Class="pa-4">
                         <MudText Typo="Typo.subtitle1" Class="mb-2">Justification Review</MudText>
+                        @{ var overspend = _request.Lines.Sum(l => l.Amount) - _request.TotalAmount; }
+                        @if (overspend > 0)
+                        {
+                            <MudAlert Severity="Severity.Warning" Class="mb-3">
+                                <b>Overspend:</b> @_request.RequesterName spent @overspend.ToString("N2") more than the
+                                advance of @_request.TotalAmount.ToString("N2"). Approving authorizes reimbursing this
+                                extra amount at settlement.
+                            </MudAlert>
+                        }
                         <MudTextField @bind-Value="_comment" Label="Comment (optional)" Class="mb-3" />
                         <div class="d-flex gap-2">
                             <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@_busy"

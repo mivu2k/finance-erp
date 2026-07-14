@@ -133,6 +133,54 @@ public class AdvanceService(
         return voucher;
     }
 
+    /// <summary>Employee says "I've paid this installment" — nothing posts until confirmed.</summary>
+    public async Task ClaimInstallmentPaidAsync(int installmentId)
+    {
+        var inst = await db.AdvanceInstallments.Include(i => i.EmployeeAdvance).FirstAsync(i => i.Id == installmentId);
+        var a = inst.EmployeeAdvance;
+        if (a.EmployeeId != currentUser.UserId)
+            throw new UnauthorizedAccessException("You can only claim your own installments.");
+        if (inst.Status is not (InstallmentStatus.Pending or InstallmentStatus.Overdue or InstallmentStatus.PartiallyPaid))
+            throw new InvalidOperationException("This installment cannot be claimed.");
+
+        inst.Status = InstallmentStatus.PendingConfirmation;
+        await db.SaveChangesAsync();
+        await notifications.NotifyRoleAsync(AppRoles.Accountant, $"Confirm repayment: {a.AdvanceNo} #{inst.Number}",
+            $"{a.EmployeeName} claims installment of {inst.Amount - inst.PaidAmount:N2} is paid.",
+            NotificationType.ApprovalRequest, $"/advances/{a.Id}");
+    }
+
+    /// <summary>Accountant confirms the employee's claim — posts the repayment voucher.</summary>
+    public async Task<Voucher> ConfirmInstallmentClaimAsync(int installmentId, int receiveIntoAccountId)
+    {
+        var inst = await db.AdvanceInstallments.Include(i => i.EmployeeAdvance).FirstAsync(i => i.Id == installmentId);
+        if (inst.Status != InstallmentStatus.PendingConfirmation)
+            throw new InvalidOperationException("No repayment claim to confirm.");
+        // Reset so RepayInstallment's state math runs from the claimed base.
+        inst.Status = inst.PaidAmount > 0 ? InstallmentStatus.PartiallyPaid : InstallmentStatus.Pending;
+        var voucher = await RepayInstallmentAsync(installmentId, inst.Amount - inst.PaidAmount,
+            receiveIntoAccountId, DateOnly.FromDateTime(DateTime.Today));
+        await notifications.NotifyAsync(inst.EmployeeAdvance.EmployeeId,
+            $"Repayment confirmed: {inst.EmployeeAdvance.AdvanceNo} #{inst.Number}",
+            $"Voucher {voucher.VoucherNo}", NotificationType.Approved, $"/advances/{inst.EmployeeAdvanceId}");
+        return voucher;
+    }
+
+    public async Task RejectInstallmentClaimAsync(int installmentId, string? reason)
+    {
+        var inst = await db.AdvanceInstallments.Include(i => i.EmployeeAdvance).FirstAsync(i => i.Id == installmentId);
+        if (inst.Status != InstallmentStatus.PendingConfirmation)
+            throw new InvalidOperationException("No repayment claim to reject.");
+        inst.Status = inst.DueDate < DateOnly.FromDateTime(DateTime.Today)
+            ? InstallmentStatus.Overdue
+            : inst.PaidAmount > 0 ? InstallmentStatus.PartiallyPaid : InstallmentStatus.Pending;
+        await db.SaveChangesAsync();
+        await notifications.NotifyAsync(inst.EmployeeAdvance.EmployeeId,
+            $"Repayment claim rejected: {inst.EmployeeAdvance.AdvanceNo} #{inst.Number}",
+            reason ?? "The accountant could not confirm this payment.",
+            NotificationType.Rejected, $"/advances/{inst.EmployeeAdvanceId}");
+    }
+
     /// <summary>
     /// Repayment (e.g. salary deduction): Dr cash/salary-payable, Cr employee's advance sub-account.
     /// </summary>
