@@ -44,8 +44,14 @@ public interface IPaymentRequestService
     Task SubmitJustificationAsync(int id, List<PaymentRequestLine> lines);
     Task ApproveJustificationAsync(int id, string? comment);
     Task RejectJustificationAsync(int id, string? comment);
-    /// <summary>Posts actuals, clears the advance, and settles the cash difference.</summary>
-    Task<Voucher> SettleAsync(int id, int cashAccountId, string? comment, IReadOnlyDictionary<int, int> lineAccounts);
+    /// <summary>
+    /// Posts actuals and clears the advance. If <paramref name="settleDifferenceNow"/> the
+    /// difference moves through <paramref name="cashAccountId"/> immediately; otherwise
+    /// overspend is booked to an employee payable (paid manually later) and underspend
+    /// stays on the employee's advance account (collected manually later).
+    /// </summary>
+    Task<Voucher> SettleAsync(int id, int? cashAccountId, string? comment,
+        IReadOnlyDictionary<int, int> lineAccounts, bool settleDifferenceNow = true);
 }
 
 public interface IAdvanceService
