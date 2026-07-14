@@ -59,6 +59,7 @@ builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProv
 builder.Services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
 
 builder.Services.AddHostedService<FinanceERP.Web.Services.AlertsBackgroundService>();
+builder.Services.AddSingleton<FinanceERP.Web.Services.ReceiptStorage>();
 
 var app = builder.Build();
 
@@ -94,5 +95,14 @@ app.MapRazorComponents<App>()
 
 app.MapAdditionalIdentityEndpoints();
 app.MapExportEndpoints();
+
+// Authenticated receipt downloads (files live outside wwwroot).
+app.MapGet("/files/receipts/{name}", (string name, FinanceERP.Web.Services.ReceiptStorage storage) =>
+{
+    var path = storage.Resolve(name);
+    return path is null
+        ? Results.NotFound()
+        : Results.File(path, FinanceERP.Web.Services.ReceiptStorage.ContentType(path));
+}).RequireAuthorization();
 
 app.Run();

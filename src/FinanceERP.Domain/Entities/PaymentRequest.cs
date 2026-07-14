@@ -44,6 +44,10 @@ public class PaymentRequestLine : BaseEntity
     public decimal Amount { get; set; }
     public string? Reason { get; set; }
     public string? Description { get; set; }
+    /// <summary>Stored file name of the uploaded receipt (under the app's uploads folder).</summary>
+    public string? AttachmentPath { get; set; }
+    /// <summary>Original file name, shown to users.</summary>
+    public string? AttachmentName { get; set; }
     public int LineNo { get; set; }
 }
 

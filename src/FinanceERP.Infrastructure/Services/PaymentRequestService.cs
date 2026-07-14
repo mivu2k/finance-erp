@@ -76,7 +76,8 @@ public class PaymentRequestService(
                 existing.Lines = request.Lines.Select((l, i) => new PaymentRequestLine
                 {
                     AccountId = l.AccountId, Category = l.Category, Amount = l.Amount,
-                    Reason = l.Reason, Description = l.Description, LineNo = i + 1
+                    Reason = l.Reason, Description = l.Description, LineNo = i + 1,
+                    AttachmentPath = l.AttachmentPath, AttachmentName = l.AttachmentName
                 }).ToList();
                 existing.TotalAmount = existing.Lines.Sum(l => l.Amount);
             }
@@ -239,7 +240,8 @@ public class PaymentRequestService(
         r.Lines = lines.Select((l, i) => new PaymentRequestLine
         {
             Category = l.Category, Amount = l.Amount, Reason = l.Reason,
-            Description = l.Description, LineNo = i + 1
+            Description = l.Description, LineNo = i + 1,
+            AttachmentPath = l.AttachmentPath, AttachmentName = l.AttachmentName
         }).ToList();
         r.Status = RequestStatus.JustificationPending;
         AddTrail(r, "Requester", ApprovalAction.Submitted, $"Justified {r.Lines.Sum(l => l.Amount):N2} of {r.TotalAmount:N2}");

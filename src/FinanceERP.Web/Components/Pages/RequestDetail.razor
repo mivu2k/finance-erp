@@ -68,7 +68,15 @@ else
                         {
                             <tr>
                                 <td>@l.Category</td>
-                                <td>@l.Reason @l.Description</td>
+                                <td>
+                                    @l.Reason @l.Description
+                                    @if (l.AttachmentPath is not null)
+                                    {
+                                        <MudLink Href="@($"/files/receipts/{l.AttachmentPath}")" Target="_blank" Class="ml-1">
+                                            <MudIcon Icon="@Icons.Material.Filled.Receipt" Size="Size.Small" title="@l.AttachmentName" />
+                                        </MudLink>
+                                    }
+                                </td>
                                 <td>
                                     @if (_canClassify)
                                     {
@@ -174,10 +182,13 @@ else
                             <MudItem xs="6" sm="2">
                                 <MudNumericField T="decimal" @bind-Value="line.Amount" Label="Amount" Min="0" Format="N2" Margin="Margin.Dense" />
                             </MudItem>
-                            <MudItem xs="6" sm="6">
+                            <MudItem xs="6" sm="4">
                                 <MudTextField @bind-Value="line.Reason" Label="Reason" Margin="Margin.Dense" />
                             </MudItem>
-                            <MudItem xs="12" sm="1" Class="d-flex align-center">
+                            <MudItem xs="8" sm="2" Class="d-flex align-center">
+                                <ReceiptUpload Line="@line" />
+                            </MudItem>
+                            <MudItem xs="4" sm="1" Class="d-flex align-center">
                                 <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
                                                Disabled="@(_justification.Count == 1)"
                                                OnClick="@(() => _justification.Remove(line))" />

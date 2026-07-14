@@ -87,8 +87,11 @@
                 <MudItem xs="12" sm="5" md="3">
                     <MudTextField @bind-Value="line.Reason" Label="Reason *" Margin="Margin.Dense" />
                 </MudItem>
-                <MudItem xs="10" sm="10" md="3">
+                <MudItem xs="10" sm="8" md="2">
                     <MudTextField @bind-Value="line.Description" Label="Details (optional)" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="2" md="1" Class="d-flex align-center">
+                    <ReceiptUpload Line="@line" />
                 </MudItem>
                 <MudItem xs="2" sm="2" md="1" Class="d-flex align-center justify-end">
                     <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"

@@ -20,3 +20,4 @@ logs/
 ## Secrets — never commit real credentials
 appsettings.Production.json
 appsettings.*.local.json
+uploads/
