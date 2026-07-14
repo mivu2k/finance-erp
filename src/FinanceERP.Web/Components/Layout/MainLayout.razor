@@ -35,8 +35,10 @@
     <MudDrawer @bind-Open="_drawerOpen" Elevation="1" ClipMode="DrawerClipMode.Always" Breakpoint="Breakpoint.Md">
         <NavMenu />
     </MudDrawer>
-    <MudMainContent Class="pa-4">
-        @Body
+    <MudMainContent>
+        <div class="pa-4">
+            @Body
+        </div>
     </MudMainContent>
 </MudLayout>
 
