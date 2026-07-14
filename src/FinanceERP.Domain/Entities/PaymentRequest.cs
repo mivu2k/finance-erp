@@ -25,8 +25,12 @@ public class PaymentRequestLine : BaseEntity
 {
     public int PaymentRequestId { get; set; }
     public PaymentRequest PaymentRequest { get; set; } = null!;
-    public int AccountId { get; set; }
-    public Account Account { get; set; } = null!;
+    /// <summary>
+    /// Ledger account head. Employees only state what they need (category/amount/reason);
+    /// the accountant classifies each line to an account before paying.
+    /// </summary>
+    public int? AccountId { get; set; }
+    public Account? Account { get; set; }
     public string? Category { get; set; }
     public decimal Amount { get; set; }
     public string? Reason { get; set; }

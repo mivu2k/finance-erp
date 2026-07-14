@@ -20,30 +20,62 @@ else
             <MudChip T="string" Size="Size.Small" Color="Color.Info">Director Fund</MudChip>
         }
         <MudSpacer />
+        <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack" OnClick="@(() => Nav.NavigateTo("/requests/my"))">Back</MudButton>
         @if (_request.Status == RequestStatus.Draft)
         {
             <MudButton Variant="Variant.Outlined" Href="@($"/requests/{_request.Id}/edit")">Edit</MudButton>
+        }
+        @if (_request.Status is RequestStatus.Draft or RequestStatus.PendingManager && _isOwner)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="Cancel" Disabled="@_busy">Cancel Request</MudButton>
         }
     </div>
 
     <MudGrid Spacing="3">
         <MudItem xs="12" md="8">
             <MudPaper Class="pa-4 mb-4">
-                <MudText Typo="Typo.subtitle2" Class="mb-1">Requester: <b>@_request.RequesterName</b> · Department: @(_request.Department?.Name ?? "—")</MudText>
+                <MudText Typo="Typo.subtitle2" Class="mb-1">
+                    Requester: <b>@_request.RequesterName</b> · Department: @(_request.Department?.Name ?? "—")
+                </MudText>
                 <MudText Typo="Typo.body2" Class="mb-3">@_request.Purpose</MudText>
                 <MudSimpleTable Dense="true">
-                    <thead><tr><th>Account</th><th>Category</th><th>Reason</th><th style="text-align:right">Amount</th></tr></thead>
+                    <thead>
+                        <tr>
+                            <th>Category</th><th>Reason</th>
+                            <th>Account head</th>
+                            <th style="text-align:right">Amount</th>
+                        </tr>
+                    </thead>
                     <tbody>
                         @foreach (var l in _request.Lines)
                         {
                             <tr>
-                                <td>@l.Account?.Code @l.Account?.Name</td>
                                 <td>@l.Category</td>
                                 <td>@l.Reason @l.Description</td>
+                                <td>
+                                    @if (_canClassify)
+                                    {
+                                        <MudSelect T="int?" Value="@_lineAccounts.GetValueOrDefault(l.Id)"
+                                                   ValueChanged="@(v => _lineAccounts[l.Id] = v)"
+                                                   Dense="true" Margin="Margin.Dense" Placeholder="Assign account…">
+                                            @foreach (var a in _postableAccounts)
+                                            {
+                                                <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    }
+                                    else
+                                    {
+                                        @(l.Account is null ? "—" : $"{l.Account.Code} {l.Account.Name}")
+                                    }
+                                </td>
                                 <td style="text-align:right">@l.Amount.ToString("N2")</td>
                             </tr>
                         }
-                        <tr style="font-weight:600"><td colspan="3">Total</td><td style="text-align:right">@_request.TotalAmount.ToString("N2")</td></tr>
+                        <tr style="font-weight:600">
+                            <td colspan="3">Total</td>
+                            <td style="text-align:right">@_request.TotalAmount.ToString("N2")</td>
+                        </tr>
                     </tbody>
                 </MudSimpleTable>
                 @if (_request.Voucher is not null)
@@ -54,36 +86,57 @@ else
                 }
             </MudPaper>
 
-            @* Action panel per pending stage *@
             @if (_request.Status == RequestStatus.PendingManager)
             {
                 <AuthorizeView Policy="@Permissions.RequestsApproveManager">
-                    <ApprovalPanel Level="Manager" OnApprove="Approve" OnReject="Reject" />
+                    <ApprovalPanel Level="Manager" Busy="@_busy" OnApprove="Approve" OnReject="Reject" />
                 </AuthorizeView>
             }
             else if (_request.Status == RequestStatus.PendingAdmin)
             {
                 <AuthorizeView Policy="@Permissions.RequestsApproveAdmin">
-                    <ApprovalPanel Level="Admin" OnApprove="Approve" OnReject="Reject" />
+                    <ApprovalPanel Level="Admin" Busy="@_busy" OnApprove="Approve" OnReject="Reject" />
                 </AuthorizeView>
             }
             else if (_request.Status == RequestStatus.PendingAccountant)
             {
                 <AuthorizeView Policy="@Permissions.RequestsPay">
                     <MudPaper Class="pa-4">
-                        <MudText Typo="Typo.subtitle1" Class="mb-2">Pay Request</MudText>
-                        <MudSelect T="int?" @bind-Value="_payFromAccountId" Label="Pay from account" Class="mb-3">
-                            @foreach (var a in _cashAccounts)
-                            {
-                                <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
-                            }
-                        </MudSelect>
-                        <MudTextField @bind-Value="_comment" Label="Comment (optional)" Class="mb-3" />
-                        <div class="d-flex gap-2">
+                        <MudText Typo="Typo.subtitle1" Class="mb-1">Classify &amp; Pay</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                            Assign an account head to each line above, choose the paying account, then create the voucher.
+                        </MudText>
+                        <MudGrid Spacing="2">
+                            <MudItem xs="12" sm="6">
+                                <MudSelect T="int?" @bind-Value="_payFromAccountId" Label="Pay from account">
+                                    @foreach (var a in _cashAccounts)
+                                    {
+                                        <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="_comment" Label="Comment (optional)" />
+                            </MudItem>
+                        </MudGrid>
+                        <div class="d-flex gap-2 mt-3">
                             <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="Pay"
-                                       Disabled="@(_payFromAccountId is null)">Create Voucher &amp; Pay</MudButton>
-                            <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="@(() => Reject("Accountant", _comment))">Reject</MudButton>
+                                       Disabled="@(_busy || _payFromAccountId is null || !AllLinesClassified)">
+                                @if (_busy)
+                                {
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                }
+                                Create Voucher &amp; Pay
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="@_busy"
+                                       OnClick="@(() => Reject(("Accountant", _comment)))">Reject</MudButton>
                         </div>
+                        @if (!AllLinesClassified)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Warning" Class="mt-2">
+                                Assign an account head to every line to enable payment.
+                            </MudText>
+                        }
                     </MudPaper>
                 </AuthorizeView>
             }
@@ -112,10 +165,20 @@ else
 
 @code {
     [Parameter] public int Id { get; set; }
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
     private PaymentRequest? _request;
     private List<Account> _cashAccounts = [];
+    private List<Account> _postableAccounts = [];
+    private readonly Dictionary<int, int?> _lineAccounts = [];
     private int? _payFromAccountId;
     private string? _comment;
+    private bool _busy;
+    private bool _isOwner;
+    private bool _canClassify;
+
+    private bool AllLinesClassified =>
+        _request is not null && _request.Lines.All(l => _lineAccounts.GetValueOrDefault(l.Id) is not null);
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -126,47 +189,66 @@ else
         var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
         _cashAccounts = db.Accounts.Where(a => a.Code == "1100" || a.Code == "1201" || a.Code == "1300").ToList();
         _payFromAccountId ??= _cashAccounts.FirstOrDefault()?.Id;
+        _postableAccounts = db.Accounts.Where(a => a.IsPostable && a.IsActive
+                && (a.Type == AccountType.Expense || a.Type == AccountType.Asset))
+            .OrderBy(a => a.Code).ToList();
+
+        if (AuthState is not null && _request is not null)
+        {
+            var auth = await AuthState;
+            _isOwner = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value == _request.RequesterId;
+            _canClassify = _request.Status == RequestStatus.PendingAccountant
+                && auth.User.HasClaim(Permissions.ClaimType, Permissions.RequestsPay);
+        }
+
+        // Pre-fill classification: match category text to an account name.
+        if (_request is not null && _canClassify)
+            foreach (var l in _request.Lines)
+                if (!_lineAccounts.ContainsKey(l.Id))
+                    _lineAccounts[l.Id] = l.AccountId
+                        ?? _postableAccounts.FirstOrDefault(a => a.Name == l.Category)?.Id;
+
         StateHasChanged();
     }
 
-    private Task Approve((string Level, string? Comment) args) => ApproveCore(args.Level, args.Comment);
-    private Task Reject((string Level, string? Comment) args) => RejectCore(args.Level, args.Comment);
-    private Task Reject(string level, string? comment) => RejectCore(level, comment);
-
-    private async Task ApproveCore(string level, string? comment)
+    private Task Approve((string Level, string? Comment) args) => Run(async svc =>
     {
+        await svc.ApproveAsync(Id, args.Level, args.Comment);
+        Snackbar.Add($"Approved at {args.Level} level.", Severity.Success);
+    });
+
+    private Task Reject((string Level, string? Comment) args) => Run(async svc =>
+    {
+        await svc.RejectAsync(Id, args.Level, args.Comment);
+        Snackbar.Add("Request rejected.", Severity.Warning);
+    });
+
+    private Task Cancel() => Run(async svc =>
+    {
+        await svc.CancelAsync(Id);
+        Snackbar.Add("Request cancelled.", Severity.Info);
+    });
+
+    private Task Pay() => Run(async svc =>
+    {
+        var mapping = _lineAccounts
+            .Where(kv => kv.Value is not null)
+            .ToDictionary(kv => kv.Key, kv => kv.Value!.Value);
+        var voucher = await svc.PayAsync(Id, _payFromAccountId!.Value, _comment, mapping);
+        Snackbar.Add($"Paid — voucher {voucher.VoucherNo} posted.", Severity.Success);
+    });
+
+    private async Task Run(Func<IPaymentRequestService, Task> action)
+    {
+        if (_busy) return;
+        _busy = true;
         try
         {
             using var scope = ScopeFactory.CreateScope();
-            await scope.ServiceProvider.GetRequiredService<IPaymentRequestService>().ApproveAsync(Id, level, comment);
-            Snackbar.Add($"Approved at {level} level.", Severity.Success);
+            await action(scope.ServiceProvider.GetRequiredService<IPaymentRequestService>());
             await LoadAsync();
         }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
-    }
-
-    private async Task RejectCore(string level, string? comment)
-    {
-        try
-        {
-            using var scope = ScopeFactory.CreateScope();
-            await scope.ServiceProvider.GetRequiredService<IPaymentRequestService>().RejectAsync(Id, level, comment);
-            Snackbar.Add("Request rejected.", Severity.Warning);
-            await LoadAsync();
-        }
-        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
-    }
-
-    private async Task Pay()
-    {
-        try
-        {
-            using var scope = ScopeFactory.CreateScope();
-            var voucher = await scope.ServiceProvider.GetRequiredService<IPaymentRequestService>()
-                .PayAsync(Id, _payFromAccountId!.Value, _comment);
-            Snackbar.Add($"Paid — voucher {voucher.VoucherNo} posted.", Severity.Success);
-            await LoadAsync();
-        }
-        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
     }
 }

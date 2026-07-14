@@ -131,14 +131,24 @@ public class PaymentRequestService(
     /// Accountant pays: creates a posted payment voucher debiting each request line's
     /// expense account and crediting the cash/bank account, then marks the request Paid.
     /// </summary>
-    public async Task<Voucher> PayAsync(int id, int payFromAccountId, string? comment)
+    public async Task<Voucher> PayAsync(int id, int payFromAccountId, string? comment,
+        IReadOnlyDictionary<int, int>? lineAccounts = null)
     {
         var r = await db.PaymentRequests.Include(x => x.Lines).ThenInclude(l => l.Account).FirstAsync(x => x.Id == id);
         if (r.Status != RequestStatus.PendingAccountant)
             throw new InvalidOperationException("Request is not ready for payment.");
 
+        // The accountant classifies each line to a ledger account before payment.
+        if (lineAccounts is not null)
+            foreach (var line in r.Lines)
+                if (lineAccounts.TryGetValue(line.Id, out var accountId))
+                    line.AccountId = accountId;
+
+        if (r.Lines.Any(l => l.AccountId is null))
+            throw new InvalidOperationException("Assign an account head to every line before paying.");
+
         var lines = r.Lines
-            .Select(l => (l.AccountId, Debit: l.Amount, Credit: 0m,
+            .Select(l => (AccountId: l.AccountId!.Value, Debit: l.Amount, Credit: 0m,
                 Description: (string?)($"{r.RequestNo} — {l.Reason ?? l.Description ?? l.Category}")))
             .ToList();
         lines.Add((payFromAccountId, 0m, r.TotalAmount, $"{r.RequestNo} paid to {r.RequesterName}"));

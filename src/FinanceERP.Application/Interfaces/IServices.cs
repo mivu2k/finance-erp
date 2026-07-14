@@ -34,7 +34,9 @@ public interface IPaymentRequestService
     Task SubmitAsync(int id);
     Task ApproveAsync(int id, string level, string? comment);
     Task RejectAsync(int id, string level, string? comment);
-    Task<Voucher> PayAsync(int id, int payFromAccountId, string? comment);
+    /// <param name="lineAccounts">Accountant's classification: request line id → ledger account id.</param>
+    Task<Voucher> PayAsync(int id, int payFromAccountId, string? comment,
+        IReadOnlyDictionary<int, int>? lineAccounts = null);
     Task CancelAsync(int id);
 }
 

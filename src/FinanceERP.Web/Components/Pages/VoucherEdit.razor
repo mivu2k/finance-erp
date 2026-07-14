@@ -178,8 +178,12 @@
 
     private void AddRow() => _model.Lines.Add(new VoucherLineEditDto());
 
+    private bool _busy;
+
     private async Task Save(bool post)
     {
+        if (_busy) return;
+        _busy = true;
         try
         {
             using var scope = ScopeFactory.CreateScope();
@@ -187,6 +191,10 @@
             Snackbar.Add(post ? $"Voucher {voucher.VoucherNo} posted." : $"Voucher {voucher.VoucherNo} saved as draft.", Severity.Success);
             Nav.NavigateTo("/vouchers");
         }
-        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            _busy = false;
+        }
     }
 }
