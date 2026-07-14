@@ -8,11 +8,14 @@
 
 <PageTitle>Roles &amp; Permissions</PageTitle>
 
-<div class="d-flex align-center mb-4 flex-wrap gap-2">
-    <MudText Typo="Typo.h5">Roles &amp; Permissions</MudText>
+<div class="d-flex align-end mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5" Class="align-self-center">Roles &amp; Permissions</MudText>
     <MudSpacer />
-    <MudTextField @bind-Value="_newRole" Label="New role name" Style="max-width:220px" Margin="Margin.Dense" />
-    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddRole">Add Role</MudButton>
+    <div style="width:220px;max-width:60vw">
+        <MudTextField @bind-Value="_newRole" Label="New role name" Margin="Margin.Dense" Immediate="true" />
+    </div>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddRole"
+               Disabled="@(string.IsNullOrWhiteSpace(_newRole))" Class="flex-shrink-0">Add Role</MudButton>
 </div>
 
 <MudPaper Class="pa-2" Style="overflow-x:auto">

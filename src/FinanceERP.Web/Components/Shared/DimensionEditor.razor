@@ -1,6 +1,9 @@
-<div class="d-flex gap-2 mb-3 mt-3">
-    <MudTextField @bind-Value="_newName" Label="New name" Margin="Margin.Dense" />
-    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Add">Add</MudButton>
+<div class="d-flex align-end gap-2 mb-3 mt-3">
+    <div style="width:280px;max-width:60vw">
+        <MudTextField @bind-Value="_newName" Label="New name" Margin="Margin.Dense" Immediate="true" />
+    </div>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Add"
+               Disabled="@(string.IsNullOrWhiteSpace(_newName))" Class="flex-shrink-0">Add</MudButton>
 </div>
 <MudSimpleTable Dense="true" Hover="true">
     <thead><tr><th>Name</th><th>Active</th><th></th></tr></thead>
