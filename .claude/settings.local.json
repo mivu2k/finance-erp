@@ -28,7 +28,10 @@
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Move dev-only urls setting to appsettings.Development.json *)",
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Rework employee request flow, profile UI, and action-button stability *)",
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Fix Add-button alignment in Settings dimension editor and Roles header *)",
-      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Fix page headers hidden under the app bar on every page *)"
+      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Fix page headers hidden under the app bar on every page *)",
+      "Bash(mysql -uroot finance_erp -e \"SHOW COLUMNS FROM PaymentRequests LIKE 'ProjectId';\")",
+      "Bash(mysql -uroot finance_erp -e \"INSERT INTO Projects \\(Name, IsActive, CreatedAtUtc, IsDeleted\\) VALUES \\('Warehouse Expansion', 1, UTC_TIMESTAMP\\(\\), 0\\); SELECT Id,Name FROM Projects;\")",
+      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Link projects to payment requests through to the ledger *)"
     ]
   }
 }

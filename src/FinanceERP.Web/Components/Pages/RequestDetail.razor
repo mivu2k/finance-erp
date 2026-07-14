@@ -35,7 +35,7 @@ else
         <MudItem xs="12" md="8">
             <MudPaper Class="pa-4 mb-4">
                 <MudText Typo="Typo.subtitle2" Class="mb-1">
-                    Requester: <b>@_request.RequesterName</b> · Department: @(_request.Department?.Name ?? "—")
+                    Requester: <b>@_request.RequesterName</b> · Department: @(_request.Department?.Name ?? "—") · Project: @(_request.Project?.Name ?? "—")
                 </MudText>
                 <MudText Typo="Typo.body2" Class="mb-3">@_request.Purpose</MudText>
                 <MudSimpleTable Dense="true">

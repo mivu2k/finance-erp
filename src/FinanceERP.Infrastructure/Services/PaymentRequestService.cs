@@ -38,6 +38,7 @@ public class PaymentRequestService(
             .Include(r => r.Approvals)
             .Include(r => r.Department)
             .Include(r => r.Voucher)
+            .Include(r => r.Project)
             .FirstOrDefaultAsync(r => r.Id == id);
 
     public async Task<PaymentRequest> SaveDraftAsync(PaymentRequest request)
@@ -58,6 +59,7 @@ public class PaymentRequestService(
                 throw new InvalidOperationException("Only draft requests can be edited.");
             existing.Purpose = request.Purpose;
             existing.DepartmentId = request.DepartmentId;
+            existing.ProjectId = request.ProjectId;
             db.PaymentRequestLines.RemoveRange(existing.Lines);
             existing.Lines = request.Lines.Select((l, i) => new PaymentRequestLine
             {
@@ -157,6 +159,14 @@ public class PaymentRequestService(
             VoucherType.CashPayment, DateOnly.FromDateTime(DateTime.Today),
             $"Payment request {r.RequestNo} — {r.RequesterName}: {r.Purpose}",
             r.IsDirectorRequest ? "DirectorFund" : "PaymentRequest", r.Id, lines);
+
+        // Stamp the request's project/department onto the ledger lines so
+        // project- and department-filtered reports include this payment.
+        foreach (var vl in voucher.Lines)
+        {
+            vl.ProjectId = r.ProjectId;
+            vl.DepartmentId = r.DepartmentId;
+        }
 
         r.Status = RequestStatus.Paid;
         r.VoucherId = voucher.Id;

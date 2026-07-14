@@ -14,15 +14,23 @@
 
 <MudPaper Class="pa-4 mb-4">
     <MudGrid Spacing="2">
-        <MudItem xs="12" md="8">
+        <MudItem xs="12" md="6">
             <MudTextField @bind-Value="_model.Purpose" Label="Purpose" Required="true"
                           HelperText="One line summary, e.g. 'Site visit expenses for Lahore trip'" />
         </MudItem>
-        <MudItem xs="12" md="4">
+        <MudItem xs="6" md="3">
             <MudSelect T="int?" @bind-Value="_model.DepartmentId" Label="Department" Clearable="true">
                 @foreach (var d in _departments)
                 {
                     <MudSelectItem T="int?" Value="@d.Id">@d.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudSelect T="int?" @bind-Value="_model.ProjectId" Label="Project" Clearable="true">
+                @foreach (var p in _projects)
+                {
+                    <MudSelectItem T="int?" Value="@p.Id">@p.Name</MudSelectItem>
                 }
             </MudSelect>
         </MudItem>
@@ -94,6 +102,7 @@
 
     private PaymentRequest _model = new();
     private List<Department> _departments = [];
+    private List<Project> _projects = [];
     private List<string> _categories = [];
     private bool _busy;
 
@@ -107,6 +116,7 @@
         using var scope = ScopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
         _departments = db.Departments.Where(d => d.IsActive).OrderBy(d => d.Name).ToList();
+        _projects = db.Projects.Where(p => p.IsActive).OrderBy(p => p.Name).ToList();
         // Categories come from expense account names, so accountants can map them 1:1 later.
         _categories = db.Accounts
             .Where(a => a.Type == AccountType.Expense && a.IsPostable && a.IsActive)

@@ -10,6 +10,8 @@ public class PaymentRequest : AuditableEntity
     public string RequesterName { get; set; } = string.Empty;
     public int? DepartmentId { get; set; }
     public Department? Department { get; set; }
+    public int? ProjectId { get; set; }
+    public Project? Project { get; set; }
     public RequestStatus Status { get; set; } = RequestStatus.Draft;
     public string? Purpose { get; set; }
     public decimal TotalAmount { get; set; }
