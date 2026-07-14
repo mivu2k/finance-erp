@@ -42,8 +42,17 @@ public class VoucherService(AppDbContext db, ICurrentUserService currentUser) : 
         db.Vouchers.Include(v => v.Lines).ThenInclude(l => l.Account)
             .FirstOrDefaultAsync(v => v.Id == id);
 
+    private async Task EnsureNotLockedAsync(DateOnly date)
+    {
+        var setting = await db.AppSettings.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Key == SettingKeys.BooksLockDate);
+        if (setting is not null && DateOnly.TryParse(setting.Value, out var lockDate) && date <= lockDate)
+            throw new InvalidOperationException($"Books are locked through {lockDate:yyyy-MM-dd}. Use a later voucher date.");
+    }
+
     public async Task<Voucher> SaveAsync(VoucherEditDto dto, bool post)
     {
+        await EnsureNotLockedAsync(dto.Date);
         var lines = dto.Lines.Where(l => l.AccountId is not null && (l.Debit != 0 || l.Credit != 0)).ToList();
         ValidateLines(lines);
 
@@ -83,6 +92,8 @@ public class VoucherService(AppDbContext db, ICurrentUserService currentUser) : 
                 DepartmentId = l.DepartmentId,
                 ProjectId = l.ProjectId,
                 ThirdPartyId = l.ThirdPartyId,
+                AttachmentPath = l.AttachmentPath,
+                AttachmentName = l.AttachmentName,
                 LineNo = lineNo++
             });
         }
@@ -103,6 +114,7 @@ public class VoucherService(AppDbContext db, ICurrentUserService currentUser) : 
     public async Task PostAsync(int id)
     {
         var voucher = await db.Vouchers.Include(v => v.Lines).FirstAsync(v => v.Id == id);
+        await EnsureNotLockedAsync(voucher.Date);
         if (voucher.Status != VoucherStatus.Draft) throw new InvalidOperationException("Only draft vouchers can be posted.");
         if (voucher.TotalDebit != voucher.TotalCredit || voucher.TotalDebit == 0)
             throw new InvalidOperationException("Voucher is not balanced.");
@@ -115,6 +127,7 @@ public class VoucherService(AppDbContext db, ICurrentUserService currentUser) : 
     public async Task VoidAsync(int id, string reason)
     {
         var voucher = await db.Vouchers.FirstAsync(v => v.Id == id);
+        await EnsureNotLockedAsync(voucher.Date);
         voucher.Status = VoucherStatus.Void;
         voucher.Narration = $"{voucher.Narration} [VOID: {reason}]";
         await db.SaveChangesAsync();
@@ -124,6 +137,7 @@ public class VoucherService(AppDbContext db, ICurrentUserService currentUser) : 
         string source, int? sourceId,
         IEnumerable<(int AccountId, decimal Debit, decimal Credit, string? Description)> lines)
     {
+        await EnsureNotLockedAsync(date);
         var lineList = lines.ToList();
         var totalD = lineList.Sum(l => l.Debit);
         var totalC = lineList.Sum(l => l.Credit);
@@ -150,6 +164,40 @@ public class VoucherService(AppDbContext db, ICurrentUserService currentUser) : 
             }).ToList()
         };
         db.Vouchers.Add(voucher);
+        await db.SaveChangesAsync();
+        return voucher;
+    }
+
+    public async Task<Voucher> CloseFiscalYearAsync(DateOnly closeDate)
+    {
+        var retained = await db.Accounts.FirstAsync(a => a.Code == "3900");
+        var balances = await db.VoucherLines.AsNoTracking()
+            .Where(l => l.Voucher.Status == VoucherStatus.Posted && l.Voucher.Date <= closeDate
+                && (l.Account.Type == AccountType.Income || l.Account.Type == AccountType.Expense))
+            .GroupBy(l => new { l.AccountId, l.Account.Name })
+            .Select(g => new { g.Key.AccountId, g.Key.Name, Net = g.Sum(x => x.Debit) - g.Sum(x => x.Credit) })
+            .Where(x => x.Net != 0)
+            .ToListAsync();
+        if (balances.Count == 0)
+            throw new InvalidOperationException("Nothing to close — no income/expense balances up to that date.");
+
+        // Reverse every P&L balance; the offset lands in Retained Earnings.
+        var lines = balances
+            .Select(b => (b.AccountId,
+                Debit: b.Net < 0 ? -b.Net : 0m,
+                Credit: b.Net > 0 ? b.Net : 0m,
+                Description: (string?)$"Year-end close — {b.Name}"))
+            .ToList();
+        var profit = balances.Sum(b => -b.Net); // credit-positive = profit
+        lines.Add((retained.Id, profit < 0 ? -profit : 0m, profit > 0 ? profit : 0m,
+            $"Year-end close — net {(profit >= 0 ? "profit" : "loss")} {Math.Abs(profit):N2}"));
+
+        var voucher = await PostSystemVoucherAsync(VoucherType.Journal, closeDate,
+            $"Fiscal year close as of {closeDate:yyyy-MM-dd}", "YearEnd", null, lines);
+
+        var setting = await db.AppSettings.FirstOrDefaultAsync(s => s.Key == SettingKeys.BooksLockDate);
+        if (setting is null) db.AppSettings.Add(new AppSetting { Key = SettingKeys.BooksLockDate, Value = closeDate.ToString("yyyy-MM-dd") });
+        else setting.Value = closeDate.ToString("yyyy-MM-dd");
         await db.SaveChangesAsync();
         return voucher;
     }

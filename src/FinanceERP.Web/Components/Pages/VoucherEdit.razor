@@ -43,6 +43,7 @@
                     <th style="width:11%">Department</th>
                     <th style="width:11%">Project</th>
                     <th style="width:1%"></th>
+                    <th style="width:1%"></th>
                 </tr>
             </thead>
             <tbody>
@@ -84,6 +85,9 @@
                                 }
                             </MudSelect>
                         </td>
+                        <td style="white-space:nowrap">
+                            <FileAttach @bind-Path="line.AttachmentPath" @bind-Name="line.AttachmentName" Disabled="@_readOnly" />
+                        </td>
                         <td>
                             @if (!_readOnly)
                             {
@@ -99,7 +103,7 @@
                     <td colspan="2" style="text-align:right;padding:8px">Totals</td>
                     <td style="padding:8px">@TotalDebit.ToString("N2")</td>
                     <td style="padding:8px">@TotalCredit.ToString("N2")</td>
-                    <td colspan="4">
+                    <td colspan="5">
                         @if (TotalDebit != TotalCredit)
                         {
                             <MudChip T="string" Color="Color.Error" Size="Size.Small">Out of balance: @((TotalDebit - TotalCredit).ToString("N2"))</MudChip>
@@ -166,7 +170,8 @@
                 {
                     Id = l.Id, AccountId = l.AccountId, Description = l.Description,
                     Debit = l.Debit, Credit = l.Credit, CostCenterId = l.CostCenterId,
-                    DepartmentId = l.DepartmentId, ProjectId = l.ProjectId
+                    DepartmentId = l.DepartmentId, ProjectId = l.ProjectId,
+                    AttachmentPath = l.AttachmentPath, AttachmentName = l.AttachmentName
                 }).ToList()
             };
         }

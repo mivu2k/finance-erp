@@ -112,6 +112,8 @@
                     </MudButtonGroup>
                 </AuthorizeView>
                 <AuthorizeView Policy="@Permissions.UtilitiesManage">
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@_busy"
+                               StartIcon="@Icons.Material.Filled.Autorenew" OnClick="GenerateMonth">Generate This Month</MudButton>
                     <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
                                StartIcon="@Icons.Material.Filled.Add" OnClick="OpenNewBill">Add Bill</MudButton>
                 </AuthorizeView>
@@ -464,6 +466,25 @@
             await scope.ServiceProvider.GetRequiredService<IUtilityService>().DeleteBillAsync(bill.Id);
             await LoadBillsAsync();
             Snackbar.Add("Bill deleted.", Severity.Info);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private async Task GenerateMonth()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var created = await scope.ServiceProvider.GetRequiredService<IUtilityService>()
+                .GenerateMonthlyBillsAsync(DateOnly.FromDateTime(DateTime.Today));
+            Snackbar.Add(created == 0
+                ? "Nothing to generate — every connection already has this month's bill (or no history)."
+                : $"{created} bill(s) created from each connection's previous bill — adjust amounts as actual bills arrive.",
+                created == 0 ? Severity.Info : Severity.Success);
+            await LoadBillsAsync();
         }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
         finally { _busy = false; }

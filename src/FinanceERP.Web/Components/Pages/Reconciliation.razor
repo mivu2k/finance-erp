@@ -1,0 +1,132 @@
+@page "/reconciliation"
+@attribute [Authorize(Policy = Permissions.LedgerView)]
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Bank Reconciliation</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1">Bank Reconciliation</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+    Tick each ledger entry that appears on your bank/cash statement. The unreconciled remainder is what to investigate.
+</MudText>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="4">
+            <MudSelect T="int?" @bind-Value="_accountId" Label="Account">
+                @foreach (var a in _accounts)
+                {
+                    <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" md="2"><MudDatePicker Label="From" @bind-Date="_from" /></MudItem>
+        <MudItem xs="6" md="2"><MudDatePicker Label="To" @bind-Date="_to" /></MudItem>
+        <MudItem xs="12" md="2" Class="d-flex align-end">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAsync" Disabled="@(_accountId is null)">Load</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_accountId is not null)
+{
+    <MudGrid Spacing="3" Class="mb-1">
+        <MudItem xs="6" md="3"><MudPaper Class="pa-4"><MudText Typo="Typo.caption">Book Balance</MudText><MudText Typo="Typo.h6">@_book.ToString("N2")</MudText></MudPaper></MudItem>
+        <MudItem xs="6" md="3"><MudPaper Class="pa-4"><MudText Typo="Typo.caption">Reconciled Balance</MudText><MudText Typo="Typo.h6" Color="Color.Success">@_reconciled.ToString("N2")</MudText></MudPaper></MudItem>
+        <MudItem xs="6" md="3"><MudPaper Class="pa-4"><MudText Typo="Typo.caption">Unreconciled</MudText><MudText Typo="Typo.h6" Color="Color.Warning">@((_book - _reconciled).ToString("N2"))</MudText></MudPaper></MudItem>
+        <MudItem xs="6" md="3"><MudPaper Class="pa-4"><MudText Typo="Typo.caption">Selected</MudText><MudText Typo="Typo.h6">@_selected.Count</MudText></MudPaper></MudItem>
+    </MudGrid>
+
+    <MudPaper Class="pa-2 mt-3" Style="overflow-x:auto">
+        <div class="d-flex align-center pa-2 gap-2">
+            <MudSpacer />
+            <AuthorizeView Policy="@Permissions.VouchersPost">
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" Disabled="@(_busy || _selected.Count == 0)"
+                           OnClick="@(() => Mark(true))">Mark Reconciled</MudButton>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@(_busy || _selected.Count == 0)"
+                           OnClick="@(() => Mark(false))">Unmark</MudButton>
+            </AuthorizeView>
+        </div>
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead>
+                <tr><th></th><th>Date</th><th>Voucher</th><th>Description</th>
+                    <th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th>Reconciled</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var l in _lines)
+                {
+                    <tr>
+                        <td>
+                            <MudCheckBox T="bool" Dense="true" Value="@(_selected.Contains(l.Id))"
+                                         ValueChanged="@(v => { if (v) _selected.Add(l.Id); else _selected.Remove(l.Id); })" />
+                        </td>
+                        <td>@l.Voucher.Date.ToString("yyyy-MM-dd")</td>
+                        <td><MudLink Href="@($"/vouchers/{l.VoucherId}")">@l.Voucher.VoucherNo</MudLink></td>
+                        <td>@(l.Description ?? l.Voucher.Narration)</td>
+                        <td style="text-align:right">@(l.Debit == 0 ? "" : l.Debit.ToString("N2"))</td>
+                        <td style="text-align:right">@(l.Credit == 0 ? "" : l.Credit.ToString("N2"))</td>
+                        <td>
+                            @if (l.IsReconciled)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success">@l.ReconciledAtUtc?.ToString("dd MMM")</MudChip>
+                            }
+                        </td>
+                    </tr>
+                }
+                @if (_lines.Count == 0)
+                {
+                    <tr><td colspan="7">No posted entries in the selected period.</td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+
+@code {
+    private List<Account> _accounts = [];
+    private List<VoucherLine> _lines = [];
+    private readonly HashSet<int> _selected = [];
+    private int? _accountId;
+    private DateTime? _from = DateTime.Today.AddMonths(-1);
+    private DateTime? _to = DateTime.Today;
+    private decimal _book;
+    private decimal _reconciled;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
+        _accounts = db.Accounts.Where(a => a.Code == "1100" || a.Code == "1300" || (a.Parent != null && a.Parent.Code == "1200"))
+            .OrderBy(a => a.Code).ToList();
+        _accountId = _accounts.FirstOrDefault(a => a.Code == "1201")?.Id ?? _accounts.FirstOrDefault()?.Id;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_accountId is null) return;
+        _selected.Clear();
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<IReconciliationService>();
+        _lines = await svc.GetLinesAsync(_accountId.Value,
+            DateOnly.FromDateTime(_from ?? DateTime.Today.AddMonths(-1)),
+            DateOnly.FromDateTime(_to ?? DateTime.Today));
+        (_book, _reconciled) = await svc.BalancesAsync(_accountId.Value, DateOnly.FromDateTime(_to ?? DateTime.Today));
+    }
+
+    private async Task Mark(bool reconciled)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IReconciliationService>().SetReconciledAsync(_selected, reconciled);
+            Snackbar.Add($"{_selected.Count} entr{(_selected.Count == 1 ? "y" : "ies")} {(reconciled ? "reconciled" : "unmarked")}.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+}

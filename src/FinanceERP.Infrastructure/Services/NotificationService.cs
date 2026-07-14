@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FinanceERP.Infrastructure.Services;
 
-public class NotificationService(AppDbContext db) : INotificationService
+public class NotificationService(AppDbContext db, IAppEmailSender email) : INotificationService
 {
     public async Task NotifyAsync(string userId, string title, string? message, NotificationType type, string? link = null)
     {
@@ -16,6 +16,7 @@ public class NotificationService(AppDbContext db) : INotificationService
             CreatedAtUtc = DateTime.UtcNow
         });
         await db.SaveChangesAsync();
+        await EmailUsersAsync([userId], title, message);
     }
 
     public async Task NotifyRoleAsync(string roleName, string title, string? message, NotificationType type, string? link = null)
@@ -31,6 +32,17 @@ public class NotificationService(AppDbContext db) : INotificationService
             UserId = id, Title = title, Message = message, Type = type, Link = link, CreatedAtUtc = now
         }));
         await db.SaveChangesAsync();
+        await EmailUsersAsync(userIds, title, message);
+    }
+
+    private async Task EmailUsersAsync(IEnumerable<string> userIds, string title, string? message)
+    {
+        if (!email.Enabled) return;
+        var ids = userIds.ToList();
+        var addresses = await db.Users.Where(u => ids.Contains(u.Id) && u.Email != null)
+            .Select(u => u.Email!).ToListAsync();
+        foreach (var address in addresses)
+            await email.SendAsync(address, title, message ?? title);
     }
 
     public Task<List<Notification>> GetUnreadAsync(string userId, int max = 20) =>

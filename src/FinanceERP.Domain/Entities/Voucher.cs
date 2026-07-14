@@ -38,7 +38,12 @@ public class VoucherLine : BaseEntity
     public int? ThirdPartyId { get; set; }
     public ThirdParty? ThirdParty { get; set; }
     public string? AttachmentPath { get; set; }
+    public string? AttachmentName { get; set; }
     public int LineNo { get; set; }
+    /// <summary>Bank reconciliation: line matched against a bank/cash statement.</summary>
+    public bool IsReconciled { get; set; }
+    public DateTime? ReconciledAtUtc { get; set; }
+    public string? ReconciledBy { get; set; }
 }
 
 /// <summary>Per-type, per-year voucher number sequence (e.g. CPV-2026-00001).</summary>

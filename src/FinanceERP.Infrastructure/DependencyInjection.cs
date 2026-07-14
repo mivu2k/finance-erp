@@ -30,6 +30,8 @@ public static class DependencyInjection
         services.AddScoped<IReportService, ReportService>();
         services.AddSingleton<IExportService, ExportService>();
         services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<IReconciliationService, ReconciliationService>();
+        services.AddSingleton<IAppEmailSender, EmailService>();
 
         return services;
     }

@@ -21,3 +21,4 @@ logs/
 appsettings.Production.json
 appsettings.*.local.json
 uploads/
+keys/

@@ -14,6 +14,19 @@ public interface IVoucherService
     /// <summary>Creates and posts a system-generated voucher from a source module.</summary>
     Task<Voucher> PostSystemVoucherAsync(VoucherType type, DateOnly date, string narration,
         string source, int? sourceId, IEnumerable<(int AccountId, decimal Debit, decimal Credit, string? Description)> lines);
+    /// <summary>
+    /// Year-end close: posts a journal moving all income/expense balances up to
+    /// <paramref name="closeDate"/> into Retained Earnings, then locks the books
+    /// through that date.
+    /// </summary>
+    Task<Voucher> CloseFiscalYearAsync(DateOnly closeDate);
+}
+
+public interface IReconciliationService
+{
+    Task<List<VoucherLine>> GetLinesAsync(int accountId, DateOnly from, DateOnly to, bool? reconciled = null);
+    Task SetReconciledAsync(IEnumerable<int> lineIds, bool reconciled);
+    Task<(decimal Book, decimal Reconciled)> BalancesAsync(int accountId, DateOnly asOf);
 }
 
 public interface IAccountService
@@ -125,6 +138,12 @@ public interface IUtilityService
     Task<Voucher> PayBillAsync(int billId, int payFromAccountId, DateOnly? paidDate = null);
     Task<List<ExpenseBreakdownDto>> SummaryByTypeAsync(UtilityBillFilter filter);
     Task<List<ExpenseBreakdownDto>> SummaryByLocationAsync(UtilityBillFilter filter);
+    /// <summary>
+    /// Creates this month's bill for every active connection that has bill history
+    /// but no bill for the month yet (amount copied from its latest bill).
+    /// Returns the number of bills created.
+    /// </summary>
+    Task<int> GenerateMonthlyBillsAsync(DateOnly month);
 }
 
 public interface IReportService
@@ -143,6 +162,12 @@ public interface IExportService
 {
     byte[] TableToPdf(string title, string subtitle, string[] headers, IEnumerable<string[]> rows);
     byte[] TableToExcel(string sheetName, string[] headers, IEnumerable<object?[]> rows);
+}
+
+public interface IAppEmailSender
+{
+    bool Enabled { get; }
+    Task SendAsync(string toEmail, string subject, string body);
 }
 
 public interface INotificationService

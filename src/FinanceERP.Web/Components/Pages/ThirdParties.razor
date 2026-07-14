@@ -32,7 +32,21 @@
         <MudTd>@context.Email</MudTd>
         <MudTd>@context.TaxNumber</MudTd>
         <MudTd Style="text-align:right">@(_balances.TryGetValue(context.Id, out var b) ? b.ToString("N2") : "—")</MudTd>
-        <MudTd>
+        <MudTd Style="white-space:nowrap">
+            @if (context.AccountId is not null)
+            {
+                <MudTooltip Text="View statement">
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.MenuBook"
+                                   Href="@($"/ledger?accountId={context.AccountId}")" />
+                </MudTooltip>
+                <AuthorizeView Policy="@Permissions.ReportsExport" Context="x">
+                    <MudTooltip Text="Statement PDF (last 12 months)">
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PictureAsPdf"
+                                       Href="@($"/export/ledger?format=pdf&accountId={context.AccountId}&from={DateOnly.FromDateTime(DateTime.Today.AddYears(-1)):yyyy-MM-dd}&to={DateOnly.FromDateTime(DateTime.Today):yyyy-MM-dd}")"
+                                       Target="_blank" />
+                    </MudTooltip>
+                </AuthorizeView>
+            }
             <AuthorizeView Policy="@Permissions.ThirdPartiesManage" Context="m">
                 <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit" OnClick="@(() => _editing = context)" />
             </AuthorizeView>

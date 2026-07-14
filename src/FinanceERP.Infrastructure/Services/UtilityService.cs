@@ -140,6 +140,38 @@ public class UtilityService(AppDbContext db, IVoucherService voucherService) : I
         return (await db.Accounts.FirstAsync(a => a.Code == code)).Id;
     }
 
+    public async Task<int> GenerateMonthlyBillsAsync(DateOnly month)
+    {
+        month = new DateOnly(month.Year, month.Month, 1);
+        var connections = await db.UtilityConnections
+            .Where(c => c.IsActive)
+            .Select(c => new
+            {
+                c.Id,
+                LastBill = c.Bills.OrderByDescending(b => b.BillMonth).FirstOrDefault(),
+                HasThisMonth = c.Bills.Any(b => b.BillMonth == month)
+            })
+            .ToListAsync();
+
+        var created = 0;
+        foreach (var c in connections.Where(c => !c.HasThisMonth && c.LastBill is not null))
+        {
+            // Keep the due-day pattern of the previous bill (e.g. always due on the 15th).
+            var dueDay = c.LastBill!.DueDate?.Day ?? 15;
+            db.UtilityBills.Add(new UtilityBill
+            {
+                ConnectionId = c.Id,
+                BillMonth = month,
+                Amount = c.LastBill.Amount,
+                DueDate = new DateOnly(month.Year, month.Month, Math.Min(dueDay, DateTime.DaysInMonth(month.Year, month.Month))),
+                Notes = "Auto-generated from previous bill — adjust the amount when the actual bill arrives."
+            });
+            created++;
+        }
+        await db.SaveChangesAsync();
+        return created;
+    }
+
     public async Task<List<ExpenseBreakdownDto>> SummaryByTypeAsync(UtilityBillFilter filter)
     {
         var rows = await Filtered(filter)

@@ -19,6 +19,26 @@
                              HelperText="Accountants and directors are notified when cash in hand falls below this." />
             <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings">Save</MudButton>
         </MudPaper>
+
+        <MudPaper Class="pa-4 mt-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Books Lock &amp; Year Close</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                Vouchers dated on or before the lock date cannot be created, edited, or voided.
+                Closing the year posts income/expense balances into Retained Earnings and locks the books through that date.
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                Current lock date: <b>@(_lockDate?.ToString("yyyy-MM-dd") ?? "none — books are open")</b>
+            </MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudDatePicker Label="Lock / close date" @bind-Date="_newLockDate" />
+                </MudItem>
+                <MudItem xs="12" sm="6" Class="d-flex align-end gap-2">
+                    <MudButton Variant="Variant.Outlined" OnClick="SetLockDate" Disabled="@(_busy || _newLockDate is null)">Set Lock Only</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="CloseYear" Disabled="@(_busy || _newLockDate is null)">Close Year</MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
     </MudItem>
 
     <MudItem xs="12" md="7">
@@ -42,6 +62,9 @@
     private string _companyName = "";
     private string _currency = "";
     private decimal _lowCashThreshold;
+    private DateOnly? _lockDate;
+    private DateTime? _newLockDate;
+    private bool _busy;
     private List<(int Id, string Name, bool Active)> _departments = [];
     private List<(int Id, string Name, bool Active)> _costCenters = [];
     private List<(int Id, string Name, bool Active)> _projects = [];
@@ -56,6 +79,7 @@
         _companyName = settings.GetValueOrDefault(SettingKeys.CompanyName, "");
         _currency = settings.GetValueOrDefault(SettingKeys.Currency, "");
         decimal.TryParse(settings.GetValueOrDefault(SettingKeys.LowCashThreshold, "0"), out _lowCashThreshold);
+        _lockDate = DateOnly.TryParse(settings.GetValueOrDefault(SettingKeys.BooksLockDate, ""), out var ld) ? ld : null;
         _departments = (await db.Departments.AsNoTracking().OrderBy(d => d.Name).ToListAsync()).Select(d => (d.Id, d.Name, d.IsActive)).ToList();
         _costCenters = (await db.CostCenters.AsNoTracking().OrderBy(c => c.Name).ToListAsync()).Select(c => (c.Id, c.Name, c.IsActive)).ToList();
         _projects = (await db.Projects.AsNoTracking().OrderBy(p => p.Name).ToListAsync()).Select(p => (p.Id, p.Name, p.IsActive)).ToList();
@@ -77,6 +101,42 @@
         await Set(SettingKeys.LowCashThreshold, _lowCashThreshold.ToString("0.##"));
         await db.SaveChangesAsync();
         Snackbar.Add("Settings saved.", Severity.Success);
+    }
+
+    private async Task SetLockDate()
+    {
+        if (_busy || _newLockDate is null) return;
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var value = DateOnly.FromDateTime(_newLockDate.Value).ToString("yyyy-MM-dd");
+            var s = await db.AppSettings.FirstOrDefaultAsync(x => x.Key == SettingKeys.BooksLockDate);
+            if (s is null) db.AppSettings.Add(new AppSetting { Key = SettingKeys.BooksLockDate, Value = value });
+            else s.Value = value;
+            await db.SaveChangesAsync();
+            Snackbar.Add($"Books locked through {value}.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private async Task CloseYear()
+    {
+        if (_busy || _newLockDate is null) return;
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var voucher = await scope.ServiceProvider.GetRequiredService<IVoucherService>()
+                .CloseFiscalYearAsync(DateOnly.FromDateTime(_newLockDate.Value));
+            Snackbar.Add($"Year closed — voucher {voucher.VoucherNo} posted and books locked.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
     }
 
     private async Task AddDim(string kind, string name)

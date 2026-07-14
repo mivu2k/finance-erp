@@ -40,7 +40,10 @@
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Overspend visibility and employee-initiated installment repayment *)",
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Optional manual settlement of advance difference *)",
       "Bash(mysql -uroot finance_erp)",
-      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Add Utilities module: locations, connections/meters, bills, payments, reports *)"
+      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Add Utilities module: locations, connections/meters, bills, payments, reports *)",
+      "Bash(mysql -uroot finance_erp -e \"SHOW COLUMNS FROM VoucherLines LIKE '%Reconcil%'; SHOW COLUMNS FROM VoucherLines LIKE 'AttachmentName';\")",
+      "Bash(mysql -uroot finance_erp -e \"SELECT \\\\`Key\\\\`, Value FROM AppSettings WHERE \\\\`Key\\\\`='Books.LockDate';\")",
+      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Production-readiness batch: keys, reconciliation, statements, recurring bills, attachments, email, search, year close *)"
     ]
   }
 }

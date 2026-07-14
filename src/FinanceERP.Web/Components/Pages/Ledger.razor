@@ -75,6 +75,7 @@
 </MudPaper>
 
 @code {
+    [SupplyParameterFromQuery(Name = "accountId")] public int? QueryAccountId { get; set; }
     private DateTime? _from = DateTime.Today.AddMonths(-1);
     private DateTime? _to = DateTime.Today;
     private int? _accountId;
@@ -89,6 +90,11 @@
         _accounts = await scope.ServiceProvider.GetRequiredService<IAccountService>().GetPostableAsync();
         var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
         _departments = db.Departments.OrderBy(d => d.Name).ToList();
+        if (QueryAccountId is not null)
+        {
+            _accountId = QueryAccountId;
+            _from = DateTime.Today.AddYears(-1); // statements default to a full year
+        }
         await LoadAsync();
     }
 

@@ -1,0 +1,71 @@
+@using Microsoft.EntityFrameworkCore
+@using FinanceERP.Infrastructure.Persistence
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<div style="min-width:180px;max-width:320px" class="mx-2 d-none d-sm-block">
+    <MudAutocomplete T="SearchHit" Value="null" ValueChanged="Open" SearchFunc="SearchAsync"
+                     Placeholder="Search…" Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined"
+                     Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                     Clearable="true" ResetValueOnEmptyText="true" CoerceText="false" MinCharacters="2"
+                     ToStringFunc="@(h => h?.Label ?? string.Empty)"
+                     Class="global-search" Style="background:rgba(255,255,255,.12);border-radius:6px">
+        <ItemTemplate Context="hit">
+            <div class="d-flex align-center gap-2">
+                <MudIcon Icon="@hit.Icon" Size="Size.Small" />
+                <div>
+                    <MudText Typo="Typo.body2">@hit.Label</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@hit.Kind</MudText>
+                </div>
+            </div>
+        </ItemTemplate>
+    </MudAutocomplete>
+</div>
+
+@code {
+    public record SearchHit(string Label, string Kind, string Icon, string Url);
+
+    private async Task<IEnumerable<SearchHit>> SearchAsync(string term, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(term) || term.Length < 2) return [];
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var hits = new List<SearchHit>();
+
+        hits.AddRange(await db.Vouchers.AsNoTracking()
+            .Where(v => v.VoucherNo.Contains(term) || (v.Narration != null && v.Narration.Contains(term)))
+            .OrderByDescending(v => v.Id).Take(5)
+            .Select(v => new SearchHit($"{v.VoucherNo} — {v.Narration}", "Voucher",
+                Icons.Material.Filled.ReceiptLong, $"/vouchers/{v.Id}"))
+            .ToListAsync(ct));
+
+        hits.AddRange(await db.PaymentRequests.AsNoTracking()
+            .Where(r => r.RequestNo.Contains(term) || r.RequesterName.Contains(term)
+                || (r.Purpose != null && r.Purpose.Contains(term)))
+            .OrderByDescending(r => r.Id).Take(5)
+            .Select(r => new SearchHit($"{r.RequestNo} — {r.Purpose}", "Request",
+                Icons.Material.Filled.RequestQuote, $"/requests/{r.Id}"))
+            .ToListAsync(ct));
+
+        hits.AddRange(await db.ThirdParties.AsNoTracking()
+            .Where(t => t.Name.Contains(term))
+            .OrderBy(t => t.Name).Take(4)
+            .Select(t => new SearchHit(t.Name, "Third Party",
+                Icons.Material.Filled.Groups, "/third-parties"))
+            .ToListAsync(ct));
+
+        hits.AddRange(await db.Accounts.AsNoTracking()
+            .Where(a => a.Name.Contains(term) || a.Code.Contains(term))
+            .OrderBy(a => a.Code).Take(4)
+            .Select(a => new SearchHit($"{a.Code} — {a.Name}", "Account",
+                Icons.Material.Filled.AccountTree, $"/ledger?accountId={a.Id}"))
+            .ToListAsync(ct));
+
+        return hits;
+    }
+
+    private void Open(SearchHit? hit)
+    {
+        if (hit is not null) Nav.NavigateTo(hit.Url, forceLoad: false);
+    }
+}

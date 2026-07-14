@@ -22,6 +22,8 @@ public class VoucherLineEditDto
     public int? DepartmentId { get; set; }
     public int? ProjectId { get; set; }
     public int? ThirdPartyId { get; set; }
+    public string? AttachmentPath { get; set; }
+    public string? AttachmentName { get; set; }
 }
 
 public record VoucherListItemDto(int Id, string VoucherNo, VoucherType Type, VoucherStatus Status,

@@ -6,6 +6,7 @@ using FinanceERP.Web.Components.Account;
 using FinanceERP.Web.Endpoints;
 using FinanceERP.Web.Security;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using MudBlazor.Services;
@@ -18,6 +19,12 @@ builder.Host.UseSerilog((ctx, cfg) => cfg
     .Enrich.FromLogContext()
     .WriteTo.Console()
     .WriteTo.File("logs/finance-erp-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 30));
+
+// Persist data-protection keys to a stable folder so login cookies survive
+// restarts and redeploys (also silences the "No XML encryptor" warning path).
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "keys")))
+    .SetApplicationName("FinanceERP");
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();

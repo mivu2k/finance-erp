@@ -43,4 +43,6 @@ public static class SettingKeys
     public const string CompanyName = "Company.Name";
     public const string Currency = "Company.Currency";
     public const string LowCashThreshold = "Alerts.LowCashThreshold";
+    /// <summary>Vouchers dated on/before this date cannot be created, edited, or voided.</summary>
+    public const string BooksLockDate = "Books.LockDate";
 }

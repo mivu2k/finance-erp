@@ -20,6 +20,9 @@
             <AuthorizeView Policy="@Permissions.UtilitiesView" Context="u">
                 <MudNavLink Href="/utilities" Icon="@Icons.Material.Filled.ElectricBolt">Utilities</MudNavLink>
             </AuthorizeView>
+            <AuthorizeView Policy="@Permissions.LedgerView" Context="rec">
+                <MudNavLink Href="/reconciliation" Icon="@Icons.Material.Filled.Rule">Reconciliation</MudNavLink>
+            </AuthorizeView>
         </MudNavGroup>
     </AuthorizeView>
 

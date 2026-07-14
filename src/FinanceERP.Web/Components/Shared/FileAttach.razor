@@ -1,0 +1,56 @@
+@using Microsoft.AspNetCore.Components.Forms
+@inject FinanceERP.Web.Services.ReceiptStorage Storage
+@inject ISnackbar Snackbar
+
+@if (Path is null)
+{
+    @if (!Disabled)
+    {
+        <MudFileUpload T="IBrowserFile" FilesChanged="Upload" Accept=".jpg,.jpeg,.png,.webp,.pdf">
+            <ActivatorContent>
+                <MudIconButton Icon="@Icons.Material.Filled.AttachFile" Size="Size.Small" Disabled="@_uploading" title="Attach file" />
+            </ActivatorContent>
+        </MudFileUpload>
+    }
+}
+else
+{
+    <div class="d-flex align-center">
+        <MudLink Href="@($"/files/receipts/{Path}")" Target="_blank" Typo="Typo.caption">
+            <MudIcon Icon="@Icons.Material.Filled.Description" Size="Size.Small" title="@(Name ?? "attachment")" />
+        </MudLink>
+        @if (!Disabled)
+        {
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="Clear" title="Remove" />
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string? Path { get; set; }
+    [Parameter] public EventCallback<string?> PathChanged { get; set; }
+    [Parameter] public string? Name { get; set; }
+    [Parameter] public EventCallback<string?> NameChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    private bool _uploading;
+
+    private async Task Upload(IBrowserFile? file)
+    {
+        if (file is null) return;
+        _uploading = true;
+        try
+        {
+            var (stored, original) = await Storage.SaveAsync(file);
+            await PathChanged.InvokeAsync(stored);
+            await NameChanged.InvokeAsync(original);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _uploading = false; }
+    }
+
+    private async Task Clear()
+    {
+        await PathChanged.InvokeAsync(null);
+        await NameChanged.InvokeAsync(null);
+    }
+}
