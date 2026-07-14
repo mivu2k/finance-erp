@@ -74,9 +74,15 @@
             if (auth.User.HasClaim(Permissions.ClaimType, Permissions.RequestsApproveManager))
                 _actionableStages.Add(RequestStatus.PendingManager);
             if (auth.User.HasClaim(Permissions.ClaimType, Permissions.RequestsApproveAdmin))
+            {
                 _actionableStages.Add(RequestStatus.PendingAdmin);
+                _actionableStages.Add(RequestStatus.JustificationPending);
+            }
             if (auth.User.HasClaim(Permissions.ClaimType, Permissions.RequestsPay))
+            {
                 _actionableStages.Add(RequestStatus.PendingAccountant);
+                _actionableStages.Add(RequestStatus.SettlementReady);
+            }
         }
     }
 

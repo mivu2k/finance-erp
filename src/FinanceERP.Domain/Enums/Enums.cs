@@ -34,7 +34,24 @@ public enum RequestStatus
     PendingAccountant = 3,
     Paid = 4,
     Rejected = 5,
-    Cancelled = 6
+    Cancelled = 6,
+    // Advance-kind requests continue past disbursement:
+    /// <summary>Money handed over; waiting for the requester's expense justification.</summary>
+    Disbursed = 7,
+    /// <summary>Justification submitted; pending admin approval.</summary>
+    JustificationPending = 8,
+    /// <summary>Justification approved; accountant classifies and settles.</summary>
+    SettlementReady = 9,
+    /// <summary>Actuals posted; advance cleared (difference returned/reimbursed).</summary>
+    Settled = 10
+}
+
+public enum RequestKind
+{
+    /// <summary>Itemized claim paid after approval (original flow).</summary>
+    Reimbursement = 0,
+    /// <summary>Lump-sum advance first, expense justification and settlement after.</summary>
+    Advance = 1
 }
 
 public enum ApprovalAction

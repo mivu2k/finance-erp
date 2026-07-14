@@ -92,6 +92,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUserSe
             e.Property(x => x.RequestNo).HasMaxLength(32);
             e.Property(x => x.TotalAmount).HasPrecision(18, 2);
             e.HasIndex(x => new { x.RequesterId, x.Status });
+            e.HasOne(x => x.Voucher).WithMany().HasForeignKey(x => x.VoucherId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.SettlementVoucher).WithMany().HasForeignKey(x => x.SettlementVoucherId).OnDelete(DeleteBehavior.Restrict);
             e.HasQueryFilter(x => !x.IsDeleted);
         });
 

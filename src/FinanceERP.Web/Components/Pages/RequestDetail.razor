@@ -19,6 +19,10 @@ else
         {
             <MudChip T="string" Size="Size.Small" Color="Color.Info">Director Fund</MudChip>
         }
+        @if (_request.Kind == RequestKind.Advance)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Tertiary">Advance</MudChip>
+        }
         <MudSpacer />
         <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack" OnClick="@(() => Nav.NavigateTo("/requests/my"))">Back</MudButton>
         @if (_request.Status == RequestStatus.Draft)
@@ -38,6 +42,19 @@ else
                     Requester: <b>@_request.RequesterName</b> · Department: @(_request.Department?.Name ?? "—") · Project: @(_request.Project?.Name ?? "—")
                 </MudText>
                 <MudText Typo="Typo.body2" Class="mb-3">@_request.Purpose</MudText>
+                @if (_request.Kind == RequestKind.Advance)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                        Advance amount: <b>@_request.TotalAmount.ToString("N2")</b>
+                        @if (_request.Lines.Count > 0)
+                        {
+                            var actual = _request.Lines.Sum(l => l.Amount);
+                            var diff = _request.TotalAmount - actual;
+                            <span> · Justified: <b>@actual.ToString("N2")</b> ·
+                            @(diff > 0 ? $"To return: {diff:N2}" : diff < 0 ? $"To reimburse: {(-diff):N2}" : "Fully utilised")</span>
+                        }
+                    </MudAlert>
+                }
                 <MudSimpleTable Dense="true">
                     <thead>
                         <tr>
@@ -81,7 +98,14 @@ else
                 @if (_request.Voucher is not null)
                 {
                     <MudAlert Severity="Severity.Success" Class="mt-3">
-                        Paid via voucher <MudLink Href="@($"/vouchers/{_request.VoucherId}")">@_request.Voucher.VoucherNo</MudLink>
+                        @(_request.Kind == RequestKind.Advance ? "Disbursed" : "Paid") via voucher
+                        <MudLink Href="@($"/vouchers/{_request.VoucherId}")">@_request.Voucher.VoucherNo</MudLink>
+                    </MudAlert>
+                }
+                @if (_request.SettlementVoucher is not null)
+                {
+                    <MudAlert Severity="Severity.Success" Class="mt-2">
+                        Settled via voucher <MudLink Href="@($"/vouchers/{_request.SettlementVoucherId}")">@_request.SettlementVoucher.VoucherNo</MudLink>
                     </MudAlert>
                 }
             </MudPaper>
@@ -96,6 +120,132 @@ else
             {
                 <AuthorizeView Policy="@Permissions.RequestsApproveAdmin">
                     <ApprovalPanel Level="Admin" Busy="@_busy" OnApprove="Approve" OnReject="Reject" />
+                </AuthorizeView>
+            }
+            else if (_request.Status == RequestStatus.PendingAccountant && _request.Kind == RequestKind.Advance)
+            {
+                <AuthorizeView Policy="@Permissions.RequestsPay">
+                    <MudPaper Class="pa-4">
+                        <MudText Typo="Typo.subtitle1" Class="mb-1">Disburse Advance</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                            Hands @_request.TotalAmount.ToString("N2") to @_request.RequesterName and books it against their
+                            advance account. Expenses are classified later, at settlement.
+                        </MudText>
+                        <MudGrid Spacing="2">
+                            <MudItem xs="12" sm="6">
+                                <MudSelect T="int?" @bind-Value="_payFromAccountId" Label="Pay from account">
+                                    @foreach (var a in _cashAccounts)
+                                    {
+                                        <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="_comment" Label="Comment (optional)" />
+                            </MudItem>
+                        </MudGrid>
+                        <div class="d-flex gap-2 mt-3">
+                            <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="Disburse"
+                                       Disabled="@(_busy || _payFromAccountId is null)">Disburse</MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="@_busy"
+                                       OnClick="@(() => Reject(("Accountant", _comment)))">Reject</MudButton>
+                        </div>
+                    </MudPaper>
+                </AuthorizeView>
+            }
+            else if (_request.Status == RequestStatus.Disbursed && _isOwner)
+            {
+                <MudPaper Class="pa-4">
+                    <MudText Typo="Typo.subtitle1" Class="mb-1">Submit Expense Justification</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                        Report what you actually spent, by category. It goes to admin for approval, then accounts settles it.
+                    </MudText>
+                    @foreach (var line in _justification)
+                    {
+                        <MudGrid Spacing="2" Class="mb-1">
+                            <MudItem xs="12" sm="3">
+                                <MudSelect T="string" @bind-Value="line.Category" Label="Category" Margin="Margin.Dense">
+                                    @foreach (var c in _categories)
+                                    {
+                                        <MudSelectItem Value="@c">@c</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="6" sm="2">
+                                <MudNumericField T="decimal" @bind-Value="line.Amount" Label="Amount" Min="0" Format="N2" Margin="Margin.Dense" />
+                            </MudItem>
+                            <MudItem xs="6" sm="6">
+                                <MudTextField @bind-Value="line.Reason" Label="Reason" Margin="Margin.Dense" />
+                            </MudItem>
+                            <MudItem xs="12" sm="1" Class="d-flex align-center">
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                               Disabled="@(_justification.Count == 1)"
+                                               OnClick="@(() => _justification.Remove(line))" />
+                            </MudItem>
+                        </MudGrid>
+                    }
+                    <div class="d-flex align-center gap-2 mt-2 flex-wrap">
+                        <MudButton StartIcon="@Icons.Material.Filled.Add" Variant="Variant.Outlined"
+                                   OnClick="@(() => _justification.Add(new PaymentRequestLine()))">Add expense</MudButton>
+                        <MudSpacer />
+                        <MudText Typo="Typo.subtitle1">
+                            Spent: @_justification.Sum(l => l.Amount).ToString("N2") of @_request.TotalAmount.ToString("N2")
+                        </MudText>
+                    </div>
+                    <MudButton Class="mt-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="SubmitJustification"
+                               Disabled="@(_busy || !_justification.Any(l => l.Amount > 0))">
+                        Submit Justification
+                    </MudButton>
+                </MudPaper>
+            }
+            else if (_request.Status == RequestStatus.JustificationPending)
+            {
+                <AuthorizeView Policy="@Permissions.RequestsApproveAdmin">
+                    <MudPaper Class="pa-4">
+                        <MudText Typo="Typo.subtitle1" Class="mb-2">Justification Review</MudText>
+                        <MudTextField @bind-Value="_comment" Label="Comment (optional)" Class="mb-3" />
+                        <div class="d-flex gap-2">
+                            <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@_busy"
+                                       OnClick="ApproveJustification">Approve Justification</MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="@_busy"
+                                       OnClick="ReturnJustification">Return for Rework</MudButton>
+                        </div>
+                    </MudPaper>
+                </AuthorizeView>
+            }
+            else if (_request.Status == RequestStatus.SettlementReady)
+            {
+                <AuthorizeView Policy="@Permissions.RequestsPay">
+                    <MudPaper Class="pa-4">
+                        <MudText Typo="Typo.subtitle1" Class="mb-1">Settle Advance</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                            Assign account heads above, then settle: actuals post to expenses, the advance account is
+                            cleared, and any difference moves through the cash account below.
+                        </MudText>
+                        <MudGrid Spacing="2">
+                            <MudItem xs="12" sm="6">
+                                <MudSelect T="int?" @bind-Value="_payFromAccountId" Label="Cash account for difference">
+                                    @foreach (var a in _cashAccounts)
+                                    {
+                                        <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="_comment" Label="Comment (optional)" />
+                            </MudItem>
+                        </MudGrid>
+                        <MudButton Class="mt-3" Variant="Variant.Filled" Color="Color.Success" OnClick="Settle"
+                                   Disabled="@(_busy || _payFromAccountId is null || !AllLinesClassified)">
+                            Post Settlement
+                        </MudButton>
+                        @if (!AllLinesClassified)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Warning" Class="mt-2 d-block">
+                                Assign an account head to every line to enable settlement.
+                            </MudText>
+                        }
+                    </MudPaper>
                 </AuthorizeView>
             }
             else if (_request.Status == RequestStatus.PendingAccountant)
@@ -170,6 +320,8 @@ else
     private PaymentRequest? _request;
     private List<Account> _cashAccounts = [];
     private List<Account> _postableAccounts = [];
+    private List<string> _categories = [];
+    private List<PaymentRequestLine> _justification = [new()];
     private readonly Dictionary<int, int?> _lineAccounts = [];
     private int? _payFromAccountId;
     private string? _comment;
@@ -192,12 +344,15 @@ else
         _postableAccounts = db.Accounts.Where(a => a.IsPostable && a.IsActive
                 && (a.Type == AccountType.Expense || a.Type == AccountType.Asset))
             .OrderBy(a => a.Code).ToList();
+        _categories = _postableAccounts.Where(a => a.Type == AccountType.Expense)
+            .Select(a => a.Name).OrderBy(n => n).ToList();
 
         if (AuthState is not null && _request is not null)
         {
             var auth = await AuthState;
             _isOwner = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value == _request.RequesterId;
-            _canClassify = _request.Status == RequestStatus.PendingAccountant
+            _canClassify = (_request.Status == RequestStatus.PendingAccountant && _request.Kind == RequestKind.Reimbursement
+                    || _request.Status == RequestStatus.SettlementReady)
                 && auth.User.HasClaim(Permissions.ClaimType, Permissions.RequestsPay);
         }
 
@@ -227,6 +382,40 @@ else
     {
         await svc.CancelAsync(Id);
         Snackbar.Add("Request cancelled.", Severity.Info);
+    });
+
+    private Task Disburse() => Run(async svc =>
+    {
+        var voucher = await svc.DisburseAsync(Id, _payFromAccountId!.Value, _comment);
+        Snackbar.Add($"Disbursed — voucher {voucher.VoucherNo} posted.", Severity.Success);
+    });
+
+    private Task SubmitJustification() => Run(async svc =>
+    {
+        await svc.SubmitJustificationAsync(Id, _justification);
+        Snackbar.Add("Justification submitted for admin approval.", Severity.Success);
+        _justification = [new PaymentRequestLine()];
+    });
+
+    private Task ApproveJustification() => Run(async svc =>
+    {
+        await svc.ApproveJustificationAsync(Id, _comment);
+        Snackbar.Add("Justification approved — ready for settlement.", Severity.Success);
+    });
+
+    private Task ReturnJustification() => Run(async svc =>
+    {
+        await svc.RejectJustificationAsync(Id, _comment);
+        Snackbar.Add("Justification returned for rework.", Severity.Warning);
+    });
+
+    private Task Settle() => Run(async svc =>
+    {
+        var mapping = _lineAccounts
+            .Where(kv => kv.Value is not null)
+            .ToDictionary(kv => kv.Key, kv => kv.Value!.Value);
+        var voucher = await svc.SettleAsync(Id, _payFromAccountId!.Value, _comment, mapping);
+        Snackbar.Add($"Settled — voucher {voucher.VoucherNo} posted.", Severity.Success);
     });
 
     private Task Pay() => Run(async svc =>

@@ -8,15 +8,19 @@
         RequestStatus.PendingManager => "Pending Manager",
         RequestStatus.PendingAdmin => "Pending Admin",
         RequestStatus.PendingAccountant => "Pending Accountant",
+        RequestStatus.Disbursed => "Disbursed — Awaiting Justification",
+        RequestStatus.JustificationPending => "Justification Pending",
+        RequestStatus.SettlementReady => "Ready to Settle",
         _ => Status.ToString()
     };
 
     private Color ChipColor => Status switch
     {
         RequestStatus.Draft => Color.Default,
-        RequestStatus.Paid => Color.Success,
+        RequestStatus.Paid or RequestStatus.Settled => Color.Success,
         RequestStatus.Rejected => Color.Error,
         RequestStatus.Cancelled => Color.Dark,
+        RequestStatus.Disbursed => Color.Info,
         _ => Color.Warning
     };
 }

@@ -38,6 +38,14 @@ public interface IPaymentRequestService
     Task<Voucher> PayAsync(int id, int payFromAccountId, string? comment,
         IReadOnlyDictionary<int, int>? lineAccounts = null);
     Task CancelAsync(int id);
+
+    // Advance-kind lifecycle: disburse → justify → approve justification → settle.
+    Task<Voucher> DisburseAsync(int id, int payFromAccountId, string? comment);
+    Task SubmitJustificationAsync(int id, List<PaymentRequestLine> lines);
+    Task ApproveJustificationAsync(int id, string? comment);
+    Task RejectJustificationAsync(int id, string? comment);
+    /// <summary>Posts actuals, clears the advance, and settles the cash difference.</summary>
+    Task<Voucher> SettleAsync(int id, int cashAccountId, string? comment, IReadOnlyDictionary<int, int> lineAccounts);
 }
 
 public interface IAdvanceService

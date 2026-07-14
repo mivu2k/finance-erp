@@ -17,8 +17,15 @@ public class PaymentRequest : AuditableEntity
     public decimal TotalAmount { get; set; }
     /// <summary>True when raised by a Director (Director Fund Request) — posts against the director's capital/advance account.</summary>
     public bool IsDirectorRequest { get; set; }
+    public RequestKind Kind { get; set; } = RequestKind.Reimbursement;
+    /// <summary>Payment voucher (reimbursement) or disbursement voucher (advance).</summary>
     public int? VoucherId { get; set; }
     public Voucher? Voucher { get; set; }
+    /// <summary>Advance kind: ledger sub-account holding the employee's outstanding advance.</summary>
+    public int? AdvanceAccountId { get; set; }
+    /// <summary>Advance kind: settlement voucher posting actual expenses and clearing the advance.</summary>
+    public int? SettlementVoucherId { get; set; }
+    public Voucher? SettlementVoucher { get; set; }
     public List<PaymentRequestLine> Lines { get; set; } = [];
     public List<RequestApproval> Approvals { get; set; } = [];
 }
