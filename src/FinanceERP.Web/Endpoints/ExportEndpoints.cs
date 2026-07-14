@@ -32,6 +32,41 @@ public static class ExportEndpoints
             return Results.File(xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "general-ledger.xlsx");
         });
 
+        group.MapGet("/utility-bills", async (IUtilityService utilities, IExportService export,
+            DateOnly? from, DateOnly? to, int? locationId, int? connectionId, int? type, bool? paid,
+            string format = "xlsx") =>
+        {
+            var bills = await utilities.ListBillsAsync(new UtilityBillFilter
+            {
+                From = from, To = to, LocationId = locationId, ConnectionId = connectionId,
+                Type = type is null ? null : (FinanceERP.Domain.Entities.UtilityType)type, Paid = paid
+            }, max: 5000);
+            string[] headers = ["Month", "Location", "Type", "Connection", "Consumer #", "Provider", "Due", "Amount", "Status", "Paid Date"];
+            var total = bills.Sum(b => b.Amount);
+            if (format == "pdf")
+            {
+                var rows = bills.Select(b => new[]
+                {
+                    b.BillMonth.ToString("MMM yyyy"), b.Connection.Location.Name, b.Connection.Type.ToString(),
+                    b.Connection.Name, b.Connection.ConsumerNumber ?? "", b.Connection.Provider ?? "",
+                    b.DueDate?.ToString("yyyy-MM-dd") ?? "", b.Amount.ToString("N2"),
+                    b.VoucherId is null ? "Unpaid" : "Paid", b.PaidDate?.ToString("yyyy-MM-dd") ?? ""
+                }).ToList();
+                rows.Add(["", "", "", "", "", "", "TOTAL", total.ToString("N2"), "", ""]);
+                return Results.File(export.TableToPdf("Utility Bills", $"{from:yyyy-MM} — {to:yyyy-MM}", headers, rows),
+                    "application/pdf", "utility-bills.pdf");
+            }
+            var xrows = bills.Select(b => new object?[]
+            {
+                b.BillMonth, b.Connection.Location.Name, b.Connection.Type.ToString(), b.Connection.Name,
+                b.Connection.ConsumerNumber, b.Connection.Provider, b.DueDate, b.Amount,
+                b.VoucherId is null ? "Unpaid" : "Paid", b.PaidDate
+            }).ToList();
+            xrows.Add([null, null, null, null, null, null, "TOTAL", total, null, null]);
+            return Results.File(export.TableToExcel("Utility Bills", headers, xrows),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "utility-bills.xlsx");
+        });
+
         group.MapGet("/day-book", async (IReportService reports, IExportService export,
             DateOnly? from, DateOnly? to, int? voucherType, string format = "xlsx") =>
         {

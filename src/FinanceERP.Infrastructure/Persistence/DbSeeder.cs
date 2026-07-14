@@ -39,7 +39,8 @@ public static class DbSeeder
                 Permissions.ReportsView, Permissions.ReportsExport, Permissions.PettyCashView,
                 Permissions.PettyCashAssign, Permissions.RequestsViewAll, Permissions.DirectorFundsRequest,
                 Permissions.DirectorFundsView, Permissions.AdvancesViewAll, Permissions.AdvancesApprove,
-                Permissions.LoansView, Permissions.InvestmentsView, Permissions.ThirdPartiesView
+                Permissions.LoansView, Permissions.InvestmentsView, Permissions.ThirdPartiesView,
+                Permissions.UtilitiesView
             ],
             [AppRoles.FinanceManager] =
             [
@@ -50,7 +51,8 @@ public static class DbSeeder
                 Permissions.RequestsApproveAdmin, Permissions.AdvancesViewAll, Permissions.AdvancesApprove,
                 Permissions.AdvancesManage, Permissions.LoansView, Permissions.LoansManage,
                 Permissions.InvestmentsView, Permissions.InvestmentsManage,
-                Permissions.ThirdPartiesView, Permissions.ThirdPartiesManage
+                Permissions.ThirdPartiesView, Permissions.ThirdPartiesManage,
+                Permissions.UtilitiesView, Permissions.UtilitiesManage, Permissions.UtilitiesPay
             ],
             [AppRoles.Accountant] =
             [
@@ -60,7 +62,8 @@ public static class DbSeeder
                 Permissions.PettyCashManage, Permissions.RequestsViewAll, Permissions.RequestsPay,
                 Permissions.AdvancesViewAll, Permissions.AdvancesManage,
                 Permissions.LoansView, Permissions.InvestmentsView,
-                Permissions.ThirdPartiesView, Permissions.ThirdPartiesManage
+                Permissions.ThirdPartiesView, Permissions.ThirdPartiesManage,
+                Permissions.UtilitiesView, Permissions.UtilitiesManage, Permissions.UtilitiesPay
             ],
             [AppRoles.Manager] =
             [
@@ -77,7 +80,8 @@ public static class DbSeeder
                 Permissions.AccountsView, Permissions.LedgerView, Permissions.VouchersView,
                 Permissions.ReportsView, Permissions.ReportsExport, Permissions.AuditView,
                 Permissions.RequestsViewAll, Permissions.AdvancesViewAll, Permissions.LoansView,
-                Permissions.InvestmentsView, Permissions.ThirdPartiesView, Permissions.PettyCashView
+                Permissions.InvestmentsView, Permissions.ThirdPartiesView, Permissions.PettyCashView,
+                Permissions.UtilitiesView
             ],
             [AppRoles.Viewer] =
             [

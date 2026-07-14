@@ -87,6 +87,23 @@ public class AlertsBackgroundService(IServiceScopeFactory scopeFactory, ILogger<
         }
         await db.SaveChangesAsync(ct);
 
+        // Utility bills due within 3 days or overdue
+        var dueSoon = today.AddDays(3);
+        var dueBills = await db.UtilityBills
+            .Include(b => b.Connection).ThenInclude(c => c.Location)
+            .Where(b => b.VoucherId == null && b.DueDate != null && b.DueDate <= dueSoon)
+            .ToListAsync(ct);
+        foreach (var bill in dueBills)
+        {
+            var overdue = bill.DueDate < today;
+            var title = $"Utility bill {(overdue ? "overdue" : "due")}: {bill.Connection.Location.Name} — {bill.Connection.Name} ({bill.BillMonth:MMM yyyy})";
+            if (!await AlreadySentToday(title))
+                await notifications.NotifyRoleAsync(AppRoles.Accountant, title,
+                    $"{bill.Amount:N2} due {bill.DueDate:yyyy-MM-dd}" +
+                    (bill.Connection.ConsumerNumber is null ? "" : $" · Consumer # {bill.Connection.ConsumerNumber}"),
+                    NotificationType.PaymentDue, "/utilities");
+        }
+
         // Low cash
         var thresholdSetting = await db.AppSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.Key == SettingKeys.LowCashThreshold, ct);

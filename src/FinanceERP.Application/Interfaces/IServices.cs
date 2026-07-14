@@ -101,6 +101,32 @@ public interface IThirdPartyService
     Task DeleteAsync(int id);
 }
 
+public class UtilityBillFilter
+{
+    public int? LocationId { get; set; }
+    public int? ConnectionId { get; set; }
+    public UtilityType? Type { get; set; }
+    public DateOnly? From { get; set; }
+    public DateOnly? To { get; set; }
+    /// <summary>null = all, true = paid only, false = unpaid only.</summary>
+    public bool? Paid { get; set; }
+}
+
+public interface IUtilityService
+{
+    Task<List<UtilityLocation>> GetLocationsAsync(bool includeConnections = false);
+    Task<UtilityLocation> SaveLocationAsync(UtilityLocation location);
+    Task<UtilityConnection> SaveConnectionAsync(UtilityConnection connection);
+    Task DeleteConnectionAsync(int id);
+    Task<List<UtilityBill>> ListBillsAsync(UtilityBillFilter filter, int max = 500);
+    Task<UtilityBill> AddBillAsync(UtilityBill bill);
+    Task DeleteBillAsync(int id);
+    /// <summary>Pays a bill: Dr connection's expense account, Cr cash/bank; posts and links the voucher.</summary>
+    Task<Voucher> PayBillAsync(int billId, int payFromAccountId, DateOnly? paidDate = null);
+    Task<List<ExpenseBreakdownDto>> SummaryByTypeAsync(UtilityBillFilter filter);
+    Task<List<ExpenseBreakdownDto>> SummaryByLocationAsync(UtilityBillFilter filter);
+}
+
 public interface IReportService
 {
     Task<List<LedgerRowDto>> GeneralLedgerAsync(ReportFilter filter);

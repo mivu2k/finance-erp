@@ -54,6 +54,11 @@ public static class Permissions
     public const string InvestmentsView = "Investments.View";
     public const string InvestmentsManage = "Investments.Manage";
 
+    // Utilities
+    public const string UtilitiesView = "Utilities.View";
+    public const string UtilitiesManage = "Utilities.Manage";
+    public const string UtilitiesPay = "Utilities.Pay";
+
     // Reports
     public const string ReportsView = "Reports.View";
     public const string ReportsExport = "Reports.Export";

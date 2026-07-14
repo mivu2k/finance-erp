@@ -38,7 +38,9 @@
       "Bash(curl -s -o /dev/null -w \"unauth: %{http_code}\\\\n\" http://localhost:5080/files/receipts/7488f33eec2a4aec80c799e97d5eccf7.png)",
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Add receipt attachments to request and justification lines *)",
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Overspend visibility and employee-initiated installment repayment *)",
-      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Optional manual settlement of advance difference *)"
+      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Optional manual settlement of advance difference *)",
+      "Bash(mysql -uroot finance_erp)",
+      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Add Utilities module: locations, connections/meters, bills, payments, reports *)"
     ]
   }
 }

@@ -26,6 +26,7 @@ public static class DependencyInjection
         services.AddScoped<IInvestmentService, InvestmentService>();
         services.AddScoped<IPettyCashService, PettyCashService>();
         services.AddScoped<IThirdPartyService, ThirdPartyService>();
+        services.AddScoped<IUtilityService, UtilityService>();
         services.AddScoped<IReportService, ReportService>();
         services.AddSingleton<IExportService, ExportService>();
         services.AddScoped<INotificationService, NotificationService>();

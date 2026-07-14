@@ -17,6 +17,9 @@
             <AuthorizeView Policy="@Permissions.PettyCashView" Context="p">
                 <MudNavLink Href="/petty-cash" Icon="@Icons.Material.Filled.Payments">Petty Cash</MudNavLink>
             </AuthorizeView>
+            <AuthorizeView Policy="@Permissions.UtilitiesView" Context="u">
+                <MudNavLink Href="/utilities" Icon="@Icons.Material.Filled.ElectricBolt">Utilities</MudNavLink>
+            </AuthorizeView>
         </MudNavGroup>
     </AuthorizeView>
 

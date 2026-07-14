@@ -37,6 +37,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUserSe
     public DbSet<Investment> Investments => Set<Investment>();
     public DbSet<InvestmentTransaction> InvestmentTransactions => Set<InvestmentTransaction>();
     public DbSet<PettyCashAssignment> PettyCashAssignments => Set<PettyCashAssignment>();
+    public DbSet<UtilityLocation> UtilityLocations => Set<UtilityLocation>();
+    public DbSet<UtilityConnection> UtilityConnections => Set<UtilityConnection>();
+    public DbSet<UtilityBill> UtilityBills => Set<UtilityBill>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
@@ -161,6 +164,33 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUserSe
         {
             e.Property(x => x.Amount).HasPrecision(18, 2);
             e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<UtilityLocation>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(150);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<UtilityConnection>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(150);
+            e.Property(x => x.ConsumerNumber).HasMaxLength(60);
+            e.HasOne(x => x.Location).WithMany(x => x.Connections)
+                .HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.ExpenseAccount).WithMany()
+                .HasForeignKey(x => x.ExpenseAccountId).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => !x.IsDeleted && !x.Location.IsDeleted);
+        });
+
+        b.Entity<UtilityBill>(e =>
+        {
+            e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.HasOne(x => x.Connection).WithMany(x => x.Bills)
+                .HasForeignKey(x => x.ConnectionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.ConnectionId, x.BillMonth });
+            e.HasIndex(x => x.DueDate);
+            e.HasQueryFilter(x => !x.IsDeleted && !x.Connection.IsDeleted && !x.Connection.Location.IsDeleted);
         });
 
         b.Entity<AuditLog>(e =>

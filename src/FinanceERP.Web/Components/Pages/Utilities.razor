@@ -1,0 +1,502 @@
+@page "/utilities"
+@attribute [Authorize(Policy = Permissions.UtilitiesView)]
+@using FinanceERP.Infrastructure.Persistence
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Utilities</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Utilities</MudText>
+
+<MudTabs Elevation="1" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4">
+    <MudTabPanel Text="Bills" Icon="@Icons.Material.Filled.ReceiptLong">
+
+        <MudPaper Class="pa-4 mb-4">
+            <MudGrid Spacing="2">
+                <MudItem xs="6" md="2">
+                    <MudSelect T="int?" Value="_filter.LocationId" ValueChanged="OnLocationFilterChanged" Label="Location" Clearable="true">
+                        @foreach (var l in _locations)
+                        {
+                            <MudSelectItem T="int?" Value="@l.Id">@l.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="2">
+                    <MudSelect T="UtilityType?" @bind-Value="_filter.Type" Label="Type" Clearable="true">
+                        @foreach (UtilityType t in Enum.GetValues<UtilityType>())
+                        {
+                            <MudSelectItem T="UtilityType?" Value="@t">@TypeLabel(t)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudSelect T="int?" @bind-Value="_filter.ConnectionId" Label="Connection / Meter" Clearable="true">
+                        @foreach (var c in FilterConnections)
+                        {
+                            <MudSelectItem T="int?" Value="@c.Id">@c.Location.Name — @c.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="2">
+                    <MudSelect T="bool?" @bind-Value="_filter.Paid" Label="Status" Clearable="true">
+                        <MudSelectItem T="bool?" Value="false">Unpaid</MudSelectItem>
+                        <MudSelectItem T="bool?" Value="true">Paid</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="1"><MudDatePicker Label="From" @bind-Date="_from" /></MudItem>
+                <MudItem xs="6" md="1"><MudDatePicker Label="To" @bind-Date="_to" /></MudItem>
+                <MudItem xs="12" md="1" Class="d-flex align-end">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadBillsAsync">Run</MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudGrid Spacing="3" Class="mb-1">
+            <MudItem xs="6" md="3">
+                <MudPaper Class="pa-4">
+                    <MudText Typo="Typo.caption">Unpaid Total</MudText>
+                    <MudText Typo="Typo.h6" Color="Color.Warning">@_bills.Where(b => !b.IsPaid).Sum(b => b.Amount).ToString("N2")</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudPaper Class="pa-4">
+                    <MudText Typo="Typo.caption">Overdue Bills</MudText>
+                    <MudText Typo="Typo.h6" Color="Color.Error">@_bills.Count(IsOverdue)</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudPaper Class="pa-4">
+                    <MudText Typo="Typo.caption">Paid (period)</MudText>
+                    <MudText Typo="Typo.h6" Color="Color.Success">@_bills.Where(b => b.IsPaid).Sum(b => b.Amount).ToString("N2")</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudPaper Class="pa-4">
+                    <MudText Typo="Typo.caption">Bills (period)</MudText>
+                    <MudText Typo="Typo.h6">@_bills.Count</MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        @if (_byType.Count > 0)
+        {
+            <MudGrid Spacing="3" Class="mb-1">
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-4">
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">By utility type</MudText>
+                        <MudChart ChartType="ChartType.Donut" Width="100%" Height="220px"
+                                  InputData="@_byType.Select(x => (double)x.Amount).ToArray()"
+                                  InputLabels="@_byType.Select(x => TypeLabel(Enum.Parse<UtilityType>(x.Category))).ToArray()" />
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-4">
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">By location</MudText>
+                        <MudChart ChartType="ChartType.Donut" Width="100%" Height="220px"
+                                  InputData="@_byLocation.Select(x => (double)x.Amount).ToArray()"
+                                  InputLabels="@_byLocation.Select(x => x.Category).ToArray()" />
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+        }
+
+        <MudPaper Class="pa-2 mt-3" Style="overflow-x:auto">
+            <div class="d-flex align-center pa-2 flex-wrap gap-2">
+                <MudText Typo="Typo.subtitle1">Bills</MudText>
+                <MudSpacer />
+                <AuthorizeView Policy="@Permissions.ReportsExport">
+                    <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+                        <MudButton StartIcon="@Icons.Material.Filled.PictureAsPdf" OnClick="@(() => Export("pdf"))">PDF</MudButton>
+                        <MudButton StartIcon="@Icons.Material.Filled.GridOn" OnClick="@(() => Export("xlsx"))">Excel</MudButton>
+                    </MudButtonGroup>
+                </AuthorizeView>
+                <AuthorizeView Policy="@Permissions.UtilitiesManage">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Add" OnClick="OpenNewBill">Add Bill</MudButton>
+                </AuthorizeView>
+            </div>
+            <MudSimpleTable Dense="true" Hover="true" Striped="true">
+                <thead>
+                    <tr>
+                        <th>Month</th><th>Location</th><th>Connection</th><th>Consumer #</th>
+                        <th>Due</th><th style="text-align:right">Amount</th><th>Status</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var b in _bills)
+                    {
+                        <tr>
+                            <td>@b.BillMonth.ToString("MMM yyyy")</td>
+                            <td>@b.Connection.Location.Name</td>
+                            <td>@TypeLabel(b.Connection.Type) — @b.Connection.Name</td>
+                            <td>@b.Connection.ConsumerNumber</td>
+                            <td>@(b.DueDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                            <td style="text-align:right">@b.Amount.ToString("N2")</td>
+                            <td>
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(b.IsPaid ? Color.Success : IsOverdue(b) ? Color.Error : Color.Warning)">
+                                    @(b.IsPaid ? $"Paid {b.PaidDate:dd MMM}" : IsOverdue(b) ? "Overdue" : "Unpaid")
+                                </MudChip>
+                            </td>
+                            <td style="white-space:nowrap">
+                                @if (!b.IsPaid)
+                                {
+                                    <AuthorizeView Policy="@Permissions.UtilitiesPay" Context="p">
+                                        <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                                                   Disabled="@_busy" OnClick="@(() => OpenPay(b))">Pay</MudButton>
+                                    </AuthorizeView>
+                                    <AuthorizeView Policy="@Permissions.UtilitiesManage" Context="m">
+                                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                                       Disabled="@_busy" OnClick="@(() => DeleteBill(b))" />
+                                    </AuthorizeView>
+                                }
+                                else if (b.VoucherId is not null)
+                                {
+                                    <MudLink Href="@($"/vouchers/{b.VoucherId}")" Typo="Typo.caption">Voucher</MudLink>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    @if (_bills.Count == 0)
+                    {
+                        <tr><td colspan="8">No bills for the selected filters — add one with "Add Bill".</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudTabPanel>
+
+    <MudTabPanel Text="Locations &amp; Connections" Icon="@Icons.Material.Filled.Apartment">
+        <AuthorizeView Policy="@Permissions.UtilitiesManage">
+            <div class="d-flex align-end gap-2 mb-4">
+                <div style="width:280px;max-width:60vw">
+                    <MudTextField @bind-Value="_newLocationName" Label="New location (e.g. Islamabad Home)" Margin="Margin.Dense" Immediate="true" />
+                </div>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="flex-shrink-0"
+                           Disabled="@(string.IsNullOrWhiteSpace(_newLocationName))" OnClick="AddLocation">Add Location</MudButton>
+            </div>
+        </AuthorizeView>
+
+        @foreach (var loc in _locations)
+        {
+            <MudPaper Class="pa-4 mb-4">
+                <div class="d-flex align-center mb-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Place" Class="mr-2" />
+                    <MudText Typo="Typo.h6">@loc.Name</MudText>
+                    <MudSpacer />
+                    <AuthorizeView Policy="@Permissions.UtilitiesManage">
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
+                                   OnClick="@(() => OpenNewConnection(loc))">Add Connection</MudButton>
+                    </AuthorizeView>
+                </div>
+                <MudSimpleTable Dense="true" Hover="true">
+                    <thead>
+                        <tr><th>Type</th><th>Name</th><th>Consumer #</th><th>Provider</th><th>Expense account</th><th>Active</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in loc.Connections.OrderBy(c => c.Type).ThenBy(c => c.Name))
+                        {
+                            <tr>
+                                <td>@TypeLabel(c.Type)</td>
+                                <td>@c.Name</td>
+                                <td>@c.ConsumerNumber</td>
+                                <td>@c.Provider</td>
+                                <td>@(c.ExpenseAccount is null ? "Default" : $"{c.ExpenseAccount.Code} {c.ExpenseAccount.Name}")</td>
+                                <td>@(c.IsActive ? "Yes" : "No")</td>
+                                <td>
+                                    <AuthorizeView Policy="@Permissions.UtilitiesManage" Context="m">
+                                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                                       OnClick="@(() => OpenEditConnection(loc, c))" />
+                                    </AuthorizeView>
+                                </td>
+                            </tr>
+                        }
+                        @if (loc.Connections.Count == 0)
+                        {
+                            <tr><td colspan="7">No connections yet — add the meters/services for this location.</td></tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+        }
+        @if (_locations.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">Start by adding a location (e.g. Islamabad Home, Karachi Office), then add its meters and services.</MudAlert>
+        }
+    </MudTabPanel>
+</MudTabs>
+
+@* ---------- Add/Edit connection ---------- *@
+@if (_editConnection is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:480px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_editConnection.Id == 0 ? "New Connection" : "Edit Connection")</MudText>
+            <MudSelect T="int" @bind-Value="_editConnection.LocationId" Label="Location" Class="mb-2">
+                @foreach (var l in _locations)
+                {
+                    <MudSelectItem Value="@l.Id">@l.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSelect T="UtilityType" @bind-Value="_editConnection.Type" Label="Type" Class="mb-2">
+                @foreach (UtilityType t in Enum.GetValues<UtilityType>())
+                {
+                    <MudSelectItem Value="@t">@TypeLabel(t)</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField @bind-Value="_editConnection.Name" Label="Name (e.g. Electricity — Upper Portion)" Class="mb-2" />
+            <MudTextField @bind-Value="_editConnection.ConsumerNumber" Label="Consumer / meter number" Class="mb-2" />
+            <MudTextField @bind-Value="_editConnection.Provider" Label="Provider (IESCO, SSGC, PTCL, DHA…)" Class="mb-2" />
+            <MudSelect T="int?" @bind-Value="_editConnection.ExpenseAccountId" Label="Expense account (optional)" Clearable="true" Class="mb-2"
+                       HelperText="Default: Utilities (Internet/Telephone → Internet)">
+                @foreach (var a in _expenseAccounts)
+                {
+                    <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSwitch T="bool" @bind-Value="_editConnection.IsActive" Label="Active" Color="Color.Primary" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _editConnection = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveConnection"
+                           Disabled="@(_busy || string.IsNullOrWhiteSpace(_editConnection.Name) || _editConnection.LocationId == 0)">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@* ---------- Add bill ---------- *@
+@if (_newBill is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">Add Bill</MudText>
+            <MudSelect T="int" @bind-Value="_newBill.ConnectionId" Label="Connection" Class="mb-2">
+                @foreach (var c in _connections.Where(c => c.IsActive))
+                {
+                    <MudSelectItem Value="@c.Id">@c.Location.Name — @TypeLabel(c.Type) — @c.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudDatePicker Label="Bill month" Date="@_newBill.BillMonth.ToDateTime(TimeOnly.MinValue)"
+                           DateChanged="@(d => { if (d is not null) _newBill.BillMonth = DateOnly.FromDateTime(d.Value); })"
+                           FixDay="1" Class="mb-2" />
+            <MudNumericField T="decimal" @bind-Value="_newBill.Amount" Label="Amount" Min="0" Format="N2" Class="mb-2" />
+            <MudDatePicker Label="Due date" Date="@(_newBill.DueDate?.ToDateTime(TimeOnly.MinValue))"
+                           DateChanged="@(d => _newBill.DueDate = d is null ? null : DateOnly.FromDateTime(d.Value))" Class="mb-2" />
+            <MudTextField @bind-Value="_newBill.Reference" Label="Bill reference # (optional)" Class="mb-2" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _newBill = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveBill"
+                           Disabled="@(_busy || _newBill.ConnectionId == 0 || _newBill.Amount <= 0)">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@* ---------- Pay bill ---------- *@
+@if (_payBill is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:440px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-1">Pay Bill</MudText>
+            <MudText Typo="Typo.body2" Class="mb-3">
+                @_payBill.Connection.Location.Name — @_payBill.Connection.Name (@_payBill.BillMonth.ToString("MMM yyyy")):
+                <b>@_payBill.Amount.ToString("N2")</b>
+            </MudText>
+            <MudSelect T="int?" @bind-Value="_payFromAccountId" Label="Pay from" Class="mb-3">
+                @foreach (var a in _cashAccounts)
+                {
+                    <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _payBill = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="ConfirmPay"
+                           Disabled="@(_busy || _payFromAccountId is null)">Pay &amp; Post</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    private readonly UtilityBillFilter _filter = new();
+    private DateTime? _from = DateTime.Today.AddMonths(-5);
+    private DateTime? _to = DateTime.Today;
+    private List<UtilityLocation> _locations = [];
+    private List<UtilityConnection> _connections = [];
+    private List<UtilityBill> _bills = [];
+    private List<ExpenseBreakdownDto> _byType = [];
+    private List<ExpenseBreakdownDto> _byLocation = [];
+    private List<Account> _expenseAccounts = [];
+    private List<Account> _cashAccounts = [];
+    private UtilityConnection? _editConnection;
+    private UtilityBill? _newBill;
+    private UtilityBill? _payBill;
+    private int? _payFromAccountId;
+    private string _newLocationName = "";
+    private bool _busy;
+
+    private IEnumerable<UtilityConnection> FilterConnections =>
+        _connections.Where(c => _filter.LocationId is null || c.LocationId == _filter.LocationId);
+
+    private static bool IsOverdue(UtilityBill b) =>
+        !b.IsPaid && b.DueDate is not null && b.DueDate < DateOnly.FromDateTime(DateTime.Today);
+
+    private static string TypeLabel(UtilityType t) => t switch
+    {
+        UtilityType.SocietyDues => "Society/DHA Dues",
+        UtilityType.SchoolFee => "School Fee",
+        _ => t.ToString()
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        _expenseAccounts = db.Accounts.Where(a => a.IsPostable && a.IsActive && a.Type == AccountType.Expense)
+            .OrderBy(a => a.Code).ToList();
+        _cashAccounts = db.Accounts.Where(a => a.Code == "1100" || a.Code == "1201" || a.Code == "1300").ToList();
+        _payFromAccountId = _cashAccounts.FirstOrDefault()?.Id;
+        await ReloadStructureAsync();
+        await LoadBillsAsync();
+    }
+
+    private async Task ReloadStructureAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<IUtilityService>();
+        _locations = await svc.GetLocationsAsync(includeConnections: true);
+        _connections = _locations.SelectMany(l => l.Connections.Select(c => { c.Location = l; return c; })).ToList();
+    }
+
+    private void OnLocationFilterChanged(int? locationId)
+    {
+        _filter.LocationId = locationId;
+        _filter.ConnectionId = null;
+    }
+
+    private async Task LoadBillsAsync()
+    {
+        _filter.From = _from is null ? null : new DateOnly(_from.Value.Year, _from.Value.Month, 1);
+        _filter.To = _to is null ? null : new DateOnly(_to.Value.Year, _to.Value.Month, 1);
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<IUtilityService>();
+        _bills = await svc.ListBillsAsync(_filter);
+        _byType = await svc.SummaryByTypeAsync(_filter);
+        _byLocation = await svc.SummaryByLocationAsync(_filter);
+    }
+
+    private async Task AddLocation()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IUtilityService>()
+                .SaveLocationAsync(new UtilityLocation { Name = _newLocationName.Trim() });
+            _newLocationName = "";
+            await ReloadStructureAsync();
+            Snackbar.Add("Location added.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private void OpenNewConnection(UtilityLocation loc) =>
+        _editConnection = new UtilityConnection { LocationId = loc.Id, Type = UtilityType.Electricity };
+
+    private void OpenEditConnection(UtilityLocation loc, UtilityConnection c) =>
+        _editConnection = new UtilityConnection
+        {
+            Id = c.Id, LocationId = loc.Id, Type = c.Type, Name = c.Name,
+            ConsumerNumber = c.ConsumerNumber, Provider = c.Provider,
+            ExpenseAccountId = c.ExpenseAccountId, IsActive = c.IsActive
+        };
+
+    private async Task SaveConnection()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IUtilityService>().SaveConnectionAsync(_editConnection!);
+            _editConnection = null;
+            await ReloadStructureAsync();
+            Snackbar.Add("Connection saved.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private void OpenNewBill() =>
+        _newBill = new UtilityBill
+        {
+            BillMonth = new DateOnly(DateTime.Today.Year, DateTime.Today.Month, 1),
+            DueDate = DateOnly.FromDateTime(DateTime.Today.AddDays(14)),
+            ConnectionId = _filter.ConnectionId ?? 0
+        };
+
+    private async Task SaveBill()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IUtilityService>().AddBillAsync(_newBill!);
+            _newBill = null;
+            await LoadBillsAsync();
+            Snackbar.Add("Bill added.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private async Task DeleteBill(UtilityBill bill)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IUtilityService>().DeleteBillAsync(bill.Id);
+            await LoadBillsAsync();
+            Snackbar.Add("Bill deleted.", Severity.Info);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private void OpenPay(UtilityBill bill) => _payBill = bill;
+
+    private async Task ConfirmPay()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var voucher = await scope.ServiceProvider.GetRequiredService<IUtilityService>()
+                .PayBillAsync(_payBill!.Id, _payFromAccountId!.Value);
+            _payBill = null;
+            await LoadBillsAsync();
+            Snackbar.Add($"Paid — voucher {voucher.VoucherNo} posted.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private void Export(string format)
+    {
+        var url = $"/export/utility-bills?format={format}"
+            + (_filter.From is null ? "" : $"&from={_filter.From:yyyy-MM-dd}")
+            + (_filter.To is null ? "" : $"&to={_filter.To:yyyy-MM-dd}")
+            + (_filter.LocationId is null ? "" : $"&locationId={_filter.LocationId}")
+            + (_filter.ConnectionId is null ? "" : $"&connectionId={_filter.ConnectionId}")
+            + (_filter.Type is null ? "" : $"&type={(int)_filter.Type}")
+            + (_filter.Paid is null ? "" : $"&paid={_filter.Paid}");
+        Nav.NavigateTo(url, forceLoad: true);
+    }
+}
