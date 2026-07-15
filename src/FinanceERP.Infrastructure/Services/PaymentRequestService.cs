@@ -104,6 +104,8 @@ public class PaymentRequestService(
         if (r.Status != RequestStatus.Draft) throw new InvalidOperationException("Request already submitted.");
         if (r.TotalAmount <= 0 || (r.Kind != RequestKind.Advance && r.Lines.Count == 0))
             throw new InvalidOperationException("Add at least one line with an amount.");
+        if (r.ProjectId is null && await db.Projects.AnyAsync(p => p.IsActive && !p.IsDeleted))
+            throw new InvalidOperationException("Select a project — every request must be tracked under one.");
 
         // Director fund requests skip manager approval and go straight to Admin.
         r.Status = r.IsDirectorRequest ? RequestStatus.PendingAdmin : RequestStatus.PendingManager;

@@ -42,7 +42,9 @@
             </MudSelect>
         </MudItem>
         <MudItem xs="6" md="3">
-            <MudSelect T="int?" @bind-Value="_model.ProjectId" Label="Project" Clearable="true">
+            <MudSelect T="int?" @bind-Value="_model.ProjectId" Label="@(_projects.Count > 0 ? "Project" : "Project (none defined)")"
+                       Required="@(_projects.Count > 0)" Disabled="@(_projects.Count == 0)"
+                       HelperText="@(_projects.Count > 0 ? "Required — every expense is tracked under a project" : null)">
                 @foreach (var p in _projects)
                 {
                     <MudSelectItem T="int?" Value="@p.Id">@p.Name</MudSelectItem>
@@ -141,6 +143,7 @@
 
     private bool IsValid =>
         !string.IsNullOrWhiteSpace(_model.Purpose)
+        && (_projects.Count == 0 || _model.ProjectId is not null)
         && (_model.Kind == RequestKind.Advance
             ? _model.TotalAmount > 0
             : _model.Lines.Any()

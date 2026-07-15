@@ -161,6 +161,8 @@ public interface IReportService
     Task<List<LedgerRowDto>> CashBookAsync(ReportFilter filter);
     Task<List<CashFlowPointDto>> CashFlowAsync(DateOnly from, DateOnly to);
     Task<List<ExpenseBreakdownDto>> ExpenseBreakdownAsync(DateOnly from, DateOnly to);
+    /// <summary>Total posted spend per project (lines tagged with a project) in the period.</summary>
+    Task<List<ExpenseBreakdownDto>> ProjectBreakdownAsync(DateOnly from, DateOnly to);
     Task<DailySummaryDto> DailySummaryAsync(string? forUserId = null);
 }
 

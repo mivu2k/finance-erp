@@ -36,6 +36,14 @@
                 }
             </MudSelect>
         </MudItem>
+        <MudItem xs="6" md="2">
+            <MudSelect T="int?" @bind-Value="_projectId" Label="Project" Clearable="true">
+                @foreach (var p in _projects)
+                {
+                    <MudSelectItem T="int?" Value="@p.Id">@p.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
         <MudItem xs="6" md="2" Class="d-flex align-end">
             <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAsync">Run</MudButton>
         </MudItem>
@@ -76,12 +84,15 @@
 
 @code {
     [SupplyParameterFromQuery(Name = "accountId")] public int? QueryAccountId { get; set; }
+    [SupplyParameterFromQuery(Name = "projectId")] public int? QueryProjectId { get; set; }
     private DateTime? _from = DateTime.Today.AddMonths(-1);
     private DateTime? _to = DateTime.Today;
     private int? _accountId;
     private int? _departmentId;
+    private int? _projectId;
     private List<Account> _accounts = [];
     private List<Department> _departments = [];
+    private List<Project> _projects = [];
     private List<LedgerRowDto> _rows = [];
 
     protected override async Task OnInitializedAsync()
@@ -90,10 +101,16 @@
         _accounts = await scope.ServiceProvider.GetRequiredService<IAccountService>().GetPostableAsync();
         var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
         _departments = db.Departments.OrderBy(d => d.Name).ToList();
+        _projects = db.Projects.OrderBy(p => p.Name).ToList();
         if (QueryAccountId is not null)
         {
             _accountId = QueryAccountId;
             _from = DateTime.Today.AddYears(-1); // statements default to a full year
+        }
+        if (QueryProjectId is not null)
+        {
+            _projectId = QueryProjectId;
+            _from = DateTime.Today.AddYears(-1);
         }
         await LoadAsync();
     }
@@ -106,7 +123,8 @@
             From = _from is null ? null : DateOnly.FromDateTime(_from.Value),
             To = _to is null ? null : DateOnly.FromDateTime(_to.Value),
             AccountId = _accountId,
-            DepartmentId = _departmentId
+            DepartmentId = _departmentId,
+            ProjectId = _projectId
         });
     }
 
@@ -116,7 +134,8 @@
         var to = _to is null ? "" : DateOnly.FromDateTime(_to.Value).ToString("yyyy-MM-dd");
         var url = $"/export/ledger?format={format}&from={from}&to={to}"
                   + (_accountId is null ? "" : $"&accountId={_accountId}")
-                  + (_departmentId is null ? "" : $"&departmentId={_departmentId}");
+                  + (_departmentId is null ? "" : $"&departmentId={_departmentId}")
+                  + (_projectId is null ? "" : $"&projectId={_projectId}");
         Nav.NavigateTo(url, forceLoad: true);
     }
 }

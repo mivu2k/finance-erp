@@ -154,6 +154,21 @@ public class ReportService(AppDbContext db) : IReportService
         return rows.Select(r => new ExpenseBreakdownDto(r.Category, r.Amount)).ToList();
     }
 
+    public async Task<List<ExpenseBreakdownDto>> ProjectBreakdownAsync(DateOnly from, DateOnly to)
+    {
+        // Expense lines only — the cash/advance counter-lines of a payment voucher
+        // carry the same project tag and would net the spend to zero.
+        var rows = await db.VoucherLines.AsNoTracking()
+            .Where(l => l.Voucher.Status == VoucherStatus.Posted && l.ProjectId != null
+                && l.Account.Type == AccountType.Expense
+                && l.Voucher.Date >= from && l.Voucher.Date <= to)
+            .GroupBy(l => l.Project!.Name)
+            .Select(g => new { Project = g.Key, Amount = g.Sum(x => x.Debit) - g.Sum(x => x.Credit) })
+            .ToListAsync();
+        return rows.OrderByDescending(r => r.Amount)
+            .Select(r => new ExpenseBreakdownDto(r.Project, r.Amount)).ToList();
+    }
+
     public async Task<DailySummaryDto> DailySummaryAsync(string? forUserId = null)
     {
         var today = DateOnly.FromDateTime(DateTime.Today);

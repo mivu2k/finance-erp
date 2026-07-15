@@ -32,6 +32,25 @@ public static class ExportEndpoints
             return Results.File(xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "general-ledger.xlsx");
         });
 
+        group.MapGet("/project-report", async (IReportService reports, IExportService export,
+            DateOnly from, DateOnly to, string format = "xlsx") =>
+        {
+            var rows = await reports.ProjectBreakdownAsync(from, to);
+            string[] headers = ["Project", "Net Spend"];
+            var total = rows.Sum(r => r.Amount);
+            if (format == "pdf")
+            {
+                var pdfRows = rows.Select(r => new[] { r.Category, r.Amount.ToString("N2") }).ToList();
+                pdfRows.Add(["TOTAL", total.ToString("N2")]);
+                return Results.File(export.TableToPdf("Project Report", $"{from} — {to}", headers, pdfRows),
+                    "application/pdf", "project-report.pdf");
+            }
+            var xrows = rows.Select(r => new object?[] { r.Category, r.Amount }).ToList();
+            xrows.Add(["TOTAL", total]);
+            return Results.File(export.TableToExcel("Project Report", headers, xrows),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "project-report.xlsx");
+        });
+
         group.MapGet("/utility-bills", async (IUtilityService utilities, IExportService export,
             DateOnly? from, DateOnly? to, int? locationId, int? connectionId, int? type, bool? paid,
             string format = "xlsx") =>
