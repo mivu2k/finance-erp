@@ -3,6 +3,7 @@
 @page "/approvals"
 @page "/director-funds"
 @attribute [Authorize]
+@using Microsoft.EntityFrameworkCore
 @inject IServiceScopeFactory ScopeFactory
 @inject NavigationManager Nav
 
@@ -44,12 +45,41 @@
     <PagerContent><MudTablePager /></PagerContent>
 </MudTable>
 
+@if (Mode == "approvals" && _pendingAdvances.Count > 0)
+{
+    <MudPaper Class="pa-2 mt-4">
+        <MudText Typo="Typo.subtitle1" Class="pa-2">Employee Advances awaiting you</MudText>
+        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+            <thead>
+                <tr><th>No</th><th>Employee</th><th style="text-align:right">Amount</th><th>Reason</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var a in _pendingAdvances)
+                {
+                    <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/advances/{a.Id}"))">
+                        <td>@a.AdvanceNo</td>
+                        <td>@a.EmployeeName</td>
+                        <td style="text-align:right">@a.Amount.ToString("N2")</td>
+                        <td>@a.Reason</td>
+                        <td>
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning">
+                                @(a.Status == AdvanceStatus.PendingApproval ? "Pending Approval" : "Approved — Disburse")
+                            </MudChip>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+
 @code {
     [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
     private MudTable<PaymentRequest>? _table;
     private string _search = "";
     private string? _userId;
     private readonly List<RequestStatus> _actionableStages = [];
+    private List<EmployeeAdvance> _pendingAdvances = [];
 
     private string Mode => Nav.Uri.Contains("/approvals") ? "approvals"
         : Nav.Uri.Contains("/requests/my") ? "my"
@@ -82,6 +112,21 @@
             {
                 _actionableStages.Add(RequestStatus.PendingAccountant);
                 _actionableStages.Add(RequestStatus.SettlementReady);
+            }
+
+            if (Mode == "approvals")
+            {
+                var canApprove = auth.User.HasClaim(Permissions.ClaimType, Permissions.AdvancesApprove);
+                var canDisburse = auth.User.HasClaim(Permissions.ClaimType, Permissions.AdvancesManage);
+                if (canApprove || canDisburse)
+                {
+                    using var scope = ScopeFactory.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
+                    _pendingAdvances = await db.EmployeeAdvances.AsNoTracking()
+                        .Where(a => (canApprove && a.Status == AdvanceStatus.PendingApproval)
+                                 || (canDisburse && a.Status == AdvanceStatus.Approved))
+                        .OrderBy(a => a.Id).Take(100).ToListAsync();
+                }
             }
         }
     }

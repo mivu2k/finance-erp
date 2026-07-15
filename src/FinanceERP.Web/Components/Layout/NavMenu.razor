@@ -3,6 +3,7 @@
 <MudNavMenu Bordered="true">
     <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
     <MudNavLink Href="/notifications" Icon="@Icons.Material.Filled.Notifications">Notifications</MudNavLink>
+    <MudNavLink Href="/my-ledger" Icon="@Icons.Material.Filled.AccountBalanceWallet">My Ledger</MudNavLink>
 
     <AuthorizeView Policy="@Permissions.AccountsView">
         <MudNavGroup Title="Accounting" Icon="@Icons.Material.Filled.AccountBalance" Expanded="true">
@@ -44,9 +45,10 @@
             </AuthorizeView>
         </MudNavGroup>
     </AuthorizeView>
-    <AuthorizeView Policy="@Permissions.RequestsApproveManager">
+    @if (_canApprove)
+    {
         <MudNavLink Href="/approvals" Icon="@Icons.Material.Filled.HowToVote">Approvals</MudNavLink>
-    </AuthorizeView>
+    }
 
     <AuthorizeView Policy="@Permissions.ThirdPartiesView">
         <MudNavGroup Title="Partners &amp; Portfolio" Icon="@Icons.Material.Filled.Handshake">
@@ -79,3 +81,21 @@
         </MudNavGroup>
     </AuthorizeView>
 </MudNavMenu>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+    private bool _canApprove;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is null) return;
+        var auth = await AuthState;
+        // The approvals queue serves managers, admins, accountants, and advance approvers alike.
+        _canApprove = new[]
+            {
+                Permissions.RequestsApproveManager, Permissions.RequestsApproveAdmin,
+                Permissions.RequestsPay, Permissions.AdvancesApprove
+            }
+            .Any(p => auth.User.HasClaim(Permissions.ClaimType, p));
+    }
+}

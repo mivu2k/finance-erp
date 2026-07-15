@@ -45,7 +45,10 @@
       "Bash(mysql -uroot finance_erp -e \"SELECT \\\\`Key\\\\`, Value FROM AppSettings WHERE \\\\`Key\\\\`='Books.LockDate';\")",
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Production-readiness batch: keys, reconciliation, statements, recurring bills, attachments, email, search, year close *)",
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Separate director funds from employee advances; add admin error correction *)",
-      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Make project mandatory on requests and add project reporting *)"
+      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Make project mandatory on requests and add project reporting *)",
+      "Bash(mysql -uroot finance_erp -e \"SELECT AdvanceNo, Status, IsDeleted FROM EmployeeAdvances; UPDATE EmployeeAdvances SET Status=1, IsDeleted=0 WHERE AdvanceNo='ADV-2026-00002'; SELECT AdvanceNo, Status FROM EmployeeAdvances;\")",
+      "Bash(mysql -uroot finance_erp -e \"UPDATE EmployeeAdvances SET Status=5 WHERE AdvanceNo='ADV-2026-00002';\")",
+      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Role visibility polish: My Ledger, unified approvals, Excel fix, badge, MEI Ledger brand *)"
     ]
   }
 }

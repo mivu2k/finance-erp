@@ -10,12 +10,12 @@
 @inject NavigationManager NavigationManager
 @inject IdentityRedirectManager RedirectManager
 
-<PageTitle>Log in — Finance ERP</PageTitle>
+<PageTitle>Log in — MEI Ledger</PageTitle>
 
 <div class="d-flex justify-content-center align-items-center" style="min-height: 80vh;">
     <div class="card shadow" style="width: 100%; max-width: 420px;">
         <div class="card-body p-4">
-            <h1 class="h4 mb-1 text-center">Finance ERP</h1>
+            <h1 class="h4 mb-1 text-center">MEI Ledger</h1>
             <p class="text-muted text-center mb-4">Sign in to your account</p>
             <StatusMessage Message="@errorMessage" />
             <EditForm Model="Input" method="post" OnValidSubmit="LoginUser" FormName="login">

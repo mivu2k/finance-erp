@@ -1,0 +1,88 @@
+@page "/my-ledger"
+@attribute [Authorize]
+@using Microsoft.EntityFrameworkCore
+@using FinanceERP.Infrastructure.Persistence
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>My Ledger</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1">My Ledger</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+    Your personal accounts with the company — advances you've received, what you've justified or repaid, and the balance you currently owe (positive) or are owed (negative).
+</MudText>
+
+@if (_accounts.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">
+        No personal ledger yet — it appears automatically the first time an advance or director fund is disbursed to you.
+    </MudAlert>
+}
+
+@foreach (var acc in _accounts)
+{
+    <MudPaper Class="pa-4 mb-4">
+        <div class="d-flex align-center mb-2 flex-wrap gap-2">
+            <MudIcon Icon="@(acc.Code.StartsWith("3200") ? Icons.Material.Filled.Workspaces : Icons.Material.Filled.Person)" />
+            <MudText Typo="Typo.h6">@acc.Code — @acc.Name</MudText>
+            <MudSpacer />
+            <MudChip T="string" Color="@(acc.Balance > 0 ? Color.Warning : acc.Balance < 0 ? Color.Info : Color.Success)">
+                Balance: @acc.Balance.ToString("N2")
+            </MudChip>
+        </div>
+        <MudSimpleTable Dense="true" Hover="true" Striped="true" Style="overflow-x:auto">
+            <thead>
+                <tr><th>Date</th><th>Voucher</th><th>Description</th>
+                    <th style="text-align:right">Received</th><th style="text-align:right">Cleared</th>
+                    <th style="text-align:right">Balance</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var r in acc.Rows)
+                {
+                    <tr>
+                        <td>@r.Date.ToString("yyyy-MM-dd")</td>
+                        <td>@r.VoucherNo</td>
+                        <td>@r.Description</td>
+                        <td style="text-align:right">@(r.Debit == 0 ? "" : r.Debit.ToString("N2"))</td>
+                        <td style="text-align:right">@(r.Credit == 0 ? "" : r.Credit.ToString("N2"))</td>
+                        <td style="text-align:right">@r.RunningBalance.ToString("N2")</td>
+                    </tr>
+                }
+                @if (acc.Rows.Count == 0)
+                {
+                    <tr><td colspan="6">No entries yet.</td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+
+@code {
+    private record MyAccount(string Code, string Name, decimal Balance, List<LedgerRowDto> Rows);
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+    private List<MyAccount> _accounts = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is null) return;
+        var auth = await AuthState;
+        var userName = auth.User.Identity?.Name;
+        if (userName is null) return;
+
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var reports = scope.ServiceProvider.GetRequiredService<IReportService>();
+
+        // Personal sub-accounts are created by the workflows using these exact names.
+        var mine = await db.Accounts.AsNoTracking()
+            .Where(a => (a.Parent!.Code == "1700" && a.Name == userName)
+                     || (a.Parent!.Code == "3200" && a.Name == $"Director — {userName}"))
+            .ToListAsync();
+
+        foreach (var acc in mine)
+        {
+            var rows = await reports.GeneralLedgerAsync(new ReportFilter { AccountId = acc.Id });
+            _accounts.Add(new MyAccount(acc.Code, acc.Name, rows.LastOrDefault()?.RunningBalance ?? 0, rows));
+        }
+    }
+}

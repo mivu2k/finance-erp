@@ -130,9 +130,10 @@
 
     private void Export(string format)
     {
-        var from = _from is null ? "" : DateOnly.FromDateTime(_from.Value).ToString("yyyy-MM-dd");
-        var to = _to is null ? "" : DateOnly.FromDateTime(_to.Value).ToString("yyyy-MM-dd");
-        var url = $"/export/ledger?format={format}&from={from}&to={to}"
+        // Empty from=/to= values fail DateOnly binding server-side — omit them entirely.
+        var url = $"/export/ledger?format={format}"
+                  + (_from is null ? "" : $"&from={DateOnly.FromDateTime(_from.Value):yyyy-MM-dd}")
+                  + (_to is null ? "" : $"&to={DateOnly.FromDateTime(_to.Value):yyyy-MM-dd}")
                   + (_accountId is null ? "" : $"&accountId={_accountId}")
                   + (_departmentId is null ? "" : $"&departmentId={_departmentId}")
                   + (_projectId is null ? "" : $"&projectId={_projectId}");

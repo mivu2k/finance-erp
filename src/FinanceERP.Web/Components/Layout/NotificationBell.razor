@@ -8,7 +8,9 @@
     <Authorized>
         <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Dense="true">
             <ActivatorContent>
-                <MudBadge Content="@_items.Count" Color="Color.Error" Overlap="true" Visible="@(_items.Count > 0)">
+                <MudBadge Content="@_items.Count" Color="Color.Error" Max="99" Overlap="true"
+                          Visible="@(_items.Count > 0)" Origin="Origin.TopRight" Class="d-flex align-center"
+                          BadgeClass="notification-badge">
                     <MudIconButton Icon="@Icons.Material.Filled.Notifications" Color="Color.Inherit" />
                 </MudBadge>
             </ActivatorContent>

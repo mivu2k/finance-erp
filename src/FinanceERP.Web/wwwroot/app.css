@@ -58,3 +58,9 @@ h1:focus {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
 }
+/* Notification badge inside the dense app bar: keep the count fully visible */
+.notification-badge {
+    top: 6px !important;
+    right: 6px !important;
+    inset-inline-end: 6px !important;
+}
