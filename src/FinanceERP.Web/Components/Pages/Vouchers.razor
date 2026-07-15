@@ -2,6 +2,7 @@
 @attribute [Authorize(Policy = Permissions.VouchersView)]
 @inject IServiceScopeFactory ScopeFactory
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
 <PageTitle>Vouchers</PageTitle>
 
@@ -59,7 +60,7 @@
         <MudTd>@context.Narration</MudTd>
         <MudTd Style="text-align:right">@context.Amount.ToString("N2")</MudTd>
         <MudTd>@context.Source</MudTd>
-        <MudTd>
+        <MudTd Style="white-space:nowrap">
             <AuthorizeView Policy="@Permissions.VouchersPost" Context="p">
                 @if (context.Status == VoucherStatus.Draft)
                 {
@@ -67,10 +68,45 @@
                                    title="Post" OnClick="@(() => Post(context.Id))" />
                 }
             </AuthorizeView>
+            <AuthorizeView Policy="@Permissions.VouchersCreate" Context="dup">
+                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.ContentCopy"
+                               title="Duplicate as draft (fix & repost)" OnClick="@(() => Duplicate(context.Id))" />
+            </AuthorizeView>
+            <AuthorizeView Policy="@Permissions.VouchersDelete" Context="del">
+                @if (context.Status == VoucherStatus.Draft)
+                {
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                   title="Delete draft" OnClick="@(() => DeleteDraft(context.Id))" />
+                }
+                else if (context.Status == VoucherStatus.Posted)
+                {
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Block" Color="Color.Error"
+                                   title="Void (reverse a wrong entry)" OnClick="@(() => OpenVoid(context))" />
+                }
+            </AuthorizeView>
         </MudTd>
     </RowTemplate>
     <PagerContent><MudTablePager /></PagerContent>
 </MudTable>
+
+@if (_voidTarget is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:440px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-1">Void @_voidTarget.VoucherNo</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                Voiding excludes this voucher from all balances and reports but keeps it on record.
+                To replace it with corrected figures, use "Duplicate as draft" afterwards.
+            </MudText>
+            <MudTextField @bind-Value="_voidReason" Label="Reason (required)" Class="mb-3" Immediate="true" />
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _voidTarget = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="ConfirmVoid"
+                           Disabled="@(_busy || string.IsNullOrWhiteSpace(_voidReason))">Void Voucher</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
 
 @code {
     private MudTable<VoucherListItemDto>? _table;
@@ -79,6 +115,9 @@
     private VoucherType? _type;
     private VoucherStatus? _status;
     private string _search = "";
+    private VoucherListItemDto? _voidTarget;
+    private string _voidReason = "";
+    private bool _busy;
 
     private async Task<TableData<VoucherListItemDto>> LoadData(TableState state, CancellationToken ct)
     {
@@ -95,6 +134,53 @@
             PageSize = state.PageSize
         });
         return new TableData<VoucherListItemDto> { Items = result.Items, TotalItems = result.TotalCount };
+    }
+
+    private void OpenVoid(VoucherListItemDto voucher) { _voidTarget = voucher; _voidReason = ""; }
+
+    private async Task ConfirmVoid()
+    {
+        if (_busy || _voidTarget is null) return;
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IVoucherService>().VoidAsync(_voidTarget.Id, _voidReason);
+            Snackbar.Add($"{_voidTarget.VoucherNo} voided.", Severity.Warning);
+            _voidTarget = null;
+            await _table!.ReloadServerData();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private async Task DeleteDraft(int id)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IVoucherService>().DeleteDraftAsync(id);
+            Snackbar.Add("Draft deleted.", Severity.Info);
+            await _table!.ReloadServerData();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private async Task Duplicate(int id)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var copy = await scope.ServiceProvider.GetRequiredService<IVoucherService>().DuplicateAsDraftAsync(id);
+            Snackbar.Add($"Draft {copy.VoucherNo} created — edit and post it.", Severity.Success);
+            Nav.NavigateTo($"/vouchers/{copy.Id}");
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); _busy = false; }
     }
 
     private async Task Post(int id)

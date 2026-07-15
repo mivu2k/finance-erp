@@ -133,6 +133,39 @@ public class VoucherService(AppDbContext db, ICurrentUserService currentUser) : 
         await db.SaveChangesAsync();
     }
 
+    public async Task DeleteDraftAsync(int id)
+    {
+        var voucher = await db.Vouchers.FirstAsync(v => v.Id == id);
+        if (voucher.Status != VoucherStatus.Draft)
+            throw new InvalidOperationException("Only draft vouchers can be deleted — void posted ones instead.");
+        db.Vouchers.Remove(voucher); // soft delete via interceptor
+        await db.SaveChangesAsync();
+    }
+
+    public async Task<Voucher> DuplicateAsDraftAsync(int id)
+    {
+        var source = await db.Vouchers.Include(v => v.Lines).FirstAsync(v => v.Id == id);
+        var copy = new Voucher
+        {
+            Type = source.Type,
+            Date = DateOnly.FromDateTime(DateTime.Today),
+            Narration = $"{source.Narration} (correction of {source.VoucherNo})",
+            VoucherNo = await NextNumberAsync(source.Type, DateTime.Today.Year),
+            TotalDebit = source.TotalDebit,
+            TotalCredit = source.TotalCredit,
+            Lines = source.Lines.Select(l => new VoucherLine
+            {
+                AccountId = l.AccountId, Description = l.Description,
+                Debit = l.Debit, Credit = l.Credit,
+                CostCenterId = l.CostCenterId, DepartmentId = l.DepartmentId,
+                ProjectId = l.ProjectId, ThirdPartyId = l.ThirdPartyId, LineNo = l.LineNo
+            }).ToList()
+        };
+        db.Vouchers.Add(copy);
+        await db.SaveChangesAsync();
+        return copy;
+    }
+
     public async Task<Voucher> PostSystemVoucherAsync(VoucherType type, DateOnly date, string narration,
         string source, int? sourceId,
         IEnumerable<(int AccountId, decimal Debit, decimal Credit, string? Description)> lines)

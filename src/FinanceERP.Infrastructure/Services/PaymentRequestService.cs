@@ -15,7 +15,17 @@ public class PaymentRequestService(
     IAccountService accountService,
     INotificationService notifications) : IPaymentRequestService
 {
-    private const string AdvancesParentCode = "1700"; // Employee Advances (Asset)
+    private const string AdvancesParentCode = "1700";      // Employee Advances (Asset)
+    private const string DirectorCapitalCode = "3200";     // Director Capital (Equity)
+
+    /// <summary>
+    /// Employees' advances sit under Employee Advances (asset); director funds are
+    /// drawings against the director's own capital sub-account — kept fully separate.
+    /// </summary>
+    private Task<Account> AdvanceAccountForAsync(PaymentRequest r) =>
+        accountService.EnsureChildAccountAsync(
+            r.IsDirectorRequest ? DirectorCapitalCode : AdvancesParentCode,
+            r.IsDirectorRequest ? $"Director — {r.RequesterName}" : r.RequesterName);
 
     public async Task<PagedResult<PaymentRequest>> ListAsync(ReportFilter f, string? requesterId = null, RequestStatus? status = null)
     {
@@ -205,10 +215,10 @@ public class PaymentRequestService(
         if (r.Kind != RequestKind.Advance) throw new InvalidOperationException("Only advance requests are disbursed.");
         if (r.Status != RequestStatus.PendingAccountant) throw new InvalidOperationException("Request is not ready for disbursement.");
 
-        var advAccount = await accountService.EnsureChildAccountAsync(AdvancesParentCode, r.RequesterName);
+        var advAccount = await AdvanceAccountForAsync(r);
         var voucher = await voucherService.PostSystemVoucherAsync(
             VoucherType.CashPayment, DateOnly.FromDateTime(DateTime.Today),
-            $"Advance {r.RequestNo} disbursed to {r.RequesterName} — {r.Purpose}",
+            $"{(r.IsDirectorRequest ? "Director funds" : "Advance")} {r.RequestNo} disbursed to {r.RequesterName} — {r.Purpose}",
             "PaymentRequest", r.Id,
             [
                 (advAccount.Id, r.TotalAmount, 0m, $"{r.RequestNo} advance to {r.RequesterName}"),
@@ -369,10 +379,28 @@ public class PaymentRequestService(
     public async Task CancelAsync(int id)
     {
         var r = await db.PaymentRequests.FirstAsync(x => x.Id == id);
-        EnsureOwn(r);
-        if (r.Status is RequestStatus.Paid) throw new InvalidOperationException("Paid requests cannot be cancelled.");
+        var isAdmin = currentUser.HasPermission(Permissions.RequestsApproveAdmin);
+        if (!isAdmin) EnsureOwn(r);
+        if (r.Status is RequestStatus.Paid or RequestStatus.Settled or RequestStatus.Disbursed
+            or RequestStatus.JustificationPending or RequestStatus.SettlementReady)
+            throw new InvalidOperationException("Money has already moved — this request can no longer be cancelled.");
         r.Status = RequestStatus.Cancelled;
-        AddTrail(r, "Requester", ApprovalAction.Cancelled, null);
+        AddTrail(r, isAdmin && r.RequesterId != currentUser.UserId ? "Admin" : "Requester", ApprovalAction.Cancelled, null);
+        await db.SaveChangesAsync();
+        if (isAdmin && r.RequesterId != currentUser.UserId)
+            await notifications.NotifyAsync(r.RequesterId, $"{r.RequestNo} cancelled by admin", null,
+                NotificationType.Rejected, $"/requests/{r.Id}");
+    }
+
+    /// <summary>Admin cleanup for wrong entries: only requests that never touched the ledger.</summary>
+    public async Task DeleteAsync(int id)
+    {
+        if (!currentUser.HasPermission(Permissions.RequestsApproveAdmin))
+            throw new UnauthorizedAccessException("Only admins can delete requests.");
+        var r = await db.PaymentRequests.FirstAsync(x => x.Id == id);
+        if (r.Status is not (RequestStatus.Draft or RequestStatus.Rejected or RequestStatus.Cancelled))
+            throw new InvalidOperationException("Only draft, rejected, or cancelled requests can be deleted.");
+        db.PaymentRequests.Remove(r); // soft delete via interceptor
         await db.SaveChangesAsync();
     }
 

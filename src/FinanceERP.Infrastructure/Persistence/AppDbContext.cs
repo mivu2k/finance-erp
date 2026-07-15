@@ -14,6 +14,7 @@ public interface ICurrentUserService
     string? UserName { get; }
     string? IpAddress { get; }
     string? Browser { get; }
+    bool HasPermission(string permission);
 }
 
 public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUserService currentUser)

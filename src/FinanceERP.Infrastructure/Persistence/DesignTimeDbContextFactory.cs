@@ -21,5 +21,6 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
         public string? UserName => "design-time";
         public string? IpAddress => null;
         public string? Browser => null;
+        public bool HasPermission(string permission) => false;
     }
 }

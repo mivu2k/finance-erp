@@ -29,9 +29,15 @@ else
         {
             <MudButton Variant="Variant.Outlined" Href="@($"/requests/{_request.Id}/edit")">Edit</MudButton>
         }
-        @if (_request.Status is RequestStatus.Draft or RequestStatus.PendingManager && _isOwner)
+        @if (_request.Status is RequestStatus.Draft or RequestStatus.PendingManager or RequestStatus.PendingAdmin or RequestStatus.PendingAccountant
+             && (_isOwner || _isAdmin))
         {
             <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="Cancel" Disabled="@_busy">Cancel Request</MudButton>
+        }
+        @if (_isAdmin && _request.Status is RequestStatus.Draft or RequestStatus.Rejected or RequestStatus.Cancelled)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete"
+                       OnClick="Delete" Disabled="@_busy">Delete</MudButton>
         }
     </div>
 
@@ -365,6 +371,7 @@ else
     private string? _comment;
     private bool _busy;
     private bool _isOwner;
+    private bool _isAdmin;
     private bool _canClassify;
 
     private bool AllLinesClassified =>
@@ -389,6 +396,7 @@ else
         {
             var auth = await AuthState;
             _isOwner = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value == _request.RequesterId;
+            _isAdmin = auth.User.HasClaim(Permissions.ClaimType, Permissions.RequestsApproveAdmin);
             _canClassify = (_request.Status == RequestStatus.PendingAccountant && _request.Kind == RequestKind.Reimbursement
                     || _request.Status == RequestStatus.SettlementReady)
                 && auth.User.HasClaim(Permissions.ClaimType, Permissions.RequestsPay);
@@ -421,6 +429,20 @@ else
         await svc.CancelAsync(Id);
         Snackbar.Add("Request cancelled.", Severity.Info);
     });
+
+    private async Task Delete()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IPaymentRequestService>().DeleteAsync(Id);
+            Snackbar.Add("Request deleted.", Severity.Info);
+            Nav.NavigateTo("/requests");
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); _busy = false; }
+    }
 
     private Task Disburse() => Run(async svc =>
     {

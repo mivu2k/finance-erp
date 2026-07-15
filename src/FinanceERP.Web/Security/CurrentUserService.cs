@@ -12,4 +12,7 @@ public class CurrentUserService(IHttpContextAccessor accessor) : ICurrentUserSer
     public string? IpAddress => Ctx?.Connection.RemoteIpAddress?.ToString();
     public string? Browser => Ctx?.Request.Headers.UserAgent.ToString() is { Length: > 0 } ua
         ? (ua.Length > 250 ? ua[..250] : ua) : null;
+
+    public bool HasPermission(string permission) =>
+        Ctx?.User.HasClaim(FinanceERP.Domain.Security.Permissions.ClaimType, permission) ?? false;
 }

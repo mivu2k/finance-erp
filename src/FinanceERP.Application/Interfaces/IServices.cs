@@ -11,6 +11,10 @@ public interface IVoucherService
     Task<Voucher> SaveAsync(VoucherEditDto dto, bool post);
     Task PostAsync(int id);
     Task VoidAsync(int id, string reason);
+    /// <summary>Soft-deletes a draft voucher entered by mistake (posted vouchers must be voided).</summary>
+    Task DeleteDraftAsync(int id);
+    /// <summary>Copies a voucher into a fresh draft (dated today) — the fix-and-repost path.</summary>
+    Task<Voucher> DuplicateAsDraftAsync(int id);
     /// <summary>Creates and posts a system-generated voucher from a source module.</summary>
     Task<Voucher> PostSystemVoucherAsync(VoucherType type, DateOnly date, string narration,
         string source, int? sourceId, IEnumerable<(int AccountId, decimal Debit, decimal Credit, string? Description)> lines);
@@ -51,6 +55,8 @@ public interface IPaymentRequestService
     Task<Voucher> PayAsync(int id, int payFromAccountId, string? comment,
         IReadOnlyDictionary<int, int>? lineAccounts = null);
     Task CancelAsync(int id);
+    /// <summary>Admin-only: soft-delete a draft/rejected/cancelled request entered by mistake.</summary>
+    Task DeleteAsync(int id);
 
     // Advance-kind lifecycle: disburse → justify → approve justification → settle.
     Task<Voucher> DisburseAsync(int id, int payFromAccountId, string? comment);
