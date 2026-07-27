@@ -17,6 +17,9 @@ logs/
 .idea/
 .DS_Store
 
+## WSL/Windows interop cruft (created when files arrive from Windows)
+*:Zone.Identifier
+
 ## Secrets — never commit real credentials
 appsettings.Production.json
 appsettings.*.local.json

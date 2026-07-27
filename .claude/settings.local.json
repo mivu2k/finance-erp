@@ -48,7 +48,21 @@
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Make project mandatory on requests and add project reporting *)",
       "Bash(mysql -uroot finance_erp -e \"SELECT AdvanceNo, Status, IsDeleted FROM EmployeeAdvances; UPDATE EmployeeAdvances SET Status=1, IsDeleted=0 WHERE AdvanceNo='ADV-2026-00002'; SELECT AdvanceNo, Status FROM EmployeeAdvances;\")",
       "Bash(mysql -uroot finance_erp -e \"UPDATE EmployeeAdvances SET Status=5 WHERE AdvanceNo='ADV-2026-00002';\")",
-      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Role visibility polish: My Ledger, unified approvals, Excel fix, badge, MEI Ledger brand *)"
+      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Role visibility polish: My Ledger, unified approvals, Excel fix, badge, MEI Ledger brand *)",
+      "Bash(curl -fsSL --max-time 60 https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh)",
+      "Bash(chmod +x dotnet-install.sh)",
+      "Bash(./dotnet-install.sh --channel 10.0 --install-dir /home/pc/.dotnet)",
+      "Bash(LD_LIBRARY_PATH=__TRACKED_VAR__/pkg/usr/lib/x86_64-linux-gnu ldd pkg/usr/sbin/mariadbd)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code} redirect=%{redirect_url}\\\\n\" http://localhost:5188/)",
+      "Bash(export LD_LIBRARY_PATH=\"$S/pkg/usr/lib/x86_64-linux-gnu\")",
+      "Bash(/tmp/claude-1000/-home-pc-vb-acc/c3ef8580-7a3a-41ed-8be9-2ba82fe35d52/scratchpad/pkg/usr/bin/mariadb-admin --socket=/tmp/claude-1000/-home-pc-vb-acc/c3ef8580-7a3a-41ed-8be9-2ba82fe35d52/scratchpad/mysql/run/mysqld.sock -u root shutdown)",
+      "Bash(mkdir -p /home/pc/.local/finance-erp-dev)",
+      "Bash(mv /tmp/claude-1000/-home-pc-vb-acc/c3ef8580-7a3a-41ed-8be9-2ba82fe35d52/scratchpad/pkg /home/pc/.local/finance-erp-dev/pkg)",
+      "Bash(mv /tmp/claude-1000/-home-pc-vb-acc/c3ef8580-7a3a-41ed-8be9-2ba82fe35d52/scratchpad/mysql /home/pc/.local/finance-erp-dev/mysql)",
+      "Bash(chmod +x dev.sh)",
+      "Bash(./dev.sh up *)",
+      "Bash(curl -s -o /dev/null -w \"login page: %{http_code}\\\\n\" http://localhost:5080/Account/Login)",
+      "Bash(git restore *)"
     ]
   }
 }
