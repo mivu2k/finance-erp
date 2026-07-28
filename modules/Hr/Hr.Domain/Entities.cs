@@ -36,6 +36,15 @@ public class Employee : AuditableEntity
     public Department? Department { get; set; }
     public int? DesignationId { get; set; }
     public Designation? Designation { get; set; }
+    public int? ShiftId { get; set; }
+    public Shift? Shift { get; set; }
+
+    /// <summary>
+    /// The user id this person is enrolled under on the biometric terminals.
+    /// Defaults to <see cref="EmployeeCode"/> but kept separate because the device
+    /// often carries a shorter numeric id that predates the HR record.
+    /// </summary>
+    public string? DeviceUserId { get; set; }
     public string? ReportsToEmployeeCode { get; set; }
     public EmploymentType EmploymentType { get; set; } = EmploymentType.Permanent;
     public EmployeeStatus Status { get; set; } = EmployeeStatus.Active;
@@ -57,6 +66,10 @@ public class Employee : AuditableEntity
     public string? Notes { get; set; }
 
     public List<EmployeeDocument> Documents { get; set; } = [];
+
+    /// <summary>What the terminals should match this person on.</summary>
+    public string EffectiveDeviceUserId =>
+        string.IsNullOrWhiteSpace(DeviceUserId) ? EmployeeCode : DeviceUserId;
 }
 
 /// <summary>A scanned or uploaded file attached to an employee (contract, CV, ID, certificate).</summary>

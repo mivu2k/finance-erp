@@ -1,0 +1,357 @@
+@page "/hr/leave"
+@attribute [Authorize(Policy = HrPermissions.LeaveViewAll)]
+@layout HrLayout
+@rendermode InteractiveServer
+@using Hr.Infrastructure.Attendance
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>Leave</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Leave</MudText>
+    @if (_pending > 0)
+    {
+        <MudChip T="string" Size="Size.Small" Color="Color.Warning">@_pending awaiting decision</MudChip>
+    }
+    <MudSpacer />
+    <MudButton Variant="Variant.Outlined" Size="Size.Small"
+               StartIcon="@Icons.Material.Filled.Download" Href="/hr/export/leave">Excel</MudButton>
+    <AuthorizeView Policy="@HrPermissions.LeaveRequest" Context="lr">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.EventBusy"
+                   OnClick="OpenApply">Apply for Leave</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="4">
+            <MudSelect T="LeaveStatus?" Value="_status" ValueChanged="OnStatusChanged"
+                       Label="Status" Margin="Margin.Dense" Clearable="true">
+                @foreach (var s in Enum.GetValues<LeaveStatus>())
+                {
+                    <MudSelectItem T="LeaveStatus?" Value="@s">@s</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudSelect T="int?" Value="_typeId" ValueChanged="OnTypeChanged"
+                       Label="Leave type" Margin="Margin.Dense" Clearable="true">
+                @foreach (var t in _types)
+                {
+                    <MudSelectItem T="int?" Value="@t.Id">@t.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudSelect T="int?" Value="_employeeId" ValueChanged="OnEmployeeChanged"
+                       Label="Employee" Margin="Margin.Dense" Clearable="true">
+                @foreach (var e in _employees)
+                {
+                    <MudSelectItem T="int?" Value="@e.Id">@e.FullName</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr>
+                <th>Request</th><th>Employee</th><th>Type</th><th>From</th><th>To</th>
+                <th>Days</th><th>Reason</th><th>Status</th><th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var l in _requests)
+            {
+                <tr>
+                    <td>@l.RequestNumber</td>
+                    <td>@l.Employee.FullName</td>
+                    <td>
+                        <MudChip T="string" Size="Size.Small"
+                                 Style="@($"background:{l.LeaveType.Colour ?? "#666"};color:#fff")">
+                            @l.LeaveType.Name
+                        </MudChip>
+                    </td>
+                    <td>@l.FromDate.ToString("yyyy-MM-dd")</td>
+                    <td>@l.ToDate.ToString("yyyy-MM-dd")</td>
+                    <td>@l.Days.ToString("0.#")</td>
+                    <td style="max-width:260px">@l.Reason</td>
+                    <td>
+                        <MudChip T="string" Size="Size.Small" Color="@Colour(l.Status)">@l.Status</MudChip>
+                        @if (l.DecidedByName is { Length: > 0 })
+                        {
+                            <MudText Typo="Typo.caption" Class="d-block mud-text-secondary">
+                                @l.DecidedByName
+                            </MudText>
+                        }
+                    </td>
+                    <td style="white-space:nowrap">
+                        @if (l.Status == LeaveStatus.Pending)
+                        {
+                            <AuthorizeView Policy="@HrPermissions.LeaveApprove" Context="la">
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Check"
+                                               Color="Color.Success" Title="Approve"
+                                               OnClick="@(() => Decide(l, true))" />
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Close"
+                                               Color="Color.Error" Title="Reject"
+                                               OnClick="@(() => Decide(l, false))" />
+                            </AuthorizeView>
+                        }
+                        @if (l.Status is LeaveStatus.Pending or LeaveStatus.Approved)
+                        {
+                            <AuthorizeView Policy="@HrPermissions.LeaveManage" Context="lm">
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Undo"
+                                               Title="Cancel" OnClick="@(() => Cancel(l))" />
+                            </AuthorizeView>
+                        }
+                    </td>
+                </tr>
+            }
+            @if (_requests.Count == 0)
+            {
+                <tr><td colspan="9" class="mud-text-secondary pa-4">Nothing matches this filter.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@if (_applyOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:520px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">Apply for Leave</MudText>
+
+            <MudSelect T="int" Value="_applyEmployeeId" ValueChanged="OnApplyEmployeeChanged"
+                       Label="Employee *" Class="mb-2">
+                @foreach (var e in _employees)
+                {
+                    <MudSelectItem T="int" Value="@e.Id">@e.FullName (@e.EmployeeCode)</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect T="int" @bind-Value="_applyTypeId" Label="Leave type *" Class="mb-2">
+                @foreach (var t in _types)
+                {
+                    <MudSelectItem T="int" Value="@t.Id">
+                        @t.Name @(t.AnnualQuota > 0 ? $"({Available(t.Id):0.#} left)" : "(unmetered)")
+                    </MudSelectItem>
+                }
+            </MudSelect>
+
+            <div class="d-flex gap-2 mb-2">
+                <MudDatePicker Label="From *" Date="@_applyFrom.ToDateTime(TimeOnly.MinValue)"
+                               DateChanged="@(d => _applyFrom = d is null ? _applyFrom : DateOnly.FromDateTime(d.Value))" />
+                <MudDatePicker Label="To *" Date="@_applyTo.ToDateTime(TimeOnly.MinValue)"
+                               DateChanged="@(d => _applyTo = d is null ? _applyTo : DateOnly.FromDateTime(d.Value))" />
+            </div>
+
+            <MudSwitch T="bool" @bind-Value="_applyHalfDay" Label="Half day" Color="Color.Primary" />
+            <MudTextField @bind-Value="_applyReason" Label="Reason *" Lines="3" Class="mb-2" />
+            <MudTextField @bind-Value="_applyContact" Label="Contact while away" />
+
+            @if (_balances.Count > 0)
+            {
+                <MudDivider Class="my-3" />
+                <MudText Typo="Typo.subtitle2" Class="mb-1">Balances this year</MudText>
+                <MudSimpleTable Dense="true">
+                    <thead><tr><th>Type</th><th>Entitled</th><th>Taken</th><th>Held</th><th>Left</th></tr></thead>
+                    <tbody>
+                        @foreach (var b in _balances)
+                        {
+                            <tr>
+                                <td>@b.LeaveType.Name</td>
+                                <td>@((b.Entitled + b.CarriedForward).ToString("0.#"))</td>
+                                <td>@b.Taken.ToString("0.#")</td>
+                                <td>@b.Pending.ToString("0.#")</td>
+                                <td><b>@b.Available.ToString("0.#")</b></td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _applyOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Apply">Submit</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_decide is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:440px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-1">
+                @(_approving ? "Approve" : "Reject") @_decide.RequestNumber
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-3 mud-text-secondary">
+                @_decide.Employee.FullName — @_decide.Days.ToString("0.#") day(s) of
+                @_decide.LeaveType.Name from @_decide.FromDate.ToString("yyyy-MM-dd").
+            </MudText>
+            <MudTextField @bind-Value="_decisionNote" Label="Note" Lines="2" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _decide = null)">Back</MudButton>
+                <MudButton Variant="Variant.Filled"
+                           Color="@(_approving ? Color.Success : Color.Error)"
+                           OnClick="ConfirmDecision">@(_approving ? "Approve" : "Reject")</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    private List<LeaveRequest> _requests = [];
+    private List<LeaveType> _types = [];
+    private List<Employee> _employees = [];
+    private List<LeaveBalance> _balances = [];
+    private int _pending;
+
+    private LeaveStatus? _status;
+    private int? _typeId;
+    private int? _employeeId;
+
+    private bool _applyOpen;
+    private int _applyEmployeeId;
+    private int _applyTypeId;
+    private DateOnly _applyFrom = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly _applyTo = DateOnly.FromDateTime(DateTime.Today);
+    private bool _applyHalfDay;
+    private string _applyReason = "";
+    private string? _applyContact;
+
+    private LeaveRequest? _decide;
+    private bool _approving;
+    private string? _decisionNote;
+
+    private static Color Colour(LeaveStatus s) => s switch
+    {
+        LeaveStatus.Approved => Color.Success,
+        LeaveStatus.Rejected => Color.Error,
+        LeaveStatus.Cancelled => Color.Default,
+        _ => Color.Warning
+    };
+
+    private decimal Available(int typeId) =>
+        _balances.FirstOrDefault(b => b.LeaveTypeId == typeId)?.Available ?? 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _types = await scope.ServiceProvider.GetRequiredService<ILeaveService>().ListTypesAsync();
+        _employees = await scope.ServiceProvider.GetRequiredService<IEmployeeService>()
+            .ListAsync(new EmployeeFilter());
+        _applyTypeId = _types.FirstOrDefault()?.Id ?? 0;
+        _applyEmployeeId = _employees.FirstOrDefault()?.Id ?? 0;
+        await LoadAsync();
+    }
+
+    private async Task OnStatusChanged(LeaveStatus? s) { _status = s; await LoadAsync(); }
+    private async Task OnTypeChanged(int? t) { _typeId = t; await LoadAsync(); }
+    private async Task OnEmployeeChanged(int? e) { _employeeId = e; await LoadAsync(); }
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var leave = scope.ServiceProvider.GetRequiredService<ILeaveService>();
+        _requests = await leave.ListAsync(new LeaveFilter(_employeeId, _status, _typeId));
+        _pending = (await leave.ListAsync(new LeaveFilter(Status: LeaveStatus.Pending))).Count;
+        StateHasChanged();
+    }
+
+    private async Task OpenApply()
+    {
+        await LoadBalancesAsync();
+        _applyOpen = true;
+    }
+
+    private async Task OnApplyEmployeeChanged(int id)
+    {
+        _applyEmployeeId = id;
+        await LoadBalancesAsync();
+    }
+
+    private async Task LoadBalancesAsync()
+    {
+        if (_applyEmployeeId == 0) { _balances = []; return; }
+
+        using var scope = ScopeFactory.CreateScope();
+        _balances = await scope.ServiceProvider.GetRequiredService<ILeaveService>()
+            .GetBalancesAsync(_applyEmployeeId, DateTime.Today.Year);
+    }
+
+    private async Task Apply()
+    {
+        try
+        {
+            var user = (await AuthState.GetAuthenticationStateAsync()).User;
+            var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+            using var scope = ScopeFactory.CreateScope();
+            var saved = await scope.ServiceProvider.GetRequiredService<ILeaveService>().ApplyAsync(
+                new LeaveRequest
+                {
+                    EmployeeId = _applyEmployeeId,
+                    LeaveTypeId = _applyTypeId,
+                    FromDate = _applyFrom,
+                    ToDate = _applyTo,
+                    IsHalfDay = _applyHalfDay,
+                    Reason = _applyReason,
+                    ContactDuringLeave = _applyContact
+                }, userId);
+
+            _applyOpen = false;
+            _applyReason = "";
+            Snackbar.Add($"{saved.RequestNumber} submitted for {saved.Days:0.#} day(s).",
+                Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private void Decide(LeaveRequest request, bool approve)
+    {
+        _decide = request;
+        _approving = approve;
+        _decisionNote = null;
+    }
+
+    private async Task ConfirmDecision()
+    {
+        try
+        {
+            var user = (await AuthState.GetAuthenticationStateAsync()).User;
+            var actorId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+            var actorName = user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown";
+
+            using var scope = ScopeFactory.CreateScope();
+            var leave = scope.ServiceProvider.GetRequiredService<ILeaveService>();
+
+            if (_approving) await leave.ApproveAsync(_decide!.Id, actorId, actorName, _decisionNote);
+            else await leave.RejectAsync(_decide!.Id, actorId, actorName, _decisionNote);
+
+            Snackbar.Add($"{_decide.RequestNumber} {(_approving ? "approved" : "rejected")}.",
+                _approving ? Severity.Success : Severity.Info);
+            _decide = null;
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); _decide = null; }
+    }
+
+    private async Task Cancel(LeaveRequest request)
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<ILeaveService>().CancelAsync(request.Id);
+            Snackbar.Add("Request cancelled.", Severity.Info);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

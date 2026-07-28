@@ -1,0 +1,317 @@
+@page "/hr/attendance"
+@attribute [Authorize(Policy = HrPermissions.AttendanceViewAll)]
+@layout HrLayout
+@rendermode InteractiveServer
+@using Hr.Infrastructure.Attendance
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>Attendance Register</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Attendance Register</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Outlined" Size="Size.Small"
+               StartIcon="@Icons.Material.Filled.Download"
+               Href="@($"/hr/export/attendance/daily/{_date:yyyy-MM-dd}")">Excel</MudButton>
+    <AuthorizeView Policy="@HrPermissions.AttendanceEdit" Context="ae">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.EditCalendar"
+                   OnClick="@(() => OpenManual(null))">Manual Entry</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="4">
+            <MudDatePicker Label="Date" Date="@_date.ToDateTime(TimeOnly.MinValue)"
+                           DateChanged="OnDateChanged" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudSelect T="int?" Value="_departmentId" ValueChanged="OnDepartmentChanged"
+                       Label="Department" Margin="Margin.Dense" Clearable="true">
+                @foreach (var d in _departments)
+                {
+                    <MudSelectItem T="int?" Value="@d.Id">@d.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="4" Class="d-flex align-center gap-2">
+            @foreach (var (label, count, colour) in _counts)
+            {
+                <MudChip T="string" Size="Size.Small" Color="@colour">@label: @count</MudChip>
+            }
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr>
+                <th>Code</th><th>Employee</th><th>Department</th><th>Status</th>
+                <th>In</th><th>Out</th><th>Worked</th><th>Late</th><th>OT</th>
+                <th>Source</th><th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var d in _days)
+            {
+                <tr>
+                    <td>@d.Employee.EmployeeCode</td>
+                    <td>@d.Employee.FullName</td>
+                    <td>@d.Employee.Department?.Name</td>
+                    <td><AttendanceChip Status="@d.Status" /></td>
+                    <td>@(d.FirstIn?.ToString("HH\\:mm") ?? "—")</td>
+                    <td>@(d.LastOut?.ToString("HH\\:mm") ?? "—")</td>
+                    <td>@Hours(d.WorkedMinutes)</td>
+                    <td>@(d.LateMinutes > 0 ? $"{d.LateMinutes}m" : "")</td>
+                    <td>@(d.OvertimeMinutes > 0 ? Hours(d.OvertimeMinutes) : "")</td>
+                    <td>
+                        @if (d.Source == AttendanceSource.Manual)
+                        {
+                            <MudTooltip Text="@($"{d.OverriddenByName}: {d.OverrideReason}")">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Warning">Manual</MudChip>
+                            </MudTooltip>
+                        }
+                        else if (d.Source == AttendanceSource.Leave)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info">
+                                @(d.LeaveRequest?.LeaveType.Name ?? "Leave")
+                            </MudChip>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@d.Source</MudText>
+                        }
+                    </td>
+                    <td style="white-space:nowrap">
+                        <AuthorizeView Policy="@HrPermissions.AttendanceEdit" Context="ed">
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                           Title="Correct this day" OnClick="@(() => OpenManual(d))" />
+                            @if (d.Source == AttendanceSource.Manual)
+                            {
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Undo"
+                                               Title="Revert to what the device says"
+                                               OnClick="@(() => Revert(d))" />
+                            }
+                        </AuthorizeView>
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Fingerprint"
+                                       Title="Raw punches" OnClick="@(() => ShowPunches(d))" />
+                    </td>
+                </tr>
+            }
+            @if (_days.Count == 0)
+            {
+                <tr><td colspan="11" class="mud-text-secondary pa-4">
+                    Nothing recorded for this day yet.
+                </td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@if (_manualOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:520px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-1">Manual Attendance</MudText>
+            <MudText Typo="Typo.body2" Class="mb-3 mud-text-secondary">
+                Use this when a terminal missed a read. The correction is stamped with
+                your name and reason, and the next device sync won't overwrite it.
+            </MudText>
+
+            <MudSelect T="int" @bind-Value="_manualEmployeeId" Label="Employee *" Class="mb-2"
+                       Disabled="@(_manualDayId != null)">
+                @foreach (var e in _employees)
+                {
+                    <MudSelectItem T="int" Value="@e.Id">@e.FullName (@e.EmployeeCode)</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudDatePicker Label="Date *" Date="@_manualDate.ToDateTime(TimeOnly.MinValue)"
+                           DateChanged="@(d => _manualDate = d is null ? _manualDate : DateOnly.FromDateTime(d.Value))"
+                           MaxDate="DateTime.Today" Class="mb-2" Disabled="@(_manualDayId != null)" />
+
+            <MudSelect T="AttendanceStatus" @bind-Value="_manualStatus" Label="Status" Class="mb-2">
+                @foreach (var s in new[] { AttendanceStatus.Present, AttendanceStatus.Late,
+                                           AttendanceStatus.HalfDay, AttendanceStatus.Absent,
+                                           AttendanceStatus.Holiday, AttendanceStatus.WeeklyOff })
+                {
+                    <MudSelectItem Value="@s">@s</MudSelectItem>
+                }
+            </MudSelect>
+
+            <div class="d-flex gap-2 mb-2">
+                <MudTimePicker Label="Check in" Time="@_manualIn"
+                               TimeChanged="@(t => _manualIn = t)" />
+                <MudTimePicker Label="Check out" Time="@_manualOut"
+                               TimeChanged="@(t => _manualOut = t)" />
+            </div>
+
+            <MudTextField @bind-Value="_manualReason" Label="Reason *" Lines="2" Class="mb-2"
+                          HelperText="Goes on the permanent record — e.g. 'device offline, verified with gate register'." />
+            <MudTextField @bind-Value="_manualNotes" Label="Notes" Lines="2" />
+
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _manualOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveManual">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_punches is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:520px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-1">Raw punches</MudText>
+            <MudText Typo="Typo.body2" Class="mb-3 mud-text-secondary">
+                Exactly what the terminal reported. Never edited — corrections are made
+                on the day, not on the biometric record.
+            </MudText>
+            <MudSimpleTable Dense="true">
+                <thead><tr><th>Time</th><th>Verified by</th><th>Terminal</th></tr></thead>
+                <tbody>
+                    @foreach (var p in _punches)
+                    {
+                        <tr>
+                            <td>@p.PunchedAt.ToString("HH:mm:ss")</td>
+                            <td>@p.VerifyMode</td>
+                            <td>@(p.BiometricDevice?.Name ?? "—")</td>
+                        </tr>
+                    }
+                    @if (_punches.Count == 0)
+                    {
+                        <tr><td colspan="3" class="mud-text-secondary">No punches on this day.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+            <div class="d-flex justify-end mt-4">
+                <MudButton OnClick="@(() => _punches = null)">Close</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    private DateOnly _date = DateOnly.FromDateTime(DateTime.Today);
+    private int? _departmentId;
+
+    private List<AttendanceDay> _days = [];
+    private List<Department> _departments = [];
+    private List<Employee> _employees = [];
+    private List<(string Label, int Count, Color Colour)> _counts = [];
+    private List<AttendancePunch>? _punches;
+
+    private bool _manualOpen;
+    private int? _manualDayId;
+    private int _manualEmployeeId;
+    private DateOnly _manualDate = DateOnly.FromDateTime(DateTime.Today);
+    private AttendanceStatus _manualStatus = AttendanceStatus.Present;
+    private TimeSpan? _manualIn = new(9, 0, 0);
+    private TimeSpan? _manualOut = new(17, 0, 0);
+    private string _manualReason = "";
+    private string? _manualNotes;
+
+    private static string Hours(int minutes) => minutes <= 0 ? "" : $"{minutes / 60}h {minutes % 60:00}m";
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var employees = scope.ServiceProvider.GetRequiredService<IEmployeeService>();
+        _departments = await employees.ListDepartmentsAsync();
+        _employees = await employees.ListAsync(new EmployeeFilter());
+        await LoadAsync();
+    }
+
+    private async Task OnDateChanged(DateTime? d)
+    {
+        if (d is null) return;
+        _date = DateOnly.FromDateTime(d.Value);
+        await LoadAsync();
+    }
+
+    private async Task OnDepartmentChanged(int? id) { _departmentId = id; await LoadAsync(); }
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _days = await scope.ServiceProvider.GetRequiredService<IAttendanceService>()
+            .GetDayRegisterAsync(_date, _departmentId);
+
+        int CountOf(AttendanceStatus s) => _days.Count(d => d.Status == s);
+        _counts =
+        [
+            ("Present", CountOf(AttendanceStatus.Present), Color.Success),
+            ("Late", CountOf(AttendanceStatus.Late), Color.Warning),
+            ("Absent", CountOf(AttendanceStatus.Absent), Color.Error),
+            ("Leave", CountOf(AttendanceStatus.OnLeave), Color.Info),
+            ("Incomplete", CountOf(AttendanceStatus.Incomplete), Color.Error)
+        ];
+
+        StateHasChanged();
+    }
+
+    private void OpenManual(AttendanceDay? day)
+    {
+        _manualDayId = day?.Id;
+        _manualEmployeeId = day?.EmployeeId ?? _employees.FirstOrDefault()?.Id ?? 0;
+        _manualDate = day?.Date ?? _date;
+        _manualStatus = day?.Status ?? AttendanceStatus.Present;
+        _manualIn = day?.FirstIn?.ToTimeSpan() ?? new TimeSpan(9, 0, 0);
+        _manualOut = day?.LastOut?.ToTimeSpan() ?? new TimeSpan(17, 0, 0);
+        _manualReason = day?.OverrideReason ?? "";
+        _manualNotes = day?.Notes;
+        _manualOpen = true;
+    }
+
+    private async Task SaveManual()
+    {
+        try
+        {
+            var user = (await AuthState.GetAuthenticationStateAsync()).User;
+            var actorId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+            var actorName = user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown";
+
+            // A day marked absent or off has no clock times.
+            var keepsTimes = _manualStatus is AttendanceStatus.Present or AttendanceStatus.Late
+                or AttendanceStatus.HalfDay;
+
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IAttendanceService>().SaveManualAsync(
+                new ManualDayInput(
+                    _manualEmployeeId, _manualDate,
+                    keepsTimes && _manualIn is { } i ? TimeOnly.FromTimeSpan(i) : null,
+                    keepsTimes && _manualOut is { } o ? TimeOnly.FromTimeSpan(o) : null,
+                    _manualStatus, _manualReason, _manualNotes),
+                actorId, actorName);
+
+            _manualOpen = false;
+            Snackbar.Add("Attendance recorded.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Revert(AttendanceDay day)
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IAttendanceService>()
+                .RevertToDeviceAsync(day.Id);
+            Snackbar.Add("Reverted to the device record.", Severity.Info);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task ShowPunches(AttendanceDay day)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _punches = await scope.ServiceProvider.GetRequiredService<IAttendanceService>()
+            .GetPunchesAsync(day.EmployeeId, day.Date);
+    }
+}

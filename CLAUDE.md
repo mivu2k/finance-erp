@@ -130,6 +130,18 @@ These apply to the **Finance** module specifically:
   pass stops being editable the moment it leaves Issued.
 - **Demo goods support partial returns**: the issuance stays open until the last
   item is ticked back.
+- **Attendance is derived, never raw.** `AttendancePunch` is exactly what the
+  terminal reported and is never edited; `AttendanceDay` is the judged summary and
+  is rebuilt from punches. First punch of the day is the arrival, last is the
+  departure — staff punch several times a day and the records carry no reliable
+  in/out flag, so bracketing is the only defensible reading. One punch alone is
+  `Incomplete`, not a guessed departure.
+- **A hand-corrected day is stamped `AttendanceSource.Manual` and the rebuild
+  skips it.** That flag is the only thing stopping the next device sync from
+  silently undoing a correction; there's a regression test for it.
+- **Approved leave outranks punches** when deriving a day. Pending leave does not.
+- **Leave balances hold days while a request is open** (`Pending`), so two
+  requests can't spend the same entitlement before either is decided.
 
 ## State of the project
 
@@ -140,7 +152,7 @@ Four apps behind one login, chosen from the portal at `/`:
 | Finance | `/finance` | `finance_erp` | mature — see below |
 | Repair | `/repair` | `erp_repair` | ported from Laravel, end-to-end |
 | Gate Pass & Demo Goods | `/gatepass` | `erp_gatepass` | complete |
-| HR | `/hr` | `erp_hr` | employee master + documents |
+| HR | `/hr` | `erp_hr` | employee master, biometric attendance, leave |
 
 
 Implemented and wired end-to-end (service + page + nav): accounts, vouchers, ledger,
@@ -162,8 +174,10 @@ UI yet. Not ported: the customer-facing tracking page, Excel report exports.
 
 Known gaps, roughly in priority order:
 
-1. **No tests at all** — no test project in the solution. Highest-value work is
-   covering `VoucherService`, `PaymentRequestService.SettleAsync`,
+1. **Tests cover HR attendance only** (`tests/Hr.Tests`, 32 of them: the ZK wire
+   format, the attendance calculator, and two integration tests that rebuild
+   against a throwaway MySQL database). Nothing else is covered. Highest-value
+   next: `VoucherService`, `PaymentRequestService.SettleAsync`,
    `PayrollService.GenerateAsync`/`PayRunAsync`, `CloseFiscalYearAsync`,
    `JobWorkflow`, `QuotationService.Recalculate` and `SalesOrderService`'s payment
    arithmetic — all subtle and unverified.
@@ -173,10 +187,41 @@ Known gaps, roughly in priority order:
    justification flow and SMTP.
 4. No CI.
 
+## Biometric attendance (ZKTeco)
+
+Targets the uFace 800 and the rest of the standalone ZKTeco range over **TCP 4370**.
+
+The vendor SDK (`zkemkeeper.dll`) is 32-bit Windows COM and cannot run on this
+Linux host, so `Hr.Infrastructure/Devices` implements the protocol directly: an
+8-byte header (command, checksum, session, reply) inside an 8-byte TCP frame.
+`ZkSession` owns the socket; `ZkDeviceClient` parses records.
+
+- **The device is disabled during a read and always re-enabled in a `finally`.**
+  A terminal left disabled won't open the door.
+- Attendance records are 40 bytes on modern firmware, 16 on older; the layout is
+  chosen from the payload length.
+- Timestamps are packed as nested remainders from 2000. Anything decoding past
+  **2099 is corrupt**, not a date — without that check garbage decodes to a
+  plausible future date and gets stored as a real punch.
+- Sync is **idempotent**: the devices keep their whole log and are re-read in full,
+  deduped on `(DeviceUserId, PunchedAt, BiometricDeviceId)`.
+- Employees match terminals on `DeviceUserId`, falling back to `EmployeeCode`.
+  Unmatched ids surface on `/hr/devices` for an admin to assign, which backfills.
+- Polling interval is `Attendance:IntervalMinutes` in appsettings (default 15).
+
+**This has never been run against real hardware from here** — there was no device
+on the network. The wire format is covered by unit tests that reproduce the
+device's own encoding, but first contact with a real terminal is still unproven.
+Test connection on `/hr/devices` is the first thing to try.
+
 ## Gotchas
 
 - **Every module database is created by `./dev.sh up`** (`DATABASES` in that script).
   `./dev.sh db <name>` opens a shell on one; `./dev.sh reset` drops them all.
+- **A drifting device clock is the top cause of wrong attendance.** Test connection
+  on `/hr/devices` warns when the terminal is more than 5 minutes off.
+- Changing a shift or holiday doesn't retro-fix past days — hit **Recompute Month**
+  on the monthly report.
 - **`array.Contains(x)` inside an EF predicate binds to the `ReadOnlySpan` overload**
   and throws at query time. Use a `List<T>` — that's why `JobWorkflow.Open` is one.
 - **Existing installs upgrading past the identity split** must run

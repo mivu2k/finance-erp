@@ -1,5 +1,7 @@
 using ErpPlatform.Shared.Identity;
 using Hr.Domain;
+using Hr.Infrastructure.Attendance;
+using Hr.Infrastructure.Devices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,7 +24,19 @@ public static class HrModule
             P(HrPermissions.DocumentsView, "Documents", "View employee documents"),
             P(HrPermissions.DocumentsManage, "Documents", "Upload and remove employee documents"),
             P(HrPermissions.CatalogManage, "Setup", "Manage departments and designations"),
-            P(HrPermissions.ReportsView, "Reports", "View headcount and expiry reports")
+            P(HrPermissions.ReportsView, "Reports", "View headcount and expiry reports"),
+
+            P(HrPermissions.AttendanceViewOwn, "Attendance", "See own attendance"),
+            P(HrPermissions.AttendanceViewAll, "Attendance", "See everyone's attendance"),
+            P(HrPermissions.AttendanceEdit, "Attendance",
+                "Correct attendance by hand when a terminal misses a read"),
+            P(HrPermissions.DevicesManage, "Attendance", "Configure and sync biometric terminals"),
+
+            P(HrPermissions.LeaveRequest, "Leave", "Apply for leave"),
+            P(HrPermissions.LeaveViewOwn, "Leave", "See own leave and balances"),
+            P(HrPermissions.LeaveViewAll, "Leave", "See everyone's leave"),
+            P(HrPermissions.LeaveApprove, "Leave", "Approve or reject leave requests"),
+            P(HrPermissions.LeaveManage, "Leave", "Manage leave types, quotas and balances")
         ],
         [
             new(HrRoles.Manager, "Full control of employee records and HR setup.",
@@ -35,7 +49,23 @@ public static class HrModule
             ]),
             new(HrRoles.Viewer, "Read-only access to the employee directory.",
             [
-                HrPermissions.EmployeesView, HrPermissions.ReportsView
+                HrPermissions.EmployeesView, HrPermissions.ReportsView,
+                HrPermissions.AttendanceViewAll, HrPermissions.LeaveViewAll
+            ]),
+
+            // What every member of staff gets: their own record, nobody else's.
+            new(HrRoles.SelfService, "Own attendance and leave only.",
+            [
+                HrPermissions.AttendanceViewOwn,
+                HrPermissions.LeaveRequest, HrPermissions.LeaveViewOwn
+            ]),
+
+            new(HrRoles.LineManager, "Approves the team's leave and sees their attendance.",
+            [
+                HrPermissions.EmployeesView,
+                HrPermissions.AttendanceViewOwn, HrPermissions.AttendanceViewAll,
+                HrPermissions.LeaveRequest, HrPermissions.LeaveViewOwn,
+                HrPermissions.LeaveViewAll, HrPermissions.LeaveApprove
             ])
         ]);
 
@@ -52,6 +82,15 @@ public static class HrModule
             o.UseMySql(cs, ServerVersion.AutoDetect(cs), my => my.EnableRetryOnFailure(3)));
 
         services.AddScoped<IEmployeeService, EmployeeService>();
+        services.AddScoped<IAttendanceService, AttendanceService>();
+        services.AddScoped<IAttendanceSyncService, AttendanceSyncService>();
+        services.AddScoped<ILeaveService, LeaveService>();
+        services.AddSingleton<IZkDeviceClient, ZkDeviceClient>();
+        services.AddSingleton<IHrExportService, HrExportService>();
+
+        services.Configure<AttendancePollingOptions>(
+            config.GetSection(AttendancePollingOptions.Section));
+        services.AddHostedService<AttendancePollingService>();
 
         ModuleRegistry.Register(Registration);
         return services;
@@ -85,6 +124,41 @@ public static class HrModule
                 new Designation { Title = "Driver" },
                 new Designation { Title = "Helper" });
             logger.LogInformation("Seeded HR designations");
+        }
+
+        if (!await db.Shifts.AnyAsync())
+        {
+            db.Shifts.Add(new Shift
+            {
+                Name = "General",
+                StartsAt = new TimeOnly(9, 0),
+                EndsAt = new TimeOnly(17, 0),
+                GraceMinutes = 15,
+                HalfDayMinutes = 240,
+                MinimumMinutes = 60,
+                OvertimeAfterMinutes = 30,
+                WeeklyOffMask = 1 << (int)DayOfWeek.Sunday,
+                IsDefault = true
+            });
+            logger.LogInformation("Seeded the default shift");
+        }
+
+        if (!await db.LeaveTypes.AnyAsync())
+        {
+            db.LeaveTypes.AddRange(
+                new LeaveType { Name = "Annual Leave", Code = "AL", AnnualQuota = 14, IsPaid = true,
+                    AllowCarryForward = true, MaxCarryForward = 7, Colour = "#1976d2" },
+                new LeaveType { Name = "Sick Leave", Code = "SL", AnnualQuota = 8, IsPaid = true,
+                    DocumentRequiredAfterDays = 2, Colour = "#d32f2f" },
+                new LeaveType { Name = "Casual Leave", Code = "CL", AnnualQuota = 10, IsPaid = true,
+                    Colour = "#f57c00" },
+                new LeaveType { Name = "Unpaid Leave", Code = "UL", AnnualQuota = 0, IsPaid = false,
+                    Colour = "#616161" },
+                new LeaveType { Name = "Maternity Leave", Code = "ML", AnnualQuota = 90, IsPaid = true,
+                    Colour = "#7b1fa2" },
+                new LeaveType { Name = "Bereavement", Code = "BL", AnnualQuota = 3, IsPaid = true,
+                    Colour = "#455a64" });
+            logger.LogInformation("Seeded leave types");
         }
 
         await db.SaveChangesAsync();

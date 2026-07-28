@@ -3,8 +3,39 @@
         Dashboard
     </MudNavLink>
 
+    <AuthorizeView Policy="@HrPermissions.AttendanceViewOwn" Context="me">
+        <MudNavLink Href="/hr/me" Icon="@Icons.Material.Filled.Person">My Attendance</MudNavLink>
+    </AuthorizeView>
+
     <AuthorizeView Policy="@HrPermissions.EmployeesView">
         <MudNavLink Href="/hr/employees" Icon="@Icons.Material.Filled.Groups">Employees</MudNavLink>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@HrPermissions.AttendanceViewAll" Context="att">
+        <MudNavGroup Title="Attendance" Icon="@Icons.Material.Filled.Fingerprint" Expanded="true">
+            <MudNavLink Href="/hr/attendance" Icon="@Icons.Material.Filled.Today">
+                Daily Register
+            </MudNavLink>
+            <MudNavLink Href="/hr/attendance/monthly" Icon="@Icons.Material.Filled.CalendarMonth">
+                Monthly Report
+            </MudNavLink>
+            <AuthorizeView Policy="@HrPermissions.DevicesManage" Context="dev">
+                <MudNavLink Href="/hr/devices" Icon="@Icons.Material.Filled.Router">
+                    Devices
+                </MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@HrPermissions.LeaveViewAll" Context="lv">
+        <MudNavGroup Title="Leave" Icon="@Icons.Material.Filled.EventBusy" Expanded="true">
+            <MudNavLink Href="/hr/leave" Icon="@Icons.Material.Filled.List">Requests</MudNavLink>
+            <AuthorizeView Policy="@HrPermissions.LeaveManage" Context="lm">
+                <MudNavLink Href="/hr/attendance/setup" Icon="@Icons.Material.Filled.Tune">
+                    Shifts, Holidays &amp; Types
+                </MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
     </AuthorizeView>
 
     <AuthorizeView Policy="@HrPermissions.ReportsView" Context="rep">

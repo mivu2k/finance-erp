@@ -47,6 +47,9 @@ db_ensure() {
         sql+="GRANT ALL PRIVILEGES ON $d.* TO 'finance'@'localhost';"
         sql+="GRANT ALL PRIVILEGES ON $d.* TO 'finance'@'127.0.0.1';"
     done
+    # The HR integration tests spin up and drop their own throwaway databases.
+    sql+="GRANT ALL PRIVILEGES ON \`erp\_hr\_test%\`.* TO 'finance'@'localhost';"
+    sql+="GRANT ALL PRIVILEGES ON \`erp\_hr\_test%\`.* TO 'finance'@'127.0.0.1';"
     sql+="FLUSH PRIVILEGES;"
     "$PKG/usr/bin/mariadb" --socket="$SOCK" -u root -e "$sql"
 }

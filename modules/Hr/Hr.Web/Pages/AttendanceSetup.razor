@@ -1,0 +1,363 @@
+@page "/hr/attendance/setup"
+@attribute [Authorize(Policy = HrPermissions.LeaveManage)]
+@layout HrLayout
+@rendermode InteractiveServer
+@using Hr.Infrastructure.Attendance
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Attendance &amp; Leave Setup</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1">Attendance &amp; Leave Setup</MudText>
+<MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+    Shifts decide what counts as late; holidays and weekly offs decide which days
+    need attendance at all.
+</MudText>
+
+<MudTabs Elevation="1" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4">
+    <MudTabPanel Text="Shifts">
+        <MudGrid Spacing="2" Class="mb-4">
+            <MudItem xs="12" md="3">
+                <MudTextField @bind-Value="_shift.Name" Label="Name" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="6" md="2">
+                <MudTimePicker Label="Starts" Time="@_shift.StartsAt.ToTimeSpan()"
+                               TimeChanged="@(t => _shift.StartsAt = TimeOnly.FromTimeSpan(t ?? default))"
+                               Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="6" md="2">
+                <MudTimePicker Label="Ends" Time="@_shift.EndsAt.ToTimeSpan()"
+                               TimeChanged="@(t => _shift.EndsAt = TimeOnly.FromTimeSpan(t ?? default))"
+                               Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="4" md="1">
+                <MudNumericField T="int" @bind-Value="_shift.GraceMinutes" Label="Grace"
+                                 Min="0" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="4" md="1">
+                <MudNumericField T="int" @bind-Value="_shift.BreakMinutes" Label="Break"
+                                 Min="0" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="4" md="1">
+                <MudNumericField T="int" @bind-Value="_shift.HalfDayMinutes" Label="Half-day"
+                                 Min="0" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" md="2" Class="d-flex align-center">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveShift"
+                           Disabled="@(string.IsNullOrWhiteSpace(_shift.Name))">Save Shift</MudButton>
+            </MudItem>
+            <MudItem xs="12">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">Weekly off days</MudText>
+                <div class="d-flex gap-2 flex-wrap">
+                    @foreach (var day in Enum.GetValues<DayOfWeek>())
+                    {
+                        var d = day;
+                        <MudCheckBox T="bool" Dense="true" Label="@d.ToString()[..3]"
+                                     Value="@_shift.IsWeeklyOff(d)"
+                                     ValueChanged="@(v => ToggleOff(d, v))" />
+                    }
+                </div>
+            </MudItem>
+        </MudGrid>
+
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead>
+                <tr><th>Name</th><th>Hours</th><th>Grace</th><th>Break</th><th>Weekly offs</th>
+                    <th>Default</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var s in _shifts)
+                {
+                    <tr>
+                        <td>@s.Name</td>
+                        <td>@s.StartsAt.ToString("HH\\:mm")–@s.EndsAt.ToString("HH\\:mm")</td>
+                        <td>@s.GraceMinutes m</td>
+                        <td>@s.BreakMinutes m</td>
+                        <td>
+                            @string.Join(", ", Enum.GetValues<DayOfWeek>()
+                                .Where(s.IsWeeklyOff).Select(d => d.ToString()[..3]))
+                        </td>
+                        <td>
+                            @if (s.IsDefault)
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.Star" Size="Size.Small"
+                                         Color="Color.Warning" />
+                            }
+                        </td>
+                        <td><MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                           OnClick="@(() => EditShift(s))" /></td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudTabPanel>
+
+    <MudTabPanel Text="Holidays">
+        <div class="d-flex gap-2 mb-4 align-center flex-wrap">
+            <MudDatePicker Label="Date" Date="@_holidayDate" DateChanged="@(d => _holidayDate = d)"
+                           Margin="Margin.Dense" Style="max-width:190px" />
+            <MudTextField @bind-Value="_holidayName" Label="Name" Margin="Margin.Dense"
+                          Style="max-width:280px" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddHoliday"
+                       Disabled="@(string.IsNullOrWhiteSpace(_holidayName) || _holidayDate is null)">
+                Add
+            </MudButton>
+        </div>
+
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead><tr><th>Date</th><th>Day</th><th>Name</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var h in _holidays)
+                {
+                    <tr>
+                        <td>@h.Date.ToString("yyyy-MM-dd")</td>
+                        <td>@h.Date.DayOfWeek</td>
+                        <td>@h.Name</td>
+                        <td><MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Error" OnClick="@(() => RemoveHoliday(h))" /></td>
+                    </tr>
+                }
+                @if (_holidays.Count == 0)
+                {
+                    <tr><td colspan="4" class="mud-text-secondary">No holidays recorded.</td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudTabPanel>
+
+    <MudTabPanel Text="Leave Types">
+        <MudGrid Spacing="2" Class="mb-4">
+            <MudItem xs="12" md="3">
+                <MudTextField @bind-Value="_type.Name" Label="Name" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="4" md="1">
+                <MudTextField @bind-Value="_type.Code" Label="Code" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="4" md="2">
+                <MudNumericField T="decimal" @bind-Value="_type.AnnualQuota" Label="Days / year"
+                                 Min="0" Margin="Margin.Dense"
+                                 HelperText="0 = unmetered" />
+            </MudItem>
+            <MudItem xs="4" md="2">
+                <MudNumericField T="decimal" @bind-Value="_type.MaxCarryForward" Label="Max carry"
+                                 Min="0" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="6" md="2" Class="d-flex align-center gap-2">
+                <MudSwitch T="bool" @bind-Value="_type.IsPaid" Label="Paid" Color="Color.Primary" />
+                <MudSwitch T="bool" @bind-Value="_type.AllowCarryForward" Label="Carry"
+                           Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="6" md="2" Class="d-flex align-center">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveType"
+                           Disabled="@(string.IsNullOrWhiteSpace(_type.Name))">Save Type</MudButton>
+            </MudItem>
+        </MudGrid>
+
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead>
+                <tr><th>Name</th><th>Code</th><th>Days/year</th><th>Paid</th>
+                    <th>Carry forward</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var t in _types)
+                {
+                    <tr>
+                        <td>@t.Name</td>
+                        <td>@t.Code</td>
+                        <td>@(t.AnnualQuota > 0 ? t.AnnualQuota.ToString("0.#") : "unmetered")</td>
+                        <td>@(t.IsPaid ? "Yes" : "No")</td>
+                        <td>@(t.AllowCarryForward ? $"up to {t.MaxCarryForward:0.#}" : "No")</td>
+                        <td><MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                           OnClick="@(() => EditType(t))" /></td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudTabPanel>
+
+    <MudTabPanel Text="Open Year">
+        <MudText Typo="Typo.body2" Class="mb-3 mud-text-secondary">
+            Creates this year's leave balances for every active employee from each
+            type's quota, carrying unused days forward where the type allows it.
+            Safe to run more than once — existing balances are left alone.
+        </MudText>
+        <div class="d-flex gap-2 align-center">
+            <MudSelect T="int" @bind-Value="_openYear" Label="Year" Margin="Margin.Dense"
+                       Style="max-width:160px">
+                @for (var y = DateTime.Today.Year - 1; y <= DateTime.Today.Year + 1; y++)
+                {
+                    var year = y;
+                    <MudSelectItem T="int" Value="@year">@year</MudSelectItem>
+                }
+            </MudSelect>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OpenYear">
+                Open @_openYear
+            </MudButton>
+        </div>
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private List<Shift> _shifts = [];
+    private List<Holiday> _holidays = [];
+    private List<LeaveType> _types = [];
+
+    private Shift _shift = NewShift();
+    private LeaveType _type = new();
+    private DateTime? _holidayDate = DateTime.Today;
+    private string _holidayName = "";
+    private int _openYear = DateTime.Today.Year;
+
+    private static Shift NewShift() => new()
+    {
+        StartsAt = new TimeOnly(9, 0),
+        EndsAt = new TimeOnly(17, 0),
+        GraceMinutes = 15,
+        HalfDayMinutes = 240,
+        MinimumMinutes = 60,
+        OvertimeAfterMinutes = 30,
+        WeeklyOffMask = 1 << (int)DayOfWeek.Sunday
+    };
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<HrDbContext>();
+        _shifts = await db.Shifts.OrderBy(s => s.Name).ToListAsync();
+        _holidays = await db.Holidays.OrderBy(h => h.Date).ToListAsync();
+        _types = await scope.ServiceProvider.GetRequiredService<ILeaveService>()
+            .ListTypesAsync(activeOnly: false);
+        StateHasChanged();
+    }
+
+    private void ToggleOff(DayOfWeek day, bool on)
+    {
+        var bit = 1 << (int)day;
+        _shift.WeeklyOffMask = on ? _shift.WeeklyOffMask | bit : _shift.WeeklyOffMask & ~bit;
+    }
+
+    private void EditShift(Shift s) => _shift = new Shift
+    {
+        Id = s.Id, Name = s.Name, StartsAt = s.StartsAt, EndsAt = s.EndsAt,
+        GraceMinutes = s.GraceMinutes, BreakMinutes = s.BreakMinutes,
+        HalfDayMinutes = s.HalfDayMinutes, MinimumMinutes = s.MinimumMinutes,
+        OvertimeAfterMinutes = s.OvertimeAfterMinutes, WeeklyOffMask = s.WeeklyOffMask,
+        IsDefault = s.IsDefault
+    };
+
+    private async Task SaveShift()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<HrDbContext>();
+
+            if (_shift.Id == 0)
+            {
+                // The first shift defined becomes the fallback for everyone.
+                _shift.IsDefault = !await db.Shifts.AnyAsync();
+                db.Shifts.Add(_shift);
+            }
+            else
+            {
+                var existing = await db.Shifts.FirstAsync(s => s.Id == _shift.Id);
+                existing.Name = _shift.Name;
+                existing.StartsAt = _shift.StartsAt;
+                existing.EndsAt = _shift.EndsAt;
+                existing.GraceMinutes = _shift.GraceMinutes;
+                existing.BreakMinutes = _shift.BreakMinutes;
+                existing.HalfDayMinutes = _shift.HalfDayMinutes;
+                existing.WeeklyOffMask = _shift.WeeklyOffMask;
+            }
+
+            await db.SaveChangesAsync();
+            _shift = NewShift();
+            Snackbar.Add("Shift saved. Rebuild attendance to apply it to past days.",
+                Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AddHoliday()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<HrDbContext>();
+            db.Holidays.Add(new Holiday
+            {
+                Date = DateOnly.FromDateTime(_holidayDate!.Value),
+                Name = _holidayName.Trim()
+            });
+            await db.SaveChangesAsync();
+            _holidayName = "";
+            Snackbar.Add("Holiday added.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task RemoveHoliday(Holiday h)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<HrDbContext>();
+        var row = await db.Holidays.FirstOrDefaultAsync(x => x.Id == h.Id);
+        if (row is not null) { db.Holidays.Remove(row); await db.SaveChangesAsync(); }
+        await LoadAsync();
+    }
+
+    private void EditType(LeaveType t) => _type = new LeaveType
+    {
+        Id = t.Id, Name = t.Name, Code = t.Code, AnnualQuota = t.AnnualQuota,
+        IsPaid = t.IsPaid, AllowCarryForward = t.AllowCarryForward,
+        MaxCarryForward = t.MaxCarryForward, Colour = t.Colour, IsActive = t.IsActive
+    };
+
+    private async Task SaveType()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var leave = scope.ServiceProvider.GetRequiredService<ILeaveService>();
+
+            if (_type.Id == 0)
+            {
+                await leave.SaveTypeAsync(_type);
+            }
+            else
+            {
+                var db = scope.ServiceProvider.GetRequiredService<HrDbContext>();
+                var existing = await db.LeaveTypes.FirstAsync(t => t.Id == _type.Id);
+                existing.Name = _type.Name;
+                existing.Code = _type.Code;
+                existing.AnnualQuota = _type.AnnualQuota;
+                existing.IsPaid = _type.IsPaid;
+                existing.AllowCarryForward = _type.AllowCarryForward;
+                existing.MaxCarryForward = _type.MaxCarryForward;
+                await db.SaveChangesAsync();
+            }
+
+            _type = new LeaveType();
+            Snackbar.Add("Leave type saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task OpenYear()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var created = await scope.ServiceProvider.GetRequiredService<ILeaveService>()
+                .OpenYearAsync(_openYear);
+            Snackbar.Add(created == 0
+                ? $"{_openYear} was already open — no new balances needed."
+                : $"Opened {_openYear}: {created} balance(s) created.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

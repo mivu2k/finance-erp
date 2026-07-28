@@ -10,6 +10,7 @@ using FinanceERP.Web.Components;
 using FinanceERP.Web.Components.Account;
 using FinanceERP.Web.Endpoints;
 using GatePass.Web;
+using Hr.Web;
 using Repair.Web;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
@@ -130,6 +131,7 @@ app.MapExportEndpoints();
 app.MapPrintEndpoints();
 app.MapGatePassPrintEndpoints();
 app.MapRepairPrintEndpoints();
+app.MapHrExportEndpoints();
 
 // Authenticated receipt downloads (files live outside wwwroot).
 app.MapGet("/files/receipts/{name}", (string name, FinanceERP.Web.Services.ReceiptStorage storage) =>

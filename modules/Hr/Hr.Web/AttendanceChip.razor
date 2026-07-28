@@ -1,0 +1,27 @@
+@* One consistent colour scheme for attendance status across every screen. *@
+<MudChip T="string" Size="Size.Small" Color="@Colour">@Label</MudChip>
+
+@code {
+    [Parameter, EditorRequired] public AttendanceStatus Status { get; set; }
+
+    private string Label => Status switch
+    {
+        AttendanceStatus.WeeklyOff => "Weekly off",
+        AttendanceStatus.HalfDay => "Half day",
+        AttendanceStatus.OnLeave => "On leave",
+        _ => Status.ToString()
+    };
+
+    private Color Colour => Status switch
+    {
+        AttendanceStatus.Present => Color.Success,
+        AttendanceStatus.Late => Color.Warning,
+        AttendanceStatus.HalfDay => Color.Warning,
+        AttendanceStatus.Absent => Color.Error,
+        AttendanceStatus.OnLeave => Color.Info,
+        AttendanceStatus.Holiday => Color.Secondary,
+        AttendanceStatus.WeeklyOff => Color.Default,
+        AttendanceStatus.Incomplete => Color.Error,
+        _ => Color.Default
+    };
+}

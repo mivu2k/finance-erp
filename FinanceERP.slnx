@@ -25,6 +25,9 @@
     <Project Path="modules/Repair/Repair.Infrastructure/Repair.Infrastructure.csproj" />
     <Project Path="modules/Repair/Repair.Web/Repair.Web.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Hr.Tests/Hr.Tests.csproj" />
+  </Folder>
   <Folder Name="/apps/">
     <Project Path="src/FinanceERP.Web/FinanceERP.Web.csproj" />
   </Folder>

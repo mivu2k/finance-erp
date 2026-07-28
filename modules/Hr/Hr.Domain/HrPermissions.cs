@@ -14,10 +14,26 @@ public static class HrPermissions
     public const string CatalogManage = "hr.catalog.manage";
     public const string ReportsView = "hr.reports.view";
 
+    // Attendance
+    public const string AttendanceViewOwn = "hr.attendance.viewown";
+    public const string AttendanceViewAll = "hr.attendance.viewall";
+    /// <summary>Correcting a day by hand when the terminal missed a read.</summary>
+    public const string AttendanceEdit = "hr.attendance.edit";
+    public const string DevicesManage = "hr.devices.manage";
+
+    // Leave
+    public const string LeaveRequest = "hr.leave.request";
+    public const string LeaveViewOwn = "hr.leave.viewown";
+    public const string LeaveViewAll = "hr.leave.viewall";
+    public const string LeaveApprove = "hr.leave.approve";
+    public const string LeaveManage = "hr.leave.manage";
+
     public static IReadOnlyList<string> All =>
     [
         EmployeesView, EmployeesManage, EmployeesViewSensitive,
-        DocumentsView, DocumentsManage, CatalogManage, ReportsView
+        DocumentsView, DocumentsManage, CatalogManage, ReportsView,
+        AttendanceViewOwn, AttendanceViewAll, AttendanceEdit, DevicesManage,
+        LeaveRequest, LeaveViewOwn, LeaveViewAll, LeaveApprove, LeaveManage
     ];
 }
 
@@ -27,4 +43,8 @@ public static class HrRoles
     public const string Manager = "HR Manager";
     public const string Officer = "HR Officer";
     public const string Viewer = "HR Viewer";
+    /// <summary>Any employee: sees their own attendance and raises leave requests.</summary>
+    public const string SelfService = "Employee Self Service";
+    /// <summary>Approves their own team's leave without seeing the whole company.</summary>
+    public const string LineManager = "Line Manager";
 }

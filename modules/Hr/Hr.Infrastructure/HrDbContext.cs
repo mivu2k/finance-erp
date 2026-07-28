@@ -17,6 +17,15 @@ public class HrDbContext(DbContextOptions<HrDbContext> options, ICurrentUserServ
     public DbSet<Designation> Designations => Set<Designation>();
     public DbSet<DocumentSequence> DocumentSequences => Set<DocumentSequence>();
 
+    public DbSet<BiometricDevice> BiometricDevices => Set<BiometricDevice>();
+    public DbSet<AttendancePunch> AttendancePunches => Set<AttendancePunch>();
+    public DbSet<AttendanceDay> AttendanceDays => Set<AttendanceDay>();
+    public DbSet<Shift> Shifts => Set<Shift>();
+    public DbSet<Holiday> Holidays => Set<Holiday>();
+    public DbSet<LeaveType> LeaveTypes => Set<LeaveType>();
+    public DbSet<LeaveRequest> LeaveRequests => Set<LeaveRequest>();
+    public DbSet<LeaveBalance> LeaveBalances => Set<LeaveBalance>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
@@ -60,6 +69,10 @@ public class HrDbContext(DbContextOptions<HrDbContext> options, ICurrentUserServ
                 .HasForeignKey(x => x.DepartmentId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Designation).WithMany()
                 .HasForeignKey(x => x.DesignationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Shift).WithMany()
+                .HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.DeviceUserId).HasMaxLength(64);
+            e.HasIndex(x => x.DeviceUserId);
             e.HasQueryFilter(x => !x.IsDeleted);
         });
 
@@ -89,6 +102,105 @@ public class HrDbContext(DbContextOptions<HrDbContext> options, ICurrentUserServ
             e.HasIndex(x => x.Title).IsUnique();
             e.Property(x => x.Title).HasMaxLength(150);
             e.Property(x => x.Grade).HasMaxLength(32);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<BiometricDevice>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(150);
+            e.Property(x => x.Host).HasMaxLength(255);
+            e.Property(x => x.SerialNumber).HasMaxLength(100);
+            e.Property(x => x.Location).HasMaxLength(150);
+            e.Property(x => x.LastSyncResult).HasMaxLength(500);
+            e.HasIndex(x => new { x.Host, x.Port }).IsUnique();
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<AttendancePunch>(e =>
+        {
+            // The natural key of a read. Re-pulling the device log is the normal
+            // case, so the unique index is what makes sync idempotent.
+            e.HasIndex(x => new { x.DeviceUserId, x.PunchedAt, x.BiometricDeviceId })
+                .IsUnique()
+                .HasDatabaseName("IX_AttendancePunches_Natural");
+            e.HasIndex(x => new { x.EmployeeId, x.PunchedAt });
+            e.Property(x => x.DeviceUserId).HasMaxLength(64);
+            e.HasOne(x => x.BiometricDevice).WithMany()
+                .HasForeignKey(x => x.BiometricDeviceId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.Employee).WithMany()
+                .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        b.Entity<AttendanceDay>(e =>
+        {
+            e.HasIndex(x => new { x.EmployeeId, x.Date }).IsUnique();
+            e.HasIndex(x => x.Date);
+            e.Property(x => x.OverriddenById).HasMaxLength(450);
+            e.Property(x => x.OverriddenByName).HasMaxLength(200);
+            e.Property(x => x.OverrideReason).HasMaxLength(500);
+            e.Property(x => x.Notes).HasMaxLength(1000);
+            e.HasOne(x => x.Employee).WithMany()
+                .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.LeaveRequest).WithMany()
+                .HasForeignKey(x => x.LeaveRequestId).OnDelete(DeleteBehavior.SetNull);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<Shift>(e =>
+        {
+            e.HasIndex(x => x.Name).IsUnique();
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<Holiday>(e =>
+        {
+            e.HasIndex(x => x.Date).IsUnique();
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<LeaveType>(e =>
+        {
+            e.HasIndex(x => x.Name).IsUnique();
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.Property(x => x.Code).HasMaxLength(16);
+            e.Property(x => x.Colour).HasMaxLength(20);
+            e.Property(x => x.AnnualQuota).HasPrecision(6, 2);
+            e.Property(x => x.MaxCarryForward).HasPrecision(6, 2);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<LeaveRequest>(e =>
+        {
+            e.HasIndex(x => x.RequestNumber).IsUnique();
+            e.HasIndex(x => new { x.EmployeeId, x.FromDate });
+            e.HasIndex(x => x.Status);
+            e.Property(x => x.RequestNumber).HasMaxLength(32);
+            e.Property(x => x.Reason).HasMaxLength(1000);
+            e.Property(x => x.ContactDuringLeave).HasMaxLength(100);
+            e.Property(x => x.AttachmentPath).HasMaxLength(400);
+            e.Property(x => x.RequestedById).HasMaxLength(450);
+            e.Property(x => x.DecidedById).HasMaxLength(450);
+            e.Property(x => x.DecidedByName).HasMaxLength(200);
+            e.Property(x => x.DecisionNote).HasMaxLength(1000);
+            e.Property(x => x.Days).HasPrecision(6, 2);
+            e.HasOne(x => x.Employee).WithMany()
+                .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.LeaveType).WithMany()
+                .HasForeignKey(x => x.LeaveTypeId).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<LeaveBalance>(e =>
+        {
+            e.HasIndex(x => new { x.EmployeeId, x.LeaveTypeId, x.Year }).IsUnique();
+            foreach (var p in new[] { "Entitled", "CarriedForward", "Taken", "Pending" })
+                e.Property(p).HasPrecision(6, 2);
+            e.HasOne(x => x.Employee).WithMany()
+                .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.LeaveType).WithMany()
+                .HasForeignKey(x => x.LeaveTypeId).OnDelete(DeleteBehavior.Restrict);
             e.HasQueryFilter(x => !x.IsDeleted);
         });
     }
