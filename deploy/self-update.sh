@@ -64,11 +64,18 @@ ls -1t /var/backups/finance-erp/db-*.sql.gz 2>/dev/null | tail -n +$((KEEP_BACKU
 
 step "Installing"
 systemctl stop "$SERVICE"
-# appsettings.Production.json holds the DB password and is not in the repo,
-# so preserve whatever is live rather than overwriting it.
-cp -a "$APP_DIR/appsettings.Production.json" "$BUILD_DIR/" 2>/dev/null || true
-rm -rf "${APP_DIR:?}"/*
-cp -a "$BUILD_DIR"/. "$APP_DIR/"
+# Runtime state lives inside APP_DIR alongside the binaries and is NOT produced
+# by the build, so it must survive the swap: uploads/ is receipt attachments
+# (unrecoverable if deleted), keys/ is DataProtection (losing it invalidates
+# every auth cookie), appsettings.Production.json holds the DB password.
+# rsync's excludes replace old binaries while leaving that state alone.
+command -v rsync >/dev/null || die "rsync not installed (apt install -y rsync)"
+rsync -a --delete \
+    --exclude 'appsettings.Production.json' \
+    --exclude 'uploads/' \
+    --exclude 'keys/' \
+    --exclude 'logs/' \
+    "$BUILD_DIR"/ "$APP_DIR"/
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
 step "Starting $SERVICE (migrations apply on boot)"

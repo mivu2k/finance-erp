@@ -64,10 +64,15 @@ step "Stopping $SERVICE"
 "${SSH[@]}" "systemctl stop $SERVICE"
 
 step "Uploading build to $APP_DIR"
-# appsettings.Production.json holds the DB password and lives only on the
-# server — --delete would remove it, so it is excluded from both sides.
+# Runtime state lives inside APP_DIR alongside the binaries and is NOT in the
+# publish output, so --delete would destroy it. uploads/ is receipt attachments
+# (unrecoverable), keys/ is DataProtection (losing it logs everyone out and
+# breaks existing auth cookies), appsettings.Production.json holds the DB
+# password. Never drop these excludes.
 rsync -a --delete \
   --exclude 'appsettings.Production.json' \
+  --exclude 'uploads/' \
+  --exclude 'keys/' \
   --exclude 'logs/' \
   -e "ssh -o BatchMode=yes" \
   "$PUBLISH_DIR/" "$SSH_USER@$HOST:$APP_DIR/"
