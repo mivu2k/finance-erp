@@ -126,6 +126,41 @@ public enum ThirdPartyType
     Other = 99
 }
 
+public enum PayComponentKind
+{
+    /// <summary>Adds to gross pay (housing, transport, medical, ...).</summary>
+    Allowance = 1,
+    /// <summary>Subtracts from gross pay (tax, absence, loan, manual, ...).</summary>
+    Deduction = 2
+}
+
+public enum PayComponentCalc
+{
+    FixedAmount = 1,
+    PercentOfBasic = 2
+}
+
+public enum PayrollRunStatus
+{
+    Draft = 0,
+    PendingApproval = 1,
+    Approved = 2,
+    /// <summary>Net pay disbursed and the salary voucher posted.</summary>
+    Paid = 3,
+    Cancelled = 4
+}
+
+/// <summary>What to do with the gap between an advance disbursed and the amount actually justified.</summary>
+public enum AdvanceDifferenceHandling
+{
+    /// <summary>Cash moves now — employee hands back the unspent amount, or the company reimburses overspend.</summary>
+    SettleNow = 0,
+    /// <summary>Leave the balance outstanding (advance account / employee payable) and clear it manually later.</summary>
+    Outstanding = 1,
+    /// <summary>Unspent balance becomes a salary-deductible advance, recovered by the next payroll run.</summary>
+    RecoverFromPayroll = 2
+}
+
 public enum NotificationType
 {
     Info = 0,

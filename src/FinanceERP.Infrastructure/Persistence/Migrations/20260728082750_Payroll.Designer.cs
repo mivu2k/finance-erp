@@ -4,6 +4,7 @@ using FinanceERP.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace FinanceERP.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260728082750_Payroll")]
+    partial class Payroll
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -745,10 +748,6 @@ namespace FinanceERP.Infrastructure.Persistence.Migrations
                     b.Property<int?>("AdvanceAccountId")
                         .HasColumnType("int");
 
-                    b.Property<decimal>("ClearedDifference")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime(6)");
 
@@ -762,9 +761,6 @@ namespace FinanceERP.Infrastructure.Persistence.Migrations
                         .HasColumnType("longtext");
 
                     b.Property<int?>("DepartmentId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("DifferenceHandling")
                         .HasColumnType("int");
 
                     b.Property<bool>("IsDeleted")

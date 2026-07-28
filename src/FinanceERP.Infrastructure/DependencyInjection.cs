@@ -22,6 +22,7 @@ public static class DependencyInjection
         services.AddScoped<IVoucherService, VoucherService>();
         services.AddScoped<IPaymentRequestService, PaymentRequestService>();
         services.AddScoped<IAdvanceService, AdvanceService>();
+        services.AddScoped<IPayrollService, PayrollService>();
         services.AddScoped<ILoanService, LoanService>();
         services.AddScoped<IInvestmentService, InvestmentService>();
         services.AddScoped<IPettyCashService, PettyCashService>();

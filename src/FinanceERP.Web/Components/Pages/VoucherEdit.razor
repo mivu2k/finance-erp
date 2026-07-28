@@ -7,7 +7,15 @@
 
 <PageTitle>Voucher</PageTitle>
 
-<MudText Typo="Typo.h5" Class="mb-4">@(_voucherNo is null ? "New Voucher" : $"Voucher {_voucherNo}")</MudText>
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">@(_voucherNo is null ? "New Voucher" : $"Voucher {_voucherNo}")</MudText>
+    <MudSpacer />
+    @if (Id != 0)
+    {
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                   Href="@($"/print/voucher/{Id}")" Target="_blank">Print</MudButton>
+    }
+</div>
 
 <MudPaper Class="pa-4 mb-4">
     <MudGrid Spacing="2">

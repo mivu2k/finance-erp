@@ -32,10 +32,12 @@
             <MudChip T="string" Size="Size.Small"
                      Color="@(context.Status == LoanStatus.Settled ? Color.Success : Color.Warning)">@context.Status</MudChip>
         </MudTd>
-        <MudTd>
+        <MudTd style="white-space:nowrap">
             <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => ToggleDetail(context))">
                 @(_detail?.Id == context.Id ? "Hide" : "Schedule")
             </MudButton>
+            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PictureAsPdf" Title="Print schedule"
+                           Href="@($"/print/loan/{context.Id}")" Target="_blank" />
         </MudTd>
     </RowTemplate>
     <ChildRowContent>

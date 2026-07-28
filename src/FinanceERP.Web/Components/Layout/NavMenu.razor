@@ -50,6 +50,20 @@
         <MudNavLink Href="/approvals" Icon="@Icons.Material.Filled.HowToVote">Approvals</MudNavLink>
     }
 
+    <AuthorizeView Policy="@Permissions.PayrollViewOwn">
+        <MudNavLink Href="/my-payslips" Icon="@Icons.Material.Filled.Receipt">My Payslips</MudNavLink>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@Permissions.PayrollView">
+        <MudNavGroup Title="Payroll" Icon="@Icons.Material.Filled.Payment">
+            <MudNavLink Href="/payroll" Icon="@Icons.Material.Filled.EventRepeat">Payroll Runs</MudNavLink>
+            <AuthorizeView Policy="@Permissions.PayrollManage" Context="ps">
+                <MudNavLink Href="/payroll/structures" Icon="@Icons.Material.Filled.Badge">Salary Structures</MudNavLink>
+                <MudNavLink Href="/payroll/components" Icon="@Icons.Material.Filled.Tune">Pay Components</MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
+    </AuthorizeView>
+
     <AuthorizeView Policy="@Permissions.ThirdPartiesView">
         <MudNavGroup Title="Partners &amp; Portfolio" Icon="@Icons.Material.Filled.Handshake">
             <MudNavLink Href="/third-parties" Icon="@Icons.Material.Filled.Groups">Third Parties</MudNavLink>

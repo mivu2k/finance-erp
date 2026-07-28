@@ -1,4 +1,5 @@
 using ClosedXML.Excel;
+using FinanceERP.Application.DTOs;
 using FinanceERP.Application.Interfaces;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -56,6 +57,200 @@ public class ExportService : IExportService
             });
         });
         return doc.GeneratePdf();
+    }
+
+    public byte[] DocumentToPdf(PdfDocument doc) =>
+        Document.Create(container => Compose(container, doc)).GeneratePdf();
+
+    /// <summary>Each document contributes its own page set, so slips never share a page.</summary>
+    public byte[] DocumentsToPdf(IEnumerable<PdfDocument> documents) =>
+        Document.Create(container =>
+        {
+            foreach (var doc in documents) Compose(container, doc);
+        }).GeneratePdf();
+
+    private static void Compose(IDocumentContainer container, PdfDocument doc)
+    {
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A4);
+                page.Margin(32);
+                page.DefaultTextStyle(x => x.FontSize(9.5f));
+
+                page.Header().Column(col =>
+                {
+                    col.Item().Row(row =>
+                    {
+                        row.RelativeItem().Column(left =>
+                        {
+                            if (!string.IsNullOrWhiteSpace(doc.CompanyName))
+                                left.Item().Text(doc.CompanyName).SemiBold().FontSize(13);
+                            left.Item().Text(doc.Title).FontSize(17).Bold().FontColor(Colors.Blue.Darken2);
+                            if (!string.IsNullOrWhiteSpace(doc.Subtitle))
+                                left.Item().Text(doc.Subtitle!).FontColor(Colors.Grey.Darken1);
+                        });
+                        if (!string.IsNullOrWhiteSpace(doc.DocumentNo))
+                            row.ConstantItem(180).AlignRight().Column(right =>
+                            {
+                                right.Item().AlignRight().Text("Document No").FontSize(8).FontColor(Colors.Grey.Darken1);
+                                right.Item().AlignRight().Text(doc.DocumentNo!).SemiBold().FontSize(12);
+                            });
+                    });
+                    col.Item().PaddingTop(6).LineHorizontal(1.5f).LineColor(Colors.Blue.Darken2);
+                });
+
+                page.Content().PaddingVertical(10).Column(col =>
+                {
+                    col.Spacing(12);
+
+                    if (doc.Fields.Count > 0)
+                        col.Item().Table(t =>
+                        {
+                            t.ColumnsDefinition(c =>
+                            {
+                                c.ConstantColumn(95); c.RelativeColumn();
+                                c.ConstantColumn(95); c.RelativeColumn();
+                            });
+                            foreach (var f in doc.Fields)
+                            {
+                                t.Cell().PaddingVertical(2).Text(f.Label).FontColor(Colors.Grey.Darken2);
+                                var cell = t.Cell().PaddingVertical(2).PaddingRight(10).Text(f.Value ?? "—");
+                                if (f.Emphasise) cell.SemiBold();
+                            }
+                        });
+
+                    if (doc.TableHeaders is { Length: > 0 })
+                        col.Item().Table(t =>
+                        {
+                            t.ColumnsDefinition(c =>
+                            {
+                                // First column carries descriptions, so give it the slack.
+                                for (var i = 0; i < doc.TableHeaders.Length; i++)
+                                    c.RelativeColumn(i == 0 ? 2.2f : 1f);
+                            });
+                            t.Header(h =>
+                            {
+                                for (var i = 0; i < doc.TableHeaders.Length; i++)
+                                {
+                                    var cell = h.Cell().Background(Colors.Grey.Lighten3).Padding(5);
+                                    var text = doc.RightAlignedColumns.Contains(i)
+                                        ? cell.AlignRight().Text(doc.TableHeaders[i])
+                                        : cell.Text(doc.TableHeaders[i]);
+                                    text.SemiBold();
+                                }
+                            });
+                            foreach (var row in doc.TableRows)
+                                for (var i = 0; i < row.Length; i++)
+                                {
+                                    var cell = t.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(5);
+                                    if (doc.RightAlignedColumns.Contains(i)) cell.AlignRight().Text(row[i] ?? "");
+                                    else cell.Text(row[i] ?? "");
+                                }
+                            if (doc.TableFooter is not null)
+                                for (var i = 0; i < doc.TableFooter.Length; i++)
+                                {
+                                    var cell = t.Cell().Background(Colors.Grey.Lighten4).BorderTop(1).Padding(5);
+                                    var text = doc.RightAlignedColumns.Contains(i)
+                                        ? cell.AlignRight().Text(doc.TableFooter[i] ?? "")
+                                        : cell.Text(doc.TableFooter[i] ?? "");
+                                    text.Bold();
+                                }
+                        });
+
+                    if (doc.Totals.Count > 0)
+                        col.Item().AlignRight().Width(260).Table(t =>
+                        {
+                            t.ColumnsDefinition(c => { c.RelativeColumn(); c.ConstantColumn(110); });
+                            foreach (var total in doc.Totals)
+                            {
+                                var label = t.Cell().PaddingVertical(3)
+                                    .BorderBottom(total.Emphasise ? 0 : 0.5f).BorderColor(Colors.Grey.Lighten2)
+                                    .Text(total.Label);
+                                var value = t.Cell().PaddingVertical(3).AlignRight()
+                                    .BorderBottom(total.Emphasise ? 0 : 0.5f).BorderColor(Colors.Grey.Lighten2)
+                                    .Text(total.Value ?? "");
+                                if (total.Emphasise)
+                                {
+                                    label.Bold().FontSize(11);
+                                    value.Bold().FontSize(11);
+                                }
+                            }
+                        });
+
+                    if (doc.Approvals.Count > 0)
+                        col.Item().Column(a =>
+                        {
+                            a.Item().PaddingBottom(4).Text("Approval Trail").SemiBold();
+                            a.Item().Table(t =>
+                            {
+                                t.ColumnsDefinition(c =>
+                                {
+                                    c.ConstantColumn(75); c.RelativeColumn(1.3f);
+                                    c.ConstantColumn(70); c.RelativeColumn(2f); c.ConstantColumn(85);
+                                });
+                                t.Header(h =>
+                                {
+                                    foreach (var head in new[] { "Stage", "By", "Action", "Comment", "When" })
+                                        h.Cell().Background(Colors.Grey.Lighten3).Padding(4).Text(head).SemiBold();
+                                });
+                                foreach (var row in doc.Approvals)
+                                {
+                                    void Cell(string? v) => t.Cell().BorderBottom(0.5f)
+                                        .BorderColor(Colors.Grey.Lighten2).Padding(4).Text(v ?? "");
+                                    Cell(row.Level);
+                                    Cell(row.Actor);
+                                    Cell(row.Action);
+                                    Cell(row.Comment);
+                                    Cell(row.When?.ToString("yyyy-MM-dd HH:mm"));
+                                }
+                            });
+                        });
+
+                    if (!string.IsNullOrWhiteSpace(doc.Notes))
+                        col.Item().Background(Colors.Grey.Lighten4).Padding(8).Column(n =>
+                        {
+                            n.Item().Text("Notes").SemiBold().FontSize(8.5f).FontColor(Colors.Grey.Darken2);
+                            n.Item().Text(doc.Notes!);
+                        });
+
+                    if (doc.Signatures.Length > 0)
+                        col.Item().PaddingTop(34).Row(row =>
+                        {
+                            foreach (var caption in doc.Signatures)
+                                row.RelativeItem().PaddingRight(18).Column(sig =>
+                                {
+                                    sig.Item().LineHorizontal(0.8f).LineColor(Colors.Grey.Darken1);
+                                    sig.Item().PaddingTop(3).Text(caption)
+                                        .FontSize(8.5f).FontColor(Colors.Grey.Darken2);
+                                });
+                        });
+                });
+
+                if (!string.IsNullOrWhiteSpace(doc.Watermark))
+                    page.Foreground().AlignCenter().AlignMiddle()
+                        .Rotate(-35).Text(doc.Watermark!)
+                        .FontSize(90).Bold().FontColor(Colors.Red.Lighten4);
+
+                page.Footer().Column(f =>
+                {
+                    f.Item().PaddingBottom(3).LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
+                    f.Item().Row(row =>
+                    {
+                        row.RelativeItem().Text(doc.FooterNote ?? "")
+                            .FontSize(8).FontColor(Colors.Grey.Darken1);
+                        row.RelativeItem().AlignRight().Text(t =>
+                        {
+                            t.DefaultTextStyle(x => x.FontSize(8).FontColor(Colors.Grey.Darken1));
+                            t.Span($"Generated {DateTime.Now:yyyy-MM-dd HH:mm}  ·  Page ");
+                            t.CurrentPageNumber();
+                            t.Span(" / ");
+                            t.TotalPages();
+                        });
+                    });
+                });
+            });
+        }
     }
 
     public byte[] TableToExcel(string sheetName, string[] headers, IEnumerable<object?[]> rows)

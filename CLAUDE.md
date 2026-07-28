@@ -46,7 +46,7 @@ every service contract is there with XML docs on the non-obvious flows.
   `DuplicateAsDraftAsync` to fix and repost. Drafts soft-delete via `DeleteDraftAsync`.
 - **Financial data is soft-deleted**, never hard-deleted.
 - **Permissions are data, not code.** `Domain/Security/Permissions.cs` is the catalog
-  (54 permissions); they live in `AspNetRoleClaims` and policies are generated
+  (59 permissions); they live in `AspNetRoleClaims` and policies are generated
   dynamically by `PermissionPolicyProvider`. Adding a permission means adding the
   constant *and* granting it in the role matrix at `/admin/roles`.
 - Every page, nav item and action is permission-gated — match that when adding UI.
@@ -56,9 +56,24 @@ every service contract is there with XML docs on the non-obvious flows.
 - **Payment requests**: Employee → Manager → Admin → Accountant → paid. Director fund
   requests skip manager approval. Voucher is created on payment.
 - **Advance-kind requests** have a second lifecycle after payment: disburse → justify
-  → approve justification → settle. `SettleAsync(..., settleDifferenceNow)` decides
-  whether over/underspend moves through cash now or parks on an employee
-  payable/advance account for manual handling later.
+  → approve justification → settle. `SettleAsync(..., AdvanceDifferenceHandling)`
+  decides what happens to the disbursed-vs-justified gap (20,000 taken, 17,000 spent):
+  `SettleNow` moves the 3,000 through cash immediately, `Outstanding` parks it on the
+  employee's advance account / an employee payable for `RecordAdvanceReturnAsync` to
+  clear later, and `RecoverFromPayroll` turns it into a salary-deductible
+  `EmployeeAdvance` that the next payroll run recovers. The chosen disposition and any
+  amount cleared so far live on `PaymentRequest.DifferenceHandling`/`ClearedDifference`.
+- **Payroll**: `SalaryStructure` (basic + allowance/deduction lines, effective-dated;
+  saving a new one supersedes the old) → `PayrollRun` (draft → pending → approved →
+  paid). `GenerateAsync` rebuilds payslips from structures, pro-rating basic *and*
+  allowances by attendance, then pulls due advance instalments — capped at what's left
+  after other deductions so net pay can't go negative; the shortfall rolls to next
+  month. Everything is snapshotted onto the payslip so an approved run can't shift
+  under a later catalog edit. `PayRunAsync` posts one voucher aggregated by ledger
+  head: Dr salary expense, Cr deduction liabilities, Cr employee advance accounts,
+  Cr cash/bank for net pay. Advance instalments are then marked repaid via
+  `ApplyPayrollDeductionAsync`, which posts nothing — the payroll voucher already
+  credited the advance account. Watch that distinction; double-posting is the easy bug.
 - **Year close**: `CloseFiscalYearAsync` moves income/expense into Retained Earnings
   and locks the books through that date.
 
@@ -66,15 +81,22 @@ every service contract is there with XML docs on the non-obvious flows.
 
 Implemented and wired end-to-end (service + page + nav): accounts, vouchers, ledger,
 day book, payment requests, advances, director funds, petty cash, third parties,
-loans, investments, utilities, reconciliation, reports (trial balance, income
-statement, balance sheet, cash flow, project spend), PDF/Excel export, audit trail,
-notifications, global search, optional SMTP.
+loans, investments, utilities, reconciliation, payroll (pay components, salary
+structures, runs, payslips), reports (trial balance, income statement, balance sheet,
+cash flow, project spend), PDF/Excel export, per-record printable documents, audit
+trail, notifications, global search, optional SMTP.
+
+Printing: `/export/*` (ExportEndpoints) is table/report downloads; `/print/*`
+(PrintEndpoints) renders a single record as a signable A4 document via
+`IExportService.DocumentToPdf(PdfDocument)`. Ownership-scoped records (requests,
+advances, payslips) are readable by their owner without the module-wide permission.
 
 Known gaps, roughly in priority order:
 
 1. **No tests at all** — no test project in `FinanceERP.slnx`. Highest-value work is
-   covering `VoucherService`, `PaymentRequestService.SettleAsync` and
-   `CloseFiscalYearAsync`, where the arithmetic is subtle and unverified.
+   covering `VoucherService`, `PaymentRequestService.SettleAsync`,
+   `PayrollService.GenerateAsync`/`PayRunAsync` and `CloseFiscalYearAsync`, where the
+   arithmetic is subtle and unverified.
 2. **Receipt endpoint is auth-only** (`Program.cs`, `/files/receipts/{name}`) — any
    logged-in user can fetch any receipt by filename; no ownership or permission check.
 3. `README.md` predates year-close, reconciliation, utilities, projects, the

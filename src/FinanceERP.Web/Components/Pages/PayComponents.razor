@@ -1,0 +1,164 @@
+@page "/payroll/components"
+@attribute [Authorize(Policy = Permissions.PayrollManage)]
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Pay Components</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Pay Components</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+               OnClick="@(() => OpenEditor(new PayComponent { Kind = PayComponentKind.Allowance, IsActive = true }))">
+        New Component
+    </MudButton>
+</div>
+
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+    The catalog of allowances and deductions employees' salary structures draw from.
+    Allowances add to gross pay and post to an expense head; deductions subtract and post to a liability head.
+</MudText>
+
+<MudTable Items="_components" Dense="true" Hover="true" Striped="true" Loading="_loading"
+          GroupBy="_groupDefinition" T="PayComponent">
+    <HeaderContent>
+        <MudTh>Code</MudTh><MudTh>Name</MudTh><MudTh>Basis</MudTh>
+        <MudTh Style="text-align:right">Default</MudTh><MudTh>Ledger head</MudTh>
+        <MudTh>Active</MudTh><MudTh Style="text-align:right">Actions</MudTh>
+    </HeaderContent>
+    <GroupHeaderTemplate>
+        <MudTh Class="mud-table-cell-custom-group" colspan="7">
+            <MudText Typo="Typo.subtitle2">@($"{context.Key}s")</MudText>
+        </MudTh>
+    </GroupHeaderTemplate>
+    <RowTemplate>
+        <MudTd>@context.Code</MudTd>
+        <MudTd>@context.Name</MudTd>
+        <MudTd>@(context.Calc == PayComponentCalc.PercentOfBasic ? "% of basic" : "Fixed amount")</MudTd>
+        <MudTd Style="text-align:right">
+            @(context.Calc == PayComponentCalc.PercentOfBasic
+                ? $"{context.DefaultValue:0.##}%"
+                : context.DefaultValue.ToString("N2"))
+        </MudTd>
+        <MudTd>@(context.Account is null ? "—" : $"{context.Account.Code} — {context.Account.Name}")</MudTd>
+        <MudTd>
+            <MudChip T="string" Size="Size.Small" Color="@(context.IsActive ? Color.Success : Color.Default)">
+                @(context.IsActive ? "Active" : "Inactive")
+            </MudChip>
+        </MudTd>
+        <MudTd Style="text-align:right">
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                           OnClick="@(() => OpenEditor(context))" />
+            @if (!context.IsSystem)
+            {
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                               OnClick="@(() => Delete(context))" />
+            }
+        </MudTd>
+    </RowTemplate>
+</MudTable>
+
+@if (_editing is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:480px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_editing.Id == 0 ? "New" : "Edit") Component</MudText>
+            <MudTextField @bind-Value="_editing.Name" Label="Name" Class="mb-2" />
+            <MudTextField @bind-Value="_editing.Code" Label="Short code (optional)" Class="mb-2" />
+            <MudSelect T="PayComponentKind" @bind-Value="_editing.Kind" Label="Kind" Class="mb-2">
+                <MudSelectItem Value="PayComponentKind.Allowance">Allowance (adds to gross)</MudSelectItem>
+                <MudSelectItem Value="PayComponentKind.Deduction">Deduction (subtracts from gross)</MudSelectItem>
+            </MudSelect>
+            <MudSelect T="PayComponentCalc" @bind-Value="_editing.Calc" Label="Calculation basis" Class="mb-2">
+                <MudSelectItem Value="PayComponentCalc.FixedAmount">Fixed amount</MudSelectItem>
+                <MudSelectItem Value="PayComponentCalc.PercentOfBasic">Percent of basic salary</MudSelectItem>
+            </MudSelect>
+            <MudNumericField T="decimal" @bind-Value="_editing.DefaultValue" Min="0"
+                             Max="@(_editing.Calc == PayComponentCalc.PercentOfBasic ? 100m : decimal.MaxValue)"
+                             Label="@(_editing.Calc == PayComponentCalc.PercentOfBasic ? "Default percent" : "Default amount")"
+                             Format="N2" Class="mb-2" />
+            <MudSelect T="int?" @bind-Value="_editing.AccountId" Clearable="true" Class="mb-2"
+                       Label="@(_editing.Kind == PayComponentKind.Allowance ? "Expense head" : "Liability head")"
+                       HelperText="Leave empty to use Salary Expense / Salaries Payable">
+                @foreach (var a in RelevantAccounts)
+                {
+                    <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudNumericField T="int" @bind-Value="_editing.SortOrder" Label="Sort order" Class="mb-2" />
+            <MudSwitch T="bool" @bind-Value="_editing.IsActive" Color="Color.Primary" Label="Active" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _editing = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="_busy">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    private List<PayComponent> _components = [];
+    private List<Account> _accounts = [];
+    private PayComponent? _editing;
+    private bool _loading = true;
+    private bool _busy;
+
+    private readonly TableGroupDefinition<PayComponent> _groupDefinition = new()
+    {
+        Selector = c => c.Kind, Indentation = false, Expandable = false
+    };
+
+    private IEnumerable<Account> RelevantAccounts => _editing is null
+        ? []
+        : _accounts.Where(a => _editing.Kind == PayComponentKind.Allowance
+            ? a.Type == AccountType.Expense
+            : a.Type is AccountType.Liability or AccountType.Asset);
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load()
+    {
+        _loading = true;
+        using var scope = ScopeFactory.CreateScope();
+        var payroll = scope.ServiceProvider.GetRequiredService<IPayrollService>();
+        var accounts = scope.ServiceProvider.GetRequiredService<IAccountService>();
+        _components = await payroll.GetComponentsAsync(activeOnly: false);
+        _accounts = await accounts.GetPostableAsync();
+        _loading = false;
+    }
+
+    // Edit a detached copy so cancelling doesn't leave the grid showing unsaved edits.
+    private void OpenEditor(PayComponent source) => _editing = new PayComponent
+    {
+        Id = source.Id, Name = source.Name, Code = source.Code, Kind = source.Kind,
+        Calc = source.Calc, DefaultValue = source.DefaultValue, AccountId = source.AccountId,
+        IsActive = source.IsActive, IsSystem = source.IsSystem, SortOrder = source.SortOrder,
+        Description = source.Description
+    };
+
+    private async Task Save()
+    {
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IPayrollService>().SaveComponentAsync(_editing!);
+            Snackbar.Add("Component saved.", Severity.Success);
+            _editing = null;
+            await Load();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private async Task Delete(PayComponent c)
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IPayrollService>().DeleteComponentAsync(c.Id);
+            Snackbar.Add($"{c.Name} deleted.", Severity.Success);
+            await Load();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

@@ -1,0 +1,82 @@
+@page "/my-payslips"
+@attribute [Authorize(Policy = Permissions.PayrollViewOwn)]
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>My Payslips</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">My Payslips</MudText>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (_payslips.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">
+        No payslips yet. They appear here once a payroll run covering you has been paid.
+    </MudAlert>
+}
+else
+{
+    <MudTable Items="_payslips" Dense="true" Hover="true" Striped="true" T="Payslip">
+        <HeaderContent>
+            <MudTh>Period</MudTh><MudTh>Pay date</MudTh>
+            <MudTh Style="text-align:right">Basic</MudTh>
+            <MudTh Style="text-align:right">Allowances</MudTh>
+            <MudTh Style="text-align:right">Gross</MudTh>
+            <MudTh Style="text-align:right">Deductions</MudTh>
+            <MudTh Style="text-align:right">Advance</MudTh>
+            <MudTh Style="text-align:right">Net Pay</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Period">@context.PayrollRun.PeriodMonth.ToString("MMMM yyyy")</MudTd>
+            <MudTd DataLabel="Pay date">@context.PayrollRun.PayDate.ToString("yyyy-MM-dd")</MudTd>
+            <MudTd DataLabel="Basic" Style="text-align:right">@context.EarnedBasic.ToString("N2")</MudTd>
+            <MudTd DataLabel="Allowances" Style="text-align:right">@context.TotalAllowances.ToString("N2")</MudTd>
+            <MudTd DataLabel="Gross" Style="text-align:right">@context.GrossPay.ToString("N2")</MudTd>
+            <MudTd DataLabel="Deductions" Style="text-align:right">@context.TotalDeductions.ToString("N2")</MudTd>
+            <MudTd DataLabel="Advance" Style="text-align:right">
+                @(context.AdvanceDeduction > 0 ? context.AdvanceDeduction.ToString("N2") : "—")
+            </MudTd>
+            <MudTd DataLabel="Net Pay" Style="text-align:right"><b>@context.NetPay.ToString("N2")</b></MudTd>
+            <MudTd Style="text-align:right">
+                <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                           StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                           Href="@($"/print/payslip/{context.Id}")" Target="_blank">PDF</MudButton>
+            </MudTd>
+        </RowTemplate>
+        <ChildRowContent>
+            <MudTr>
+                <td colspan="9" class="pa-2">
+                    <MudText Typo="Typo.caption">
+                        @string.Join("  ·  ", context.Lines.Select(l =>
+                            $"{(l.Kind == PayComponentKind.Allowance ? "+" : "−")}{l.Name} {l.Amount:N2}"))
+                    </MudText>
+                </td>
+            </MudTr>
+        </ChildRowContent>
+    </MudTable>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+    private List<Payslip> _payslips = [];
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            var auth = await AuthState;
+            var userId = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (userId is not null)
+            {
+                using var scope = ScopeFactory.CreateScope();
+                _payslips = await scope.ServiceProvider.GetRequiredService<IPayrollService>()
+                    .GetPayslipsForEmployeeAsync(userId);
+            }
+        }
+        _loading = false;
+    }
+}

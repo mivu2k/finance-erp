@@ -1,0 +1,433 @@
+@page "/payroll/{Id:int}"
+@attribute [Authorize(Policy = Permissions.PayrollView)]
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>@(_run?.RunNo ?? "Payroll Run")</PageTitle>
+
+@if (_run is null)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <div class="d-flex align-center mb-4 flex-wrap gap-2">
+        <div>
+            <MudText Typo="Typo.h5">@_run.RunNo</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                @_run.PeriodMonth.ToString("MMMM yyyy") · pay date @_run.PayDate.ToString("yyyy-MM-dd")
+                @if (_run.Department is not null) { <span> · @_run.Department.Name</span> }
+            </MudText>
+        </div>
+        <MudChip T="string" Color="@StatusColor(_run.Status)">@_run.Status</MudChip>
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                   Href="@($"/print/payroll-run/{_run.Id}")" Target="_blank">Register PDF</MudButton>
+        @if (_run.Payslips.Count > 0)
+        {
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Print"
+                       Href="@($"/print/payroll-run/{_run.Id}/payslips")" Target="_blank">All Payslips</MudButton>
+        }
+    </div>
+
+    @if (_run.Voucher is not null)
+    {
+        <MudAlert Severity="Severity.Success" Class="mb-4">
+            Paid via voucher
+            <MudLink Href="@($"/vouchers/{_run.VoucherId}")">@_run.Voucher.VoucherNo</MudLink>
+        </MudAlert>
+    }
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="8">
+            <MudPaper Class="pa-4 mb-4">
+                <div class="d-flex align-center mb-2 flex-wrap gap-2">
+                    <MudText Typo="Typo.subtitle1">Payslips (@_run.Payslips.Count)</MudText>
+                    <MudSpacer />
+                    @if (IsEditable)
+                    {
+                        <AuthorizeView Policy="@Permissions.PayrollManage">
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                       StartIcon="@Icons.Material.Filled.Refresh"
+                                       OnClick="Regenerate" Disabled="_busy">Recalculate</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                       StartIcon="@Icons.Material.Filled.PersonAdd"
+                                       OnClick="AddAllEligible" Disabled="_busy">Add All Eligible</MudButton>
+                        </AuthorizeView>
+                    }
+                </div>
+
+                <MudTable Items="_run.Payslips" Dense="true" Hover="true" T="Payslip" Elevation="0"
+                          Breakpoint="Breakpoint.Sm">
+                    <HeaderContent>
+                        <MudTh>Employee</MudTh>
+                        <MudTh Style="text-align:right">Basic</MudTh>
+                        <MudTh Style="text-align:right">Allow.</MudTh>
+                        <MudTh Style="text-align:right">Gross</MudTh>
+                        <MudTh Style="text-align:right">Deduct.</MudTh>
+                        <MudTh Style="text-align:right">Advance</MudTh>
+                        <MudTh Style="text-align:right">Net</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Employee">
+                            @context.EmployeeName
+                            @if (context.AbsentDays > 0)
+                            {
+                                <MudTooltip Text="@($"{context.AbsentDays:0.##} unpaid day(s) — basic and allowances pro-rated")">
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="ml-1">
+                                        −@context.AbsentDays.ToString("0.##")d
+                                    </MudChip>
+                                </MudTooltip>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Basic" Style="text-align:right">@context.EarnedBasic.ToString("N2")</MudTd>
+                        <MudTd DataLabel="Allowances" Style="text-align:right">@context.TotalAllowances.ToString("N2")</MudTd>
+                        <MudTd DataLabel="Gross" Style="text-align:right">@context.GrossPay.ToString("N2")</MudTd>
+                        <MudTd DataLabel="Deductions" Style="text-align:right">@context.TotalDeductions.ToString("N2")</MudTd>
+                        <MudTd DataLabel="Advance" Style="text-align:right">
+                            @if (context.AdvanceDeduction > 0)
+                            {
+                                <MudText Typo="Typo.body2" Color="Color.Warning">
+                                    @context.AdvanceDeduction.ToString("N2")
+                                </MudText>
+                            }
+                            else { <span>—</span> }
+                        </MudTd>
+                        <MudTd DataLabel="Net" Style="text-align:right"><b>@context.NetPay.ToString("N2")</b></MudTd>
+                        <MudTd Style="text-align:right">
+                            <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                                           OnClick="@(() => _detail = context)" />
+                            <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf" Size="Size.Small"
+                                           Href="@($"/print/payslip/{context.Id}")" Target="_blank" />
+                            @if (IsEditable)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                               OnClick="@(() => OpenInputs(context))" />
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText>No payslips — use "Add All Eligible" to pull in employees with a salary structure.</MudText>
+                    </NoRecordsContent>
+                </MudTable>
+            </MudPaper>
+
+            @if (_detail is not null)
+            {
+                <MudPaper Class="pa-4 mb-4">
+                    <div class="d-flex align-center mb-2">
+                        <MudText Typo="Typo.subtitle1">@_detail.EmployeeName — breakdown</MudText>
+                        <MudSpacer />
+                        <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                       OnClick="@(() => _detail = null)" />
+                    </div>
+                    <MudSimpleTable Dense="true" Striped="true">
+                        <thead>
+                            <tr><th>Component</th><th>Detail</th><th style="text-align:right">Amount</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var line in _detail.Lines.OrderBy(l => l.LineNo))
+                            {
+                                <tr>
+                                    <td>
+                                        @line.Name
+                                        <MudChip T="string" Size="Size.Small" Class="ml-1"
+                                                 Color="@(line.Kind == PayComponentKind.Allowance ? Color.Success : Color.Warning)">
+                                            @(line.Kind == PayComponentKind.Allowance ? "+" : "−")
+                                        </MudChip>
+                                    </td>
+                                    <td>
+                                        <MudText Typo="Typo.caption">
+                                            @line.SourceRef
+                                            @if (line.Account is not null)
+                                            {
+                                                <span> · @line.Account.Code @line.Account.Name</span>
+                                            }
+                                        </MudText>
+                                    </td>
+                                    <td style="text-align:right">@line.Amount.ToString("N2")</td>
+                                </tr>
+                            }
+                            <tr>
+                                <td colspan="2"><b>Net pay</b></td>
+                                <td style="text-align:right"><b>@_detail.NetPay.ToString("N2")</b></td>
+                            </tr>
+                        </tbody>
+                    </MudSimpleTable>
+                </MudPaper>
+            }
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4 mb-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Totals</MudText>
+                <div class="d-flex justify-space-between"><span>Gross</span><b>@_run.TotalGross.ToString("N2")</b></div>
+                <div class="d-flex justify-space-between">
+                    <span>Component deductions</span>
+                    <span>@_run.Payslips.Sum(p => p.TotalDeductions).ToString("N2")</span>
+                </div>
+                <div class="d-flex justify-space-between">
+                    <span>Advance recovery</span>
+                    <span>@_run.Payslips.Sum(p => p.AdvanceDeduction).ToString("N2")</span>
+                </div>
+                <MudDivider Class="my-2" />
+                <div class="d-flex justify-space-between">
+                    <MudText Typo="Typo.subtitle1">Net payable</MudText>
+                    <MudText Typo="Typo.subtitle1" Color="Color.Primary">@_run.TotalNet.ToString("N2")</MudText>
+                </div>
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Actions</MudText>
+
+                @if (_run.Status == PayrollRunStatus.Draft)
+                {
+                    <AuthorizeView Policy="@Permissions.PayrollManage">
+                        <MudButton FullWidth="true" Variant="Variant.Filled" Color="Color.Primary"
+                                   OnClick="Submit" Disabled="@(_busy || _run.Payslips.Count == 0)">
+                            Submit for Approval
+                        </MudButton>
+                    </AuthorizeView>
+                }
+                else if (_run.Status == PayrollRunStatus.PendingApproval)
+                {
+                    <AuthorizeView Policy="@Permissions.PayrollApprove">
+                        <MudTextField @bind-Value="_comment" Label="Comment (optional)" Class="mb-2" />
+                        <div class="d-flex gap-2">
+                            <MudButton Variant="Variant.Filled" Color="Color.Success"
+                                       OnClick="Approve" Disabled="_busy">Approve</MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                                       OnClick="Reject" Disabled="_busy">Return to Draft</MudButton>
+                        </div>
+                    </AuthorizeView>
+                }
+                else if (_run.Status == PayrollRunStatus.Approved)
+                {
+                    <AuthorizeView Policy="@Permissions.PayrollPay">
+                        <MudSelect T="int?" @bind-Value="_payFromAccountId" Label="Pay net salaries from" Class="mb-2">
+                            @foreach (var a in _cashAccounts)
+                            {
+                                <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudTextField @bind-Value="_comment" Label="Comment (optional)" Class="mb-2" />
+                        <MudButton FullWidth="true" Variant="Variant.Filled" Color="Color.Success"
+                                   OnClick="Pay" Disabled="@(_busy || _payFromAccountId is null)">
+                            Post Voucher &amp; Pay @_run.TotalNet.ToString("N2")
+                        </MudButton>
+                        <MudText Typo="Typo.caption" Class="mt-2 d-block">
+                            Posts salary expense, holds deductions on their liability heads, clears recovered
+                            advances, and credits the paying account.
+                        </MudText>
+                    </AuthorizeView>
+                }
+                else if (_run.Status == PayrollRunStatus.Paid)
+                {
+                    <MudAlert Severity="Severity.Success" Dense="true">Payroll completed.</MudAlert>
+                }
+
+                @if (_run.Status is PayrollRunStatus.Draft or PayrollRunStatus.PendingApproval or PayrollRunStatus.Approved)
+                {
+                    <AuthorizeView Policy="@Permissions.PayrollManage">
+                        <MudButton FullWidth="true" Variant="Variant.Text" Color="Color.Error" Class="mt-3"
+                                   OnClick="Cancel" Disabled="_busy">Cancel Run</MudButton>
+                    </AuthorizeView>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_run.Notes))
+                {
+                    <MudText Typo="Typo.caption" Class="mt-3 d-block">Note: @_run.Notes</MudText>
+                }
+                @if (_run.ApprovedBy is not null)
+                {
+                    <MudText Typo="Typo.caption" Class="mt-1 d-block">
+                        Approved by @_run.ApprovedBy on @_run.ApprovedAtUtc?.ToString("yyyy-MM-dd HH:mm")
+                    </MudText>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@if (_inputs is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300" Class="overflow-auto">
+        <MudPaper Class="pa-6 my-6" Style="width:540px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-1">@_inputsName</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                Adjustments for this run only. Recalculating rebuilds the payslip from the salary structure
+                plus whatever you set here.
+            </MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="6">
+                    <MudNumericField T="int" @bind-Value="_inputs.WorkingDays" Label="Working days" Min="1" Max="31" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField T="decimal" @bind-Value="_inputs.AbsentDays" Label="Unpaid absent days"
+                                     Min="0" Max="@((decimal)_inputs.WorkingDays)" Format="0.##" />
+                </MudItem>
+            </MudGrid>
+            <MudSwitch T="bool" @bind-Value="_inputs.DeductAdvances" Color="Color.Primary" Class="mt-2"
+                       Label="Recover due advance instalments from this salary" />
+
+            <MudText Typo="Typo.subtitle2" Class="mt-3 mb-1">One-off deductions</MudText>
+            @foreach (var d in _manualDeductions)
+            {
+                <div class="d-flex align-center gap-2 mb-1">
+                    <MudTextField @bind-Value="d.Label" Label="Label" Margin="Margin.Dense" />
+                    <MudNumericField T="decimal" @bind-Value="d.Amount" Label="Amount" Min="0" Format="N2"
+                                     Margin="Margin.Dense" Style="max-width:140px" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Error"
+                                   OnClick="@(() => _manualDeductions.Remove(d))" />
+                </div>
+            }
+            <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="@(() => _manualDeductions.Add(new ManualDeductionRow()))">Add deduction</MudButton>
+
+            <MudTextField @bind-Value="_inputs.Notes" Label="Payslip note (optional)" Class="mt-2" />
+
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _inputs = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ApplyInputs" Disabled="_busy">
+                    Apply &amp; Recalculate
+                </MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private class ManualDeductionRow { public string Label { get; set; } = ""; public decimal Amount { get; set; } }
+
+    private PayrollRun? _run;
+    private Payslip? _detail;
+    private List<Account> _cashAccounts = [];
+    private PayslipInputDto? _inputs;
+    private string _inputsName = "";
+    private List<ManualDeductionRow> _manualDeductions = [];
+    private int? _payFromAccountId;
+    private string? _comment;
+    private bool _busy;
+
+    private bool IsEditable => _run?.Status is PayrollRunStatus.Draft or PayrollRunStatus.PendingApproval;
+
+    private static Color StatusColor(PayrollRunStatus s) => s switch
+    {
+        PayrollRunStatus.Paid => Color.Success,
+        PayrollRunStatus.Cancelled => Color.Error,
+        PayrollRunStatus.Draft => Color.Default,
+        _ => Color.Warning
+    };
+
+    protected override Task OnParametersSetAsync() => Load();
+
+    private async Task Load()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _run = await scope.ServiceProvider.GetRequiredService<IPayrollService>().GetRunAsync(Id);
+        var accounts = await scope.ServiceProvider.GetRequiredService<IAccountService>().GetPostableAsync();
+        // Salaries are paid out of cash/bank heads only.
+        _cashAccounts = accounts
+            .Where(a => a.Type == AccountType.Asset &&
+                        (a.Code.StartsWith("11") || a.Code.StartsWith("12") || a.Code.StartsWith("13")))
+            .ToList();
+        _detail = _detail is null ? null : _run?.Payslips.FirstOrDefault(p => p.Id == _detail.Id);
+    }
+
+    private async Task Run(Func<IPayrollService, Task> action)
+    {
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await action(scope.ServiceProvider.GetRequiredService<IPayrollService>());
+            await Load();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private Task Regenerate() => Run(async svc =>
+    {
+        await svc.GenerateAsync(Id);
+        Snackbar.Add("Payslips recalculated.", Severity.Success);
+    });
+
+    private Task AddAllEligible() => Run(async svc =>
+    {
+        var eligible = await svc.GetEligibleEmployeesAsync(Id);
+        if (eligible.Count == 0)
+        {
+            Snackbar.Add("Every eligible employee is already on this run.", Severity.Info);
+            return;
+        }
+        var all = _run!.Payslips.Select(p => p.EmployeeId).Concat(eligible.Select(s => s.EmployeeId));
+        await svc.GenerateAsync(Id, all);
+        Snackbar.Add($"{eligible.Count} employee(s) added.", Severity.Success);
+    });
+
+    private void OpenInputs(Payslip slip)
+    {
+        _inputsName = slip.EmployeeName;
+        _inputs = new PayslipInputDto
+        {
+            EmployeeId = slip.EmployeeId,
+            WorkingDays = slip.WorkingDays,
+            AbsentDays = slip.AbsentDays,
+            DeductAdvances = true
+        };
+        // Manual deductions aren't recoverable from the saved payslip (they carry no
+        // component id), so the editor starts empty and re-applies what's entered.
+        _manualDeductions = [];
+    }
+
+    private Task ApplyInputs() => Run(async svc =>
+    {
+        _inputs!.ManualDeductions = _manualDeductions
+            .Where(d => d.Amount > 0 && !string.IsNullOrWhiteSpace(d.Label))
+            .Select(d => new ManualDeductionDto(d.Label, d.Amount))
+            .ToList();
+        await svc.GenerateAsync(Id, _run!.Payslips.Select(p => p.EmployeeId).ToList(),
+            new Dictionary<string, PayslipInputDto> { [_inputs.EmployeeId] = _inputs });
+        Snackbar.Add($"{_inputsName}'s payslip updated.", Severity.Success);
+        _inputs = null;
+    });
+
+    private Task Submit() => Run(async svc =>
+    {
+        await svc.SubmitRunAsync(Id);
+        Snackbar.Add("Submitted for approval.", Severity.Success);
+    });
+
+    private Task Approve() => Run(async svc =>
+    {
+        await svc.ApproveRunAsync(Id, _comment);
+        Snackbar.Add("Payroll approved.", Severity.Success);
+        _comment = null;
+    });
+
+    private Task Reject() => Run(async svc =>
+    {
+        await svc.RejectRunAsync(Id, _comment);
+        Snackbar.Add("Returned to draft.", Severity.Warning);
+        _comment = null;
+    });
+
+    private Task Pay() => Run(async svc =>
+    {
+        var voucher = await svc.PayRunAsync(Id, _payFromAccountId!.Value, _comment);
+        Snackbar.Add($"Salaries paid — voucher {voucher.VoucherNo} posted.", Severity.Success);
+        _comment = null;
+    });
+
+    private Task Cancel() => Run(async svc =>
+    {
+        await svc.CancelRunAsync(Id, _comment);
+        Snackbar.Add("Run cancelled.", Severity.Warning);
+        Nav.NavigateTo("/payroll");
+    });
+}

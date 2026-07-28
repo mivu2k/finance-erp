@@ -26,6 +26,13 @@ public class PaymentRequest : AuditableEntity
     /// <summary>Advance kind: settlement voucher posting actual expenses and clearing the advance.</summary>
     public int? SettlementVoucherId { get; set; }
     public Voucher? SettlementVoucher { get; set; }
+    /// <summary>Advance kind: what settlement did with the disbursed-vs-justified gap.</summary>
+    public AdvanceDifferenceHandling? DifferenceHandling { get; set; }
+    /// <summary>
+    /// Advance kind: how much of a gap left <see cref="AdvanceDifferenceHandling.Outstanding"/>
+    /// has since been paid back or paid out. Always positive.
+    /// </summary>
+    public decimal ClearedDifference { get; set; }
     public List<PaymentRequestLine> Lines { get; set; } = [];
     public List<RequestApproval> Approvals { get; set; } = [];
 }

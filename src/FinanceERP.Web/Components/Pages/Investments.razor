@@ -28,10 +28,12 @@
         <MudTd Style="text-align:right">@context.TotalProfit.ToString("N2")</MudTd>
         <MudTd Style="text-align:right">@context.TotalWithdrawn.ToString("N2")</MudTd>
         <MudTd><MudChip T="string" Size="Size.Small" Color="Color.Info">@context.Status</MudChip></MudTd>
-        <MudTd>
+        <MudTd style="white-space:nowrap">
             <AuthorizeView Policy="@Permissions.InvestmentsManage" Context="m">
                 <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => OpenTxn(context))">Add txn</MudButton>
             </AuthorizeView>
+            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PictureAsPdf" Title="Print statement"
+                           Href="@($"/print/investment/{context.Id}")" Target="_blank" />
         </MudTd>
     </RowTemplate>
     <PagerContent><MudTablePager /></PagerContent>

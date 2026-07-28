@@ -1,0 +1,132 @@
+@page "/payroll"
+@attribute [Authorize(Policy = Permissions.PayrollView)]
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Payroll Runs</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Payroll Runs</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@Permissions.PayrollManage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => _newOpen = true)">New Run</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudTable @ref="_table" T="PayrollRun" ServerData="LoadData" Dense="true" Hover="true" Striped="true"
+          OnRowClick="@(args => Nav.NavigateTo($"/payroll/{args.Item!.Id}"))" RowStyle="cursor:pointer">
+    <HeaderContent>
+        <MudTh>Run</MudTh><MudTh>Period</MudTh><MudTh>Pay date</MudTh>
+        <MudTh Style="text-align:right">Gross</MudTh>
+        <MudTh Style="text-align:right">Deductions</MudTh>
+        <MudTh Style="text-align:right">Net</MudTh>
+        <MudTh>Status</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.RunNo</MudTd>
+        <MudTd>@context.PeriodMonth.ToString("MMMM yyyy")</MudTd>
+        <MudTd>@context.PayDate.ToString("yyyy-MM-dd")</MudTd>
+        <MudTd Style="text-align:right">@context.TotalGross.ToString("N2")</MudTd>
+        <MudTd Style="text-align:right">@context.TotalDeductions.ToString("N2")</MudTd>
+        <MudTd Style="text-align:right">@context.TotalNet.ToString("N2")</MudTd>
+        <MudTd>
+            <MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)">@context.Status</MudChip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent><MudText>No payroll runs yet.</MudText></NoRecordsContent>
+    <PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+
+@if (_newOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">New Payroll Run</MudText>
+            <MudDatePicker Label="Payroll month" OpenTo="OpenTo.Year" FixDay="1" Class="mb-2"
+                           Date="@_period.ToDateTime(TimeOnly.MinValue)"
+                           DateChanged="@(d => _period = DateOnly.FromDateTime(d ?? DateTime.Today))" />
+            <MudDatePicker Label="Pay date" Class="mb-2"
+                           Date="@_payDate.ToDateTime(TimeOnly.MinValue)"
+                           DateChanged="@(d => _payDate = DateOnly.FromDateTime(d ?? DateTime.Today))" />
+            <MudSelect T="int?" @bind-Value="_departmentId" Label="Department (optional)" Clearable="true" Class="mb-2"
+                       HelperText="Limits the run to that department's employees">
+                @foreach (var d in _departments)
+                {
+                    <MudSelectItem T="int?" Value="@d.Id">@d.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSelect T="int?" @bind-Value="_projectId" Label="Project (optional)" Clearable="true" Class="mb-2"
+                       HelperText="Tags the salary voucher lines for project reporting">
+                @foreach (var p in _projects)
+                {
+                    <MudSelectItem T="int?" Value="@p.Id">@p.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _newOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Create" Disabled="_busy">
+                    Create &amp; Generate
+                </MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    private MudTable<PayrollRun>? _table;
+    private List<Department> _departments = [];
+    private List<Project> _projects = [];
+    private bool _newOpen;
+    private bool _busy;
+
+    private DateOnly _period = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateOnly _payDate = DateOnly.FromDateTime(DateTime.Today);
+    private int? _departmentId;
+    private int? _projectId;
+
+    private static Color StatusColor(PayrollRunStatus s) => s switch
+    {
+        PayrollRunStatus.Paid => Color.Success,
+        PayrollRunStatus.Cancelled => Color.Error,
+        PayrollRunStatus.Draft => Color.Default,
+        _ => Color.Warning
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
+        _departments = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+            .ToListAsync(db.Departments.Where(d => d.IsActive).OrderBy(d => d.Name));
+        _projects = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+            .ToListAsync(db.Projects.Where(p => p.IsActive).OrderBy(p => p.Name));
+    }
+
+    private async Task<TableData<PayrollRun>> LoadData(TableState state, CancellationToken ct)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<IPayrollService>();
+        var result = await svc.ListRunsAsync(new ReportFilter { Page = state.Page + 1, PageSize = state.PageSize });
+        return new TableData<PayrollRun> { Items = result.Items, TotalItems = result.TotalCount };
+    }
+
+    private async Task Create()
+    {
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<IPayrollService>();
+            var run = await svc.CreateRunAsync(_period, _payDate, _departmentId, _projectId);
+            // Populate immediately — an empty run is never what the user wanted.
+            await svc.GenerateAsync(run.Id);
+            Snackbar.Add($"{run.RunNo} created.", Severity.Success);
+            _newOpen = false;
+            Nav.NavigateTo($"/payroll/{run.Id}");
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+}

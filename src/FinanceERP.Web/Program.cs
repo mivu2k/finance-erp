@@ -102,6 +102,7 @@ app.MapRazorComponents<App>()
 
 app.MapAdditionalIdentityEndpoints();
 app.MapExportEndpoints();
+app.MapPrintEndpoints();
 
 // Authenticated receipt downloads (files live outside wwwroot).
 app.MapGet("/files/receipts/{name}", (string name, FinanceERP.Web.Services.ReceiptStorage storage) =>

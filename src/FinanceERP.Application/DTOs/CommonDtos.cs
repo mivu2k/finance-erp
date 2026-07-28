@@ -34,3 +34,20 @@ public record DailySummaryDto(decimal TodayDebit, decimal TodayCredit, decimal C
 public record CashFlowPointDto(DateOnly Date, decimal Inflow, decimal Outflow);
 
 public record ExpenseBreakdownDto(string Category, decimal Amount);
+
+/// <summary>Per-employee inputs the accountant supplies when generating/recalculating a run.</summary>
+public class PayslipInputDto
+{
+    public string EmployeeId { get; set; } = string.Empty;
+    /// <summary>Unpaid absence days; pro-rates basic and allowances over WorkingDays.</summary>
+    public decimal AbsentDays { get; set; }
+    public int WorkingDays { get; set; } = 30;
+    /// <summary>Recover due advance instalments from this month's salary.</summary>
+    public bool DeductAdvances { get; set; } = true;
+    /// <summary>Ad-hoc one-off deductions for this run only (label → amount).</summary>
+    public List<ManualDeductionDto> ManualDeductions { get; set; } = [];
+    public string? Notes { get; set; }
+}
+
+public record ManualDeductionDto(string Label, decimal Amount, int? AccountId = null);
+

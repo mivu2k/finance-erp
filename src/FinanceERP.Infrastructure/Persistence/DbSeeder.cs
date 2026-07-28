@@ -21,6 +21,40 @@ public static class DbSeeder
         await SeedAdminUserAsync(userManager, config, logger);
         await SeedChartOfAccountsAsync(db);
         await SeedDefaultsAsync(db);
+        await SeedPayComponentsAsync(db);
+    }
+
+    /// <summary>Starter salary component catalog. Amounts are zero — each employee's
+    /// structure sets the real value; these just give payroll something to pick from.</summary>
+    private static async Task SeedPayComponentsAsync(AppDbContext db)
+    {
+        if (await db.PayComponents.AnyAsync()) return;
+
+        var accounts = await db.Accounts.ToDictionaryAsync(a => a.Code, a => a.Id);
+        int? Acct(string code) => accounts.TryGetValue(code, out var id) ? id : null;
+
+        // (code, name, kind, calc, defaultValue, accountCode, sortOrder)
+        var rows = new (string Code, string Name, PayComponentKind Kind, PayComponentCalc Calc,
+            decimal Value, string? Account, int Sort)[]
+        {
+            ("HRA",   "House Rent Allowance", PayComponentKind.Allowance, PayComponentCalc.PercentOfBasic, 40m, "5140", 10),
+            ("TRANS", "Transport Allowance",  PayComponentKind.Allowance, PayComponentCalc.FixedAmount,     0m, "5140", 20),
+            ("MED",   "Medical Allowance",    PayComponentKind.Allowance, PayComponentCalc.PercentOfBasic, 10m, "5140", 30),
+            ("UTIL",  "Utility Allowance",    PayComponentKind.Allowance, PayComponentCalc.FixedAmount,     0m, "5140", 40),
+            ("MOB",   "Mobile Allowance",     PayComponentKind.Allowance, PayComponentCalc.FixedAmount,     0m, "5140", 50),
+            ("SPEC",  "Special Allowance",    PayComponentKind.Allowance, PayComponentCalc.FixedAmount,     0m, "5140", 60),
+            ("TAX",   "Income Tax",           PayComponentKind.Deduction, PayComponentCalc.PercentOfBasic,  0m, "2300", 70),
+            ("EOBI",  "EOBI / Social Security", PayComponentKind.Deduction, PayComponentCalc.FixedAmount,   0m, "2300", 80),
+            ("OTHER", "Other Deduction",      PayComponentKind.Deduction, PayComponentCalc.FixedAmount,     0m, "2400", 90),
+        };
+
+        foreach (var r in rows)
+            db.PayComponents.Add(new PayComponent
+            {
+                Code = r.Code, Name = r.Name, Kind = r.Kind, Calc = r.Calc,
+                DefaultValue = r.Value, AccountId = Acct(r.Account!), SortOrder = r.Sort, IsSystem = true
+            });
+        await db.SaveChangesAsync();
     }
 
     private static async Task SeedRolesAsync(RoleManager<IdentityRole> roleManager)
@@ -40,7 +74,7 @@ public static class DbSeeder
                 Permissions.PettyCashAssign, Permissions.RequestsViewAll, Permissions.DirectorFundsRequest,
                 Permissions.DirectorFundsView, Permissions.AdvancesViewAll, Permissions.AdvancesApprove,
                 Permissions.LoansView, Permissions.InvestmentsView, Permissions.ThirdPartiesView,
-                Permissions.UtilitiesView
+                Permissions.UtilitiesView, Permissions.PayrollView, Permissions.PayrollApprove
             ],
             [AppRoles.FinanceManager] =
             [
@@ -52,7 +86,8 @@ public static class DbSeeder
                 Permissions.AdvancesManage, Permissions.LoansView, Permissions.LoansManage,
                 Permissions.InvestmentsView, Permissions.InvestmentsManage,
                 Permissions.ThirdPartiesView, Permissions.ThirdPartiesManage,
-                Permissions.UtilitiesView, Permissions.UtilitiesManage, Permissions.UtilitiesPay
+                Permissions.UtilitiesView, Permissions.UtilitiesManage, Permissions.UtilitiesPay,
+                Permissions.PayrollView, Permissions.PayrollManage, Permissions.PayrollApprove
             ],
             [AppRoles.Accountant] =
             [
@@ -63,17 +98,19 @@ public static class DbSeeder
                 Permissions.AdvancesViewAll, Permissions.AdvancesManage,
                 Permissions.LoansView, Permissions.InvestmentsView,
                 Permissions.ThirdPartiesView, Permissions.ThirdPartiesManage,
-                Permissions.UtilitiesView, Permissions.UtilitiesManage, Permissions.UtilitiesPay
+                Permissions.UtilitiesView, Permissions.UtilitiesManage, Permissions.UtilitiesPay,
+                Permissions.PayrollView, Permissions.PayrollManage, Permissions.PayrollPay
             ],
             [AppRoles.Manager] =
             [
                 Permissions.RequestsCreate, Permissions.RequestsViewOwn, Permissions.RequestsApproveManager,
-                Permissions.AdvancesCreate, Permissions.AdvancesViewOwn, Permissions.ReportsView
+                Permissions.AdvancesCreate, Permissions.AdvancesViewOwn, Permissions.ReportsView,
+                Permissions.PayrollViewOwn
             ],
             [AppRoles.Employee] =
             [
                 Permissions.RequestsCreate, Permissions.RequestsViewOwn,
-                Permissions.AdvancesCreate, Permissions.AdvancesViewOwn
+                Permissions.AdvancesCreate, Permissions.AdvancesViewOwn, Permissions.PayrollViewOwn
             ],
             [AppRoles.Auditor] =
             [
@@ -81,7 +118,7 @@ public static class DbSeeder
                 Permissions.ReportsView, Permissions.ReportsExport, Permissions.AuditView,
                 Permissions.RequestsViewAll, Permissions.AdvancesViewAll, Permissions.LoansView,
                 Permissions.InvestmentsView, Permissions.ThirdPartiesView, Permissions.PettyCashView,
-                Permissions.UtilitiesView
+                Permissions.UtilitiesView, Permissions.PayrollView
             ],
             [AppRoles.Viewer] =
             [

@@ -181,6 +181,87 @@ public class AdvanceService(
             NotificationType.Rejected, $"/advances/{inst.EmployeeAdvanceId}");
     }
 
+    public Task<Account> GetAdvanceAccountAsync(string employeeName) =>
+        accountService.EnsureChildAccountAsync(AdvancesParentCode, employeeName);
+
+    public Task<List<AdvanceInstallment>> GetDueInstallmentsAsync(string employeeId, DateOnly asOf) =>
+        db.AdvanceInstallments
+            .Include(i => i.EmployeeAdvance)
+            // Disbursed/Repaying is the test for "the employee is holding this money" —
+            // not the disbursement voucher, which advances created by
+            // CreateRecoverableAdvanceAsync deliberately don't have.
+            .Where(i => i.EmployeeAdvance.EmployeeId == employeeId
+                        && (i.EmployeeAdvance.Status == AdvanceStatus.Disbursed
+                            || i.EmployeeAdvance.Status == AdvanceStatus.Repaying)
+                        && i.DueDate <= asOf
+                        && i.Status != InstallmentStatus.Paid
+                        && i.Status != InstallmentStatus.PendingConfirmation)
+            .OrderBy(i => i.DueDate).ThenBy(i => i.Number)
+            .ToListAsync();
+
+    /// <summary>
+    /// Payroll already credited the advance account inside the salary voucher, so this
+    /// only advances the instalment/advance state — posting again would double-count.
+    /// </summary>
+    public async Task ApplyPayrollDeductionAsync(int installmentId, decimal amount, int voucherId, DateOnly date)
+    {
+        var inst = await db.AdvanceInstallments.Include(i => i.EmployeeAdvance).FirstAsync(i => i.Id == installmentId);
+        var a = inst.EmployeeAdvance;
+        if (amount <= 0 || amount > inst.Amount - inst.PaidAmount)
+            throw new InvalidOperationException($"Invalid payroll deduction for advance {a.AdvanceNo} #{inst.Number}.");
+
+        inst.PaidAmount += amount;
+        inst.PaidDate = date;
+        inst.RepaymentVoucherId = voucherId;
+        inst.Status = inst.PaidAmount >= inst.Amount ? InstallmentStatus.Paid : InstallmentStatus.PartiallyPaid;
+
+        a.RepaidAmount += amount;
+        a.Status = a.RepaidAmount >= a.Amount ? AdvanceStatus.Settled : AdvanceStatus.Repaying;
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// The employee already holds the cash (it was disbursed by another module), so this
+    /// starts at Disbursed with a schedule and no disbursement voucher of its own.
+    /// </summary>
+    public async Task<EmployeeAdvance> CreateRecoverableAdvanceAsync(string employeeId, string employeeName,
+        decimal amount, string reason, int installmentCount = 1)
+    {
+        if (amount <= 0) throw new InvalidOperationException("Amount must be positive.");
+        if (installmentCount < 1) installmentCount = 1;
+
+        var a = new EmployeeAdvance
+        {
+            AdvanceNo = $"ADV-{DateTime.Today.Year}-{await db.EmployeeAdvances.IgnoreQueryFilters().CountAsync() + 1:D5}",
+            EmployeeId = employeeId,
+            EmployeeName = employeeName,
+            Amount = amount,
+            Reason = reason,
+            Status = AdvanceStatus.Disbursed,
+            InstallmentCount = installmentCount,
+            MonthlyDeduction = Math.Round(amount / installmentCount, 2),
+            ApprovedBy = currentUser.UserName,
+            ApprovedAtUtc = DateTime.UtcNow
+        };
+
+        var start = DateOnly.FromDateTime(DateTime.Today).AddMonths(1);
+        var remaining = amount;
+        for (var i = 1; i <= installmentCount; i++)
+        {
+            var each = i == installmentCount ? remaining : a.MonthlyDeduction;
+            remaining -= each;
+            a.Installments.Add(new AdvanceInstallment { Number = i, DueDate = start.AddMonths(i - 1), Amount = each });
+        }
+
+        db.EmployeeAdvances.Add(a);
+        await db.SaveChangesAsync();
+
+        await notifications.NotifyAsync(employeeId, $"Advance {a.AdvanceNo} created for salary recovery",
+            $"{amount:N2} — {reason}. This will be deducted from your salary starting {start:yyyy-MM}.",
+            NotificationType.AdvanceDue, $"/advances/{a.Id}");
+        return a;
+    }
+
     /// <summary>
     /// Repayment (e.g. salary deduction): Dr cash/salary-payable, Cr employee's advance sub-account.
     /// </summary>

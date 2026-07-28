@@ -13,6 +13,7 @@ public class PaymentRequestService(
     ICurrentUserService currentUser,
     IVoucherService voucherService,
     IAccountService accountService,
+    IAdvanceService advances,
     INotificationService notifications) : IPaymentRequestService
 {
     private const string AdvancesParentCode = "1700";      // Employee Advances (Asset)
@@ -297,7 +298,9 @@ public class PaymentRequestService(
     /// money, Cr cash if the company reimburses overspend.
     /// </summary>
     public async Task<Voucher> SettleAsync(int id, int? cashAccountId, string? comment,
-        IReadOnlyDictionary<int, int> lineAccounts, bool settleDifferenceNow = true)
+        IReadOnlyDictionary<int, int> lineAccounts,
+        AdvanceDifferenceHandling handling = AdvanceDifferenceHandling.SettleNow,
+        int recoveryInstallments = 1)
     {
         var r = await db.PaymentRequests.Include(x => x.Lines).FirstAsync(x => x.Id == id);
         if (r.Status != RequestStatus.SettlementReady) throw new InvalidOperationException("Justification must be approved before settlement.");
@@ -312,8 +315,14 @@ public class PaymentRequestService(
         var actual = r.Lines.Sum(l => l.Amount);
         var difference = r.TotalAmount - actual; // >0: employee returns cash; <0: company reimburses
 
-        if (settleDifferenceNow && difference != 0 && cashAccountId is null)
+        if (handling == AdvanceDifferenceHandling.SettleNow && difference != 0 && cashAccountId is null)
             throw new InvalidOperationException("Select a cash/bank account to settle the difference.");
+        if (handling == AdvanceDifferenceHandling.RecoverFromPayroll && difference < 0)
+            throw new InvalidOperationException(
+                "Payroll recovery only applies to unspent money. Overspend must be reimbursed now or left outstanding.");
+        if (handling == AdvanceDifferenceHandling.RecoverFromPayroll && r.IsDirectorRequest)
+            throw new InvalidOperationException("Director funds are not recovered through payroll.");
+        if (recoveryInstallments < 1) recoveryInstallments = 1;
 
         var lines = r.Lines
             .Select(l => (AccountId: l.AccountId!.Value, Debit: l.Amount, Credit: 0m,
@@ -326,7 +335,16 @@ public class PaymentRequestService(
             lines.Add((r.AdvanceAccountId.Value, 0m, r.TotalAmount, $"{r.RequestNo} advance cleared"));
             trailNote = "Fully utilised";
         }
-        else if (settleDifferenceNow)
+        else if (handling == AdvanceDifferenceHandling.RecoverFromPayroll)
+        {
+            // Same ledger shape as "leave outstanding": only the spent portion clears, so
+            // the unspent balance stays on the employee's advance account. The new advance
+            // record below gives payroll an instalment schedule to recover it against —
+            // it deliberately posts nothing, because the money is already sitting there.
+            lines.Add((r.AdvanceAccountId.Value, 0m, actual, $"{r.RequestNo} advance cleared (spent portion)"));
+            trailNote = $"{difference:N2} unspent — recovering from salary over {recoveryInstallments} month(s)";
+        }
+        else if (handling == AdvanceDifferenceHandling.SettleNow)
         {
             lines.Add((r.AdvanceAccountId.Value, 0m, r.TotalAmount, $"{r.RequestNo} advance cleared"));
             if (difference > 0)
@@ -365,16 +383,84 @@ public class PaymentRequestService(
 
         r.Status = RequestStatus.Settled;
         r.SettlementVoucherId = voucher.Id;
+        r.DifferenceHandling = difference == 0 ? AdvanceDifferenceHandling.SettleNow : handling;
         AddTrail(r, "Accountant", ApprovalAction.Paid, comment is null ? trailNote : $"{comment} — {trailNote}");
         await db.SaveChangesAsync();
 
+        if (handling == AdvanceDifferenceHandling.RecoverFromPayroll && difference > 0)
+            await advances.CreateRecoverableAdvanceAsync(r.RequesterId, r.RequesterName, difference,
+                $"Unspent balance of advance {r.RequestNo}", recoveryInstallments);
+
         await notifications.NotifyAsync(r.RequesterId, $"{r.RequestNo} settled",
-            $"Voucher {voucher.VoucherNo}. " + (difference > 0
-                ? $"Please return {difference:N2}."
-                : difference < 0
-                    ? (settleDifferenceNow ? $"You have been reimbursed {-difference:N2}." : $"You are owed {-difference:N2}; it will be paid separately.")
-                    : "Advance fully utilised."),
+            $"Voucher {voucher.VoucherNo}. " + (difference, handling) switch
+            {
+                ( > 0, AdvanceDifferenceHandling.SettleNow) => $"Please return {difference:N2}.",
+                ( > 0, AdvanceDifferenceHandling.RecoverFromPayroll) =>
+                    $"{difference:N2} unspent will be deducted from your salary over {recoveryInstallments} month(s).",
+                ( > 0, _) => $"{difference:N2} remains outstanding against you.",
+                ( < 0, AdvanceDifferenceHandling.SettleNow) => $"You have been reimbursed {-difference:N2}.",
+                ( < 0, _) => $"You are owed {-difference:N2}; it will be paid separately.",
+                _ => "Advance fully utilised."
+            },
             NotificationType.Approved, $"/requests/{r.Id}");
+        return voucher;
+    }
+
+    /// <summary>
+    /// Closes out a balance that settlement deliberately left open. Underspend: the
+    /// employee hands the cash back and their advance account clears. Overspend: the
+    /// payable raised at settlement is paid off.
+    /// </summary>
+    public async Task<Voucher> RecordAdvanceReturnAsync(int id, decimal amount, int cashAccountId, string? comment)
+    {
+        var r = await db.PaymentRequests.Include(x => x.Lines).FirstAsync(x => x.Id == id);
+        if (r.Status != RequestStatus.Settled)
+            throw new InvalidOperationException("Only a settled advance has a balance to clear.");
+        if (amount <= 0) throw new InvalidOperationException("Amount must be positive.");
+        if (r.DifferenceHandling != AdvanceDifferenceHandling.Outstanding)
+            throw new InvalidOperationException(r.DifferenceHandling == AdvanceDifferenceHandling.RecoverFromPayroll
+                ? "This balance is being recovered through payroll, not manually."
+                : "This advance was settled in full — there is no outstanding balance.");
+
+        var actual = r.Lines.Sum(l => l.Amount);
+        var difference = r.TotalAmount - actual;
+        if (difference == 0) throw new InvalidOperationException("This advance was fully utilised — nothing to clear.");
+
+        var remaining = Math.Abs(difference) - r.ClearedDifference;
+        if (amount > remaining)
+            throw new InvalidOperationException($"At most {remaining:N2} is left to clear on this advance.");
+
+        Voucher voucher;
+        if (difference > 0)
+        {
+            if (r.AdvanceAccountId is null) throw new InvalidOperationException("Advance account missing.");
+            voucher = await voucherService.PostSystemVoucherAsync(
+                VoucherType.CashReceipt, DateOnly.FromDateTime(DateTime.Today),
+                $"{r.RequestNo} — unspent advance returned by {r.RequesterName}", "PaymentRequest", r.Id,
+                [
+                    (cashAccountId, amount, 0m, $"{r.RequestNo} unspent advance returned"),
+                    (r.AdvanceAccountId.Value, 0m, amount, $"{r.RequestNo} advance cleared")
+                ]);
+        }
+        else
+        {
+            var payable = await accountService.EnsureChildAccountAsync("2100", $"Payable — {r.RequesterName}");
+            voucher = await voucherService.PostSystemVoucherAsync(
+                VoucherType.CashPayment, DateOnly.FromDateTime(DateTime.Today),
+                $"{r.RequestNo} — overspend reimbursed to {r.RequesterName}", "PaymentRequest", r.Id,
+                [
+                    (payable.Id, amount, 0m, $"{r.RequestNo} overspend settled"),
+                    (cashAccountId, 0m, amount, $"{r.RequestNo} overspend reimbursed")
+                ]);
+        }
+
+        r.ClearedDifference += amount;
+        AddTrail(r, "Accountant", ApprovalAction.Paid,
+            $"{(difference > 0 ? "Returned" : "Reimbursed")} {amount:N2}{(comment is null ? "" : $" — {comment}")}");
+        await db.SaveChangesAsync();
+
+        await notifications.NotifyAsync(r.RequesterId, $"{r.RequestNo} balance cleared",
+            $"{amount:N2} recorded — voucher {voucher.VoucherNo}", NotificationType.Info, $"/requests/{r.Id}");
         return voucher;
     }
 

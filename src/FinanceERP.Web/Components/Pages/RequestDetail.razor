@@ -24,6 +24,8 @@ else
             <MudChip T="string" Size="Size.Small" Color="Color.Tertiary">Advance</MudChip>
         }
         <MudSpacer />
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                   Href="@($"/print/request/{_request.Id}")" Target="_blank">Print</MudButton>
         <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack" OnClick="@(() => Nav.NavigateTo("/requests/my"))">Back</MudButton>
         @if (_request.Status == RequestStatus.Draft)
         {
@@ -252,19 +254,35 @@ else
                         }
                         @if (settleDiff != 0)
                         {
-                            <MudRadioGroup T="bool" @bind-Value="_settleDifferenceNow" Class="mb-2">
-                                <MudRadio T="bool" Value="true" Color="Color.Primary">
+                            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
+                                Advance @_request.TotalAmount.ToString("N2") · justified @(_request.Lines.Sum(l => l.Amount).ToString("N2"))
+                                · @(settleDiff < 0 ? $"{-settleDiff:N2} unspent" : $"{settleDiff:N2} overspent")
+                            </MudAlert>
+                            <MudRadioGroup T="AdvanceDifferenceHandling" @bind-Value="_differenceHandling" Class="mb-2">
+                                <MudRadio T="AdvanceDifferenceHandling" Value="AdvanceDifferenceHandling.SettleNow" Color="Color.Primary">
                                     Settle difference now — @(settleDiff < 0 ? $"employee returns {(-settleDiff):N2} cash" : $"reimburse {settleDiff:N2} from cash/bank") with this voucher
                                 </MudRadio>
-                                <MudRadio T="bool" Value="false" Color="Color.Primary">
+                                @if (settleDiff < 0 && !_request.IsDirectorRequest)
+                                {
+                                    <MudRadio T="AdvanceDifferenceHandling" Value="AdvanceDifferenceHandling.RecoverFromPayroll" Color="Color.Primary">
+                                        Recover from salary — deduct the @((-settleDiff).ToString("N2")) unspent from @_request.RequesterName's pay
+                                    </MudRadio>
+                                }
+                                <MudRadio T="AdvanceDifferenceHandling" Value="AdvanceDifferenceHandling.Outstanding" Color="Color.Primary">
                                     Settle manually later — @(settleDiff < 0
                                         ? $"leave {(-settleDiff):N2} outstanding on the employee's advance account until the cash is received"
                                         : $"book {settleDiff:N2} to an employee payable; pay it with a separate voucher")
                                 </MudRadio>
                             </MudRadioGroup>
+                            @if (_differenceHandling == AdvanceDifferenceHandling.RecoverFromPayroll)
+                            {
+                                <MudNumericField T="int" @bind-Value="_recoveryInstallments" Label="Recover over (months)"
+                                                 Min="1" Max="24" Class="mb-2" Style="max-width:220px"
+                                                 HelperText="@($"≈ {((-settleDiff) / Math.Max(_recoveryInstallments, 1)):N2} per month")" />
+                            }
                         }
                         <MudGrid Spacing="2">
-                            @if (settleDiff == 0 || _settleDifferenceNow)
+                            @if (settleDiff == 0 || _differenceHandling == AdvanceDifferenceHandling.SettleNow)
                             {
                                 <MudItem xs="12" sm="6">
                                     <MudSelect T="int?" @bind-Value="_payFromAccountId" Label="Cash account for difference">
@@ -280,7 +298,7 @@ else
                             </MudItem>
                         </MudGrid>
                         <MudButton Class="mt-3" Variant="Variant.Filled" Color="Color.Success" OnClick="Settle"
-                                   Disabled="@(_busy || (_settleDifferenceNow && _payFromAccountId is null) || !AllLinesClassified)">
+                                   Disabled="@(_busy || (_differenceHandling == AdvanceDifferenceHandling.SettleNow && _payFromAccountId is null) || !AllLinesClassified)">
                             Post Settlement
                         </MudButton>
                         @if (!AllLinesClassified)
@@ -289,6 +307,39 @@ else
                                 Assign an account head to every line to enable settlement.
                             </MudText>
                         }
+                    </MudPaper>
+                </AuthorizeView>
+            }
+            else if (_request.Status == RequestStatus.Settled && OutstandingBalance != 0)
+            {
+                <AuthorizeView Policy="@Permissions.RequestsPay">
+                    <MudPaper Class="pa-4">
+                        <MudText Typo="Typo.subtitle1" Class="mb-1">Clear Outstanding Balance</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                            @(OutstandingBalance > 0
+                                ? $"{OutstandingBalance:N2} of this advance was never spent and is still outstanding against {_request.RequesterName}. Record it here when the cash comes back."
+                                : $"The company owes {_request.RequesterName} {-OutstandingBalance:N2} for overspend. Record the payment here.")
+                        </MudText>
+                        <MudGrid Spacing="2">
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="decimal" @bind-Value="_returnAmount" Label="Amount" Min="0" Format="N2" />
+                            </MudItem>
+                            <MudItem xs="12" sm="4">
+                                <MudSelect T="int?" @bind-Value="_payFromAccountId" Label="@(OutstandingBalance > 0 ? "Receive into" : "Pay from")">
+                                    @foreach (var a in _cashAccounts)
+                                    {
+                                        <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" sm="4">
+                                <MudTextField @bind-Value="_comment" Label="Comment (optional)" />
+                            </MudItem>
+                        </MudGrid>
+                        <MudButton Class="mt-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="RecordReturn"
+                                   Disabled="@(_busy || _payFromAccountId is null || _returnAmount <= 0)">
+                            Record @(OutstandingBalance > 0 ? "Return" : "Payment")
+                        </MudButton>
                     </MudPaper>
                 </AuthorizeView>
             }
@@ -469,14 +520,39 @@ else
         Snackbar.Add("Justification returned for rework.", Severity.Warning);
     });
 
-    private bool _settleDifferenceNow = true;
+    private AdvanceDifferenceHandling _differenceHandling = AdvanceDifferenceHandling.SettleNow;
+    private int _recoveryInstallments = 1;
+    private decimal _returnAmount;
+
+    /// <summary>
+    /// Positive when the requester still holds unspent advance money; negative when the
+    /// company still owes them overspend. Zero once the balance has been cleared.
+    /// </summary>
+    private decimal OutstandingBalance
+    {
+        get
+        {
+            if (_request is null || _request.DifferenceHandling != AdvanceDifferenceHandling.Outstanding) return 0;
+            var difference = _request.TotalAmount - _request.Lines.Sum(l => l.Amount);
+            var remaining = Math.Abs(difference) - _request.ClearedDifference;
+            return remaining <= 0 ? 0 : difference > 0 ? remaining : -remaining;
+        }
+    }
+
+    private Task RecordReturn() => Run(async svc =>
+    {
+        var voucher = await svc.RecordAdvanceReturnAsync(Id, _returnAmount, _payFromAccountId!.Value, _comment);
+        Snackbar.Add($"Recorded — voucher {voucher.VoucherNo} posted.", Severity.Success);
+        _returnAmount = 0;
+    });
 
     private Task Settle() => Run(async svc =>
     {
         var mapping = _lineAccounts
             .Where(kv => kv.Value is not null)
             .ToDictionary(kv => kv.Key, kv => kv.Value!.Value);
-        var voucher = await svc.SettleAsync(Id, _payFromAccountId, _comment, mapping, _settleDifferenceNow);
+        var voucher = await svc.SettleAsync(Id, _payFromAccountId, _comment, mapping,
+            _differenceHandling, _recoveryInstallments);
         Snackbar.Add($"Settled — voucher {voucher.VoucherNo} posted.", Severity.Success);
     });
 

@@ -62,7 +62,21 @@
       "Bash(chmod +x dev.sh)",
       "Bash(./dev.sh up *)",
       "Bash(curl -s -o /dev/null -w \"login page: %{http_code}\\\\n\" http://localhost:5080/Account/Login)",
-      "Bash(git restore *)"
+      "Bash(git restore *)",
+      "Bash(git fetch *)",
+      "Bash(./dev.sh down *)",
+      "Bash($D/pkg/usr/bin/mariadb *)",
+      "Bash(export LD_LIBRARY_PATH=\"$D/pkg/usr/lib/x86_64-linux-gnu\")",
+      "Bash(/home/pc/.local/finance-erp-dev/pkg/usr/bin/mariadb --socket=/home/pc/.local/finance-erp-dev/mysql/run/mysqld.sock -u root finance_erp -e ' *)",
+      "Bash(curl -s -c c2.txt http://localhost:5080/Account/Login)",
+      "Bash(curl -s -b c.txt http://localhost:5080/payroll -o pr.html)",
+      "Bash(curl -s -b c.txt http://localhost:5080/payroll/2 -o rd.html)",
+      "Bash(curl -s -b c.txt http://localhost:5080/payroll/structures -o s.html)",
+      "Bash(curl -s -b c.txt http://localhost:5080/payroll/components -o cp.html)",
+      "Bash(./dev.sh logs *)",
+      "Bash(./dev.sh status *)",
+      "Read(//home/pc/.local/finance-erp-dev/logs/**)",
+      "Bash(curl -s -o /dev/null -w \"home: %{http_code}\\\\n\" http://localhost:5080/)"
     ]
   }
 }

@@ -64,13 +64,23 @@ public interface IPaymentRequestService
     Task ApproveJustificationAsync(int id, string? comment);
     Task RejectJustificationAsync(int id, string? comment);
     /// <summary>
-    /// Posts actuals and clears the advance. If <paramref name="settleDifferenceNow"/> the
-    /// difference moves through <paramref name="cashAccountId"/> immediately; otherwise
-    /// overspend is booked to an employee payable (paid manually later) and underspend
-    /// stays on the employee's advance account (collected manually later).
+    /// Posts actuals and clears the advance. The gap between the amount disbursed and the
+    /// amount justified (e.g. 20,000 taken, 17,000 spent) is handled per
+    /// <paramref name="handling"/>: settled through <paramref name="cashAccountId"/> now,
+    /// left outstanding for manual clearing, or — underspend only — converted into a
+    /// salary-deductible advance the next payroll run recovers.
     /// </summary>
     Task<Voucher> SettleAsync(int id, int? cashAccountId, string? comment,
-        IReadOnlyDictionary<int, int> lineAccounts, bool settleDifferenceNow = true);
+        IReadOnlyDictionary<int, int> lineAccounts,
+        AdvanceDifferenceHandling handling = AdvanceDifferenceHandling.SettleNow,
+        int recoveryInstallments = 1);
+
+    /// <summary>
+    /// Clears a balance left outstanding by <see cref="SettleAsync"/>: the employee hands
+    /// back unspent cash (Dr cash, Cr their advance account) or the company pays the
+    /// overspend it owed them (Dr payable, Cr cash).
+    /// </summary>
+    Task<Voucher> RecordAdvanceReturnAsync(int id, decimal amount, int cashAccountId, string? comment);
 }
 
 public interface IAdvanceService
@@ -88,6 +98,68 @@ public interface IAdvanceService
     Task ClaimInstallmentPaidAsync(int installmentId);
     Task<Voucher> ConfirmInstallmentClaimAsync(int installmentId, int receiveIntoAccountId);
     Task RejectInstallmentClaimAsync(int installmentId, string? reason);
+
+    // --- Payroll integration ---
+    /// <summary>Unpaid instalments of disbursed advances falling due on or before <paramref name="asOf"/>.</summary>
+    Task<List<AdvanceInstallment>> GetDueInstallmentsAsync(string employeeId, DateOnly asOf);
+    /// <summary>The ledger account holding this employee's outstanding advances.</summary>
+    Task<Account> GetAdvanceAccountAsync(string employeeName);
+    /// <summary>
+    /// Marks an instalment recovered by a payroll run. Unlike
+    /// <see cref="RepayInstallmentAsync"/> this posts nothing — the payroll voucher
+    /// already credits the employee's advance account.
+    /// </summary>
+    Task ApplyPayrollDeductionAsync(int installmentId, decimal amount, int voucherId, DateOnly date);
+    /// <summary>Creates an already-disbursed advance for money the employee is holding
+    /// (e.g. the unspent part of a settled cash advance), to be recovered from salary.</summary>
+    Task<EmployeeAdvance> CreateRecoverableAdvanceAsync(string employeeId, string employeeName,
+        decimal amount, string reason, int installmentCount = 1);
+}
+
+public interface IPayrollService
+{
+    // --- Component catalog ---
+    Task<List<PayComponent>> GetComponentsAsync(bool activeOnly = true);
+    Task<PayComponent> SaveComponentAsync(PayComponent component);
+    Task DeleteComponentAsync(int id);
+
+    // --- Salary structures ---
+    Task<List<SalaryStructure>> GetStructuresAsync(bool activeOnly = true);
+    Task<SalaryStructure?> GetStructureAsync(int id);
+    Task<SalaryStructure?> GetActiveStructureForAsync(string employeeId, DateOnly asOf);
+    /// <summary>Saves a structure; a new one supersedes (deactivates) the employee's previous structure.</summary>
+    Task<SalaryStructure> SaveStructureAsync(SalaryStructure structure);
+    Task DeleteStructureAsync(int id);
+
+    // --- Runs ---
+    Task<PagedResult<PayrollRun>> ListRunsAsync(ReportFilter filter);
+    Task<PayrollRun?> GetRunAsync(int id);
+    Task<PayrollRun> CreateRunAsync(DateOnly periodMonth, DateOnly payDate, int? departmentId, int? projectId);
+    /// <summary>
+    /// (Re)builds every payslip in a draft run from the employees' active salary structures:
+    /// basic + allowances − component deductions − absence − manual deductions − due advance
+    /// instalments. Safe to call repeatedly; existing payslips are replaced.
+    /// </summary>
+    Task<PayrollRun> GenerateAsync(int runId, IEnumerable<string>? employeeIds = null,
+        IReadOnlyDictionary<string, PayslipInputDto>? inputs = null);
+    Task SubmitRunAsync(int runId);
+    Task ApproveRunAsync(int runId, string? comment);
+    Task RejectRunAsync(int runId, string? comment);
+    /// <summary>
+    /// Posts the salary voucher and disburses net pay:
+    /// Dr salary expense per allowance head, Cr each deduction's liability head,
+    /// Cr the employee's advance account for recovered instalments, Cr cash/bank for net pay.
+    /// Recovered instalments are marked repaid against the same voucher.
+    /// </summary>
+    Task<Voucher> PayRunAsync(int runId, int payFromAccountId, string? comment);
+    Task CancelRunAsync(int runId, string? reason);
+    Task DeleteRunAsync(int runId);
+
+    // --- Payslips ---
+    Task<Payslip?> GetPayslipAsync(int id);
+    Task<List<Payslip>> GetPayslipsForEmployeeAsync(string employeeId, int max = 60);
+    /// <summary>Employees on an active structure who have no payslip in the given run yet.</summary>
+    Task<List<SalaryStructure>> GetEligibleEmployeesAsync(int runId);
 }
 
 public interface ILoanService
@@ -170,6 +242,10 @@ public interface IExportService
 {
     byte[] TableToPdf(string title, string subtitle, string[] headers, IEnumerable<string[]> rows);
     byte[] TableToExcel(string sheetName, string[] headers, IEnumerable<object?[]> rows);
+    /// <summary>Renders a single record as a printable, signable document (voucher, request, payslip, ...).</summary>
+    byte[] DocumentToPdf(PdfDocument document);
+    /// <summary>Renders many documents into one file, each starting on a fresh page (e.g. a run's payslips).</summary>
+    byte[] DocumentsToPdf(IEnumerable<PdfDocument> documents);
 }
 
 public interface IAppEmailSender

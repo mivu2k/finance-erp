@@ -40,6 +40,15 @@ public static class Permissions
     public const string AdvancesApprove = "Advances.Approve";
     public const string AdvancesManage = "Advances.Manage";
 
+    // Payroll
+    public const string PayrollView = "Payroll.View";
+    /// <summary>Salary structures, component catalog, creating and generating runs.</summary>
+    public const string PayrollManage = "Payroll.Manage";
+    public const string PayrollApprove = "Payroll.Approve";
+    public const string PayrollPay = "Payroll.Pay";
+    /// <summary>An employee seeing their own payslips.</summary>
+    public const string PayrollViewOwn = "Payroll.ViewOwn";
+
     // Director funds
     public const string DirectorFundsRequest = "DirectorFunds.Request";
     public const string DirectorFundsView = "DirectorFunds.View";

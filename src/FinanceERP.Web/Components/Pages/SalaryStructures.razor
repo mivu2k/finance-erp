@@ -1,0 +1,237 @@
+@page "/payroll/structures"
+@attribute [Authorize(Policy = Permissions.PayrollManage)]
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using FinanceERP.Infrastructure.Identity
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Salary Structures</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Salary Structures</MudText>
+    <MudSpacer />
+    <MudSwitch T="bool" @bind-Value="_showInactive" @bind-Value:after="Load" Color="Color.Primary"
+               Label="Show superseded" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+               OnClick="NewStructure">New Structure</MudButton>
+</div>
+
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+    Each employee's monthly pay: a basic salary plus any number of allowances and recurring deductions.
+    Saving a new structure for an employee supersedes their previous one — historic payslips are unaffected.
+</MudText>
+
+<MudTable Items="_structures" Dense="true" Hover="true" Striped="true" Loading="_loading" T="SalaryStructure">
+    <HeaderContent>
+        <MudTh>Employee</MudTh><MudTh>Effective from</MudTh>
+        <MudTh Style="text-align:right">Basic</MudTh>
+        <MudTh Style="text-align:right">Allowances</MudTh>
+        <MudTh Style="text-align:right">Gross</MudTh>
+        <MudTh Style="text-align:right">Deductions</MudTh>
+        <MudTh>Status</MudTh><MudTh Style="text-align:right">Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.EmployeeName</MudTd>
+        <MudTd>@context.EffectiveFrom.ToString("yyyy-MM-dd")</MudTd>
+        <MudTd Style="text-align:right">@context.BasicSalary.ToString("N2")</MudTd>
+        <MudTd Style="text-align:right">@Allowances(context).ToString("N2")</MudTd>
+        <MudTd Style="text-align:right">@((context.BasicSalary + Allowances(context)).ToString("N2"))</MudTd>
+        <MudTd Style="text-align:right">@Deductions(context).ToString("N2")</MudTd>
+        <MudTd>
+            <MudChip T="string" Size="Size.Small" Color="@(context.IsActive ? Color.Success : Color.Default)">
+                @(context.IsActive ? "Active" : "Superseded")
+            </MudChip>
+        </MudTd>
+        <MudTd Style="text-align:right">
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => Edit(context))" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                           OnClick="@(() => Delete(context))" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No salary structures yet — add one to start running payroll.</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@if (_editing is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300" Class="overflow-auto">
+        <MudPaper Class="pa-6 my-6" Style="width:720px;max-width:96vw">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_editing.Id == 0 ? "New" : "Edit") Salary Structure</MudText>
+
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="string" @bind-Value="_editing.EmployeeId" Label="Employee"
+                               Disabled="@(_editing.Id != 0)">
+                        @foreach (var u in _users)
+                        {
+                            <MudSelectItem T="string" Value="@u.Id">@u.FullName (@u.Email)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudNumericField T="decimal" @bind-Value="_editing.BasicSalary" Label="Basic salary"
+                                     Min="0" Format="N2" />
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudDatePicker Label="Effective from"
+                                   Date="@_editing.EffectiveFrom.ToDateTime(TimeOnly.MinValue)"
+                                   DateChanged="@(d => _editing.EffectiveFrom = DateOnly.FromDateTime(d ?? DateTime.Today))" />
+                </MudItem>
+            </MudGrid>
+
+            <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Components</MudText>
+            <MudTable Items="_editing.Lines" Dense="true" T="SalaryStructureLine" Elevation="0">
+                <HeaderContent>
+                    <MudTh>Component</MudTh><MudTh>Basis</MudTh>
+                    <MudTh Style="text-align:right">Value</MudTh>
+                    <MudTh Style="text-align:right">Monthly</MudTh><MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        @{ var comp = Component(context.PayComponentId); }
+                        @comp?.Name
+                        <MudChip T="string" Size="Size.Small" Class="ml-1"
+                                 Color="@(context.Kind == PayComponentKind.Allowance ? Color.Success : Color.Warning)">
+                            @context.Kind
+                        </MudChip>
+                    </MudTd>
+                    <MudTd>
+                        <MudSelect T="PayComponentCalc" @bind-Value="context.Calc" Dense="true" Margin="Margin.Dense">
+                            <MudSelectItem Value="PayComponentCalc.FixedAmount">Fixed</MudSelectItem>
+                            <MudSelectItem Value="PayComponentCalc.PercentOfBasic">% of basic</MudSelectItem>
+                        </MudSelect>
+                    </MudTd>
+                    <MudTd Style="text-align:right">
+                        <MudNumericField T="decimal" @bind-Value="context.Value" Min="0" Format="N2"
+                                         Margin="Margin.Dense" Style="max-width:120px" />
+                    </MudTd>
+                    <MudTd Style="text-align:right">@context.Resolve(_editing.BasicSalary).ToString("N2")</MudTd>
+                    <MudTd Style="text-align:right">
+                        <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Error"
+                                       OnClick="@(() => _editing.Lines.Remove(context))" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            <div class="d-flex align-center gap-2 mt-2">
+                <MudSelect T="int?" @bind-Value="_addComponentId" Label="Add component" Margin="Margin.Dense"
+                           Style="max-width:320px">
+                    @foreach (var c in _components.Where(c => _editing.Lines.All(l => l.PayComponentId != c.Id)))
+                    {
+                        <MudSelectItem T="int?" Value="@c.Id">@c.Name (@c.Kind)</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="AddLine" Disabled="@(_addComponentId is null)">Add</MudButton>
+            </div>
+
+            <MudDivider Class="my-3" />
+            <div class="d-flex flex-wrap gap-4">
+                <MudText Typo="Typo.body2">Basic: <b>@_editing.BasicSalary.ToString("N2")</b></MudText>
+                <MudText Typo="Typo.body2">Allowances: <b>@Allowances(_editing).ToString("N2")</b></MudText>
+                <MudText Typo="Typo.body2">Gross: <b>@((_editing.BasicSalary + Allowances(_editing)).ToString("N2"))</b></MudText>
+                <MudText Typo="Typo.body2">Deductions: <b>@Deductions(_editing).ToString("N2")</b></MudText>
+                <MudText Typo="Typo.body2" Color="Color.Primary">
+                    Net (before advances): <b>@((_editing.BasicSalary + Allowances(_editing) - Deductions(_editing)).ToString("N2"))</b>
+                </MudText>
+            </div>
+
+            <MudTextField @bind-Value="_editing.Notes" Label="Notes (optional)" Class="mt-2" />
+
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _editing = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="_busy">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    private List<SalaryStructure> _structures = [];
+    private List<PayComponent> _components = [];
+    private List<ApplicationUser> _users = [];
+    private SalaryStructure? _editing;
+    private int? _addComponentId;
+    private bool _loading = true;
+    private bool _showInactive;
+    private bool _busy;
+
+    private PayComponent? Component(int id) => _components.FirstOrDefault(c => c.Id == id);
+
+    private decimal Allowances(SalaryStructure s) => s.Lines
+        .Where(l => l.Kind == PayComponentKind.Allowance).Sum(l => l.Resolve(s.BasicSalary));
+
+    private decimal Deductions(SalaryStructure s) => s.Lines
+        .Where(l => l.Kind == PayComponentKind.Deduction).Sum(l => l.Resolve(s.BasicSalary));
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load()
+    {
+        _loading = true;
+        using var scope = ScopeFactory.CreateScope();
+        var payroll = scope.ServiceProvider.GetRequiredService<IPayrollService>();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        _structures = await payroll.GetStructuresAsync(activeOnly: !_showInactive);
+        _components = await payroll.GetComponentsAsync();
+        _users = await userManager.Users.Where(u => u.IsActive).OrderBy(u => u.FullName).ToListAsync();
+        _loading = false;
+    }
+
+    private void NewStructure() => _editing = new SalaryStructure
+    {
+        EffectiveFrom = new DateOnly(DateTime.Today.Year, DateTime.Today.Month, 1),
+        IsActive = true
+    };
+
+    // Editing works on a copy so an abandoned edit doesn't mutate the loaded grid.
+    private void Edit(SalaryStructure s) => _editing = new SalaryStructure
+    {
+        Id = s.Id, EmployeeId = s.EmployeeId, EmployeeName = s.EmployeeName,
+        BasicSalary = s.BasicSalary, EffectiveFrom = s.EffectiveFrom, IsActive = s.IsActive, Notes = s.Notes,
+        Lines = s.Lines.Select(l => new SalaryStructureLine
+        {
+            PayComponentId = l.PayComponentId, Kind = l.Kind, Calc = l.Calc, Value = l.Value
+        }).ToList()
+    };
+
+    private void AddLine()
+    {
+        var comp = Component(_addComponentId!.Value);
+        if (comp is null) return;
+        _editing!.Lines.Add(new SalaryStructureLine
+        {
+            PayComponentId = comp.Id, Kind = comp.Kind, Calc = comp.Calc, Value = comp.DefaultValue
+        });
+        _addComponentId = null;
+    }
+
+    private async Task Save()
+    {
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IPayrollService>().SaveStructureAsync(_editing!);
+            Snackbar.Add("Salary structure saved.", Severity.Success);
+            _editing = null;
+            await Load();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private async Task Delete(SalaryStructure s)
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IPayrollService>().DeleteStructureAsync(s.Id);
+            Snackbar.Add($"Structure for {s.EmployeeName} deleted.", Severity.Success);
+            await Load();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

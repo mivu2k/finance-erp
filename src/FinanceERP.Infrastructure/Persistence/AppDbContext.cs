@@ -41,6 +41,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUserSe
     public DbSet<UtilityLocation> UtilityLocations => Set<UtilityLocation>();
     public DbSet<UtilityConnection> UtilityConnections => Set<UtilityConnection>();
     public DbSet<UtilityBill> UtilityBills => Set<UtilityBill>();
+    public DbSet<PayComponent> PayComponents => Set<PayComponent>();
+    public DbSet<SalaryStructure> SalaryStructures => Set<SalaryStructure>();
+    public DbSet<SalaryStructureLine> SalaryStructureLines => Set<SalaryStructureLine>();
+    public DbSet<PayrollRun> PayrollRuns => Set<PayrollRun>();
+    public DbSet<Payslip> Payslips => Set<Payslip>();
+    public DbSet<PayslipLine> PayslipLines => Set<PayslipLine>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
@@ -95,6 +101,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUserSe
             e.HasIndex(x => x.RequestNo).IsUnique();
             e.Property(x => x.RequestNo).HasMaxLength(32);
             e.Property(x => x.TotalAmount).HasPrecision(18, 2);
+            e.Property(x => x.ClearedDifference).HasPrecision(18, 2);
             e.HasIndex(x => new { x.RequesterId, x.Status });
             e.HasOne(x => x.Voucher).WithMany().HasForeignKey(x => x.VoucherId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.SettlementVoucher).WithMany().HasForeignKey(x => x.SettlementVoucherId).OnDelete(DeleteBehavior.Restrict);
@@ -192,6 +199,77 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUserSe
             e.HasIndex(x => new { x.ConnectionId, x.BillMonth });
             e.HasIndex(x => x.DueDate);
             e.HasQueryFilter(x => !x.IsDeleted && !x.Connection.IsDeleted && !x.Connection.Location.IsDeleted);
+        });
+
+        b.Entity<PayComponent>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.Property(x => x.Code).HasMaxLength(32);
+            e.Property(x => x.DefaultValue).HasPrecision(18, 2);
+            e.HasOne(x => x.Account).WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<SalaryStructure>(e =>
+        {
+            e.Property(x => x.EmployeeName).HasMaxLength(200);
+            e.Property(x => x.BasicSalary).HasPrecision(18, 2);
+            e.HasIndex(x => new { x.EmployeeId, x.IsActive });
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<SalaryStructureLine>(e =>
+        {
+            e.Property(x => x.Value).HasPrecision(18, 2);
+            e.HasOne(x => x.SalaryStructure).WithMany(x => x.Lines)
+                .HasForeignKey(x => x.SalaryStructureId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.PayComponent).WithMany()
+                .HasForeignKey(x => x.PayComponentId).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => !x.SalaryStructure.IsDeleted);
+        });
+
+        b.Entity<PayrollRun>(e =>
+        {
+            e.HasIndex(x => x.RunNo).IsUnique();
+            e.Property(x => x.RunNo).HasMaxLength(32);
+            e.Property(x => x.TotalGross).HasPrecision(18, 2);
+            e.Property(x => x.TotalDeductions).HasPrecision(18, 2);
+            e.Property(x => x.TotalNet).HasPrecision(18, 2);
+            e.HasIndex(x => x.PeriodMonth);
+            e.HasOne(x => x.Voucher).WithMany().HasForeignKey(x => x.VoucherId).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<Payslip>(e =>
+        {
+            e.Property(x => x.EmployeeName).HasMaxLength(200);
+            e.Property(x => x.BasicSalary).HasPrecision(18, 2);
+            e.Property(x => x.EarnedBasic).HasPrecision(18, 2);
+            e.Property(x => x.AbsentDays).HasPrecision(8, 2);
+            e.Property(x => x.TotalAllowances).HasPrecision(18, 2);
+            e.Property(x => x.GrossPay).HasPrecision(18, 2);
+            e.Property(x => x.TotalDeductions).HasPrecision(18, 2);
+            e.Property(x => x.AdvanceDeduction).HasPrecision(18, 2);
+            e.Property(x => x.NetPay).HasPrecision(18, 2);
+            e.HasIndex(x => new { x.PayrollRunId, x.EmployeeId });
+            e.HasOne(x => x.PayrollRun).WithMany(x => x.Payslips)
+                .HasForeignKey(x => x.PayrollRunId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(x => !x.PayrollRun.IsDeleted);
+        });
+
+        b.Entity<PayslipLine>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(150);
+            e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.HasOne(x => x.Payslip).WithMany(x => x.Lines)
+                .HasForeignKey(x => x.PayslipId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.PayComponent).WithMany()
+                .HasForeignKey(x => x.PayComponentId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Account).WithMany()
+                .HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.AdvanceInstallment).WithMany()
+                .HasForeignKey(x => x.AdvanceInstallmentId).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => !x.Payslip.PayrollRun.IsDeleted);
         });
 
         b.Entity<AuditLog>(e =>

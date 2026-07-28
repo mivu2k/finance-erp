@@ -142,6 +142,8 @@
                                 </MudChip>
                             </td>
                             <td style="white-space:nowrap">
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PictureAsPdf" Title="Print bill"
+                                               Href="@($"/print/utility-bill/{b.Id}")" Target="_blank" />
                                 @if (!b.IsPaid)
                                 {
                                     <AuthorizeView Policy="@Permissions.UtilitiesPay" Context="p">
