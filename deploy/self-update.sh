@@ -35,16 +35,29 @@ git fetch --quiet origin "$BRANCH"
 local_rev="$(git rev-parse HEAD)"
 remote_rev="$(git rev-parse "origin/$BRANCH")"
 
-if [ "$local_rev" = "$remote_rev" ] && [ "${FINANCE_ERP_FORCE:-0}" != "1" ]; then
-    echo "already up to date at ${local_rev:0:8} — nothing to do"
+# Compare against what is actually DEPLOYED, not against the checkout. A fresh
+# clone already sits at origin/main while the running binaries are still old,
+# so comparing the checkout would skip the very first deploy and report success.
+STAMP_FILE="$APP_DIR/.deployed-revision"
+deployed_rev="$(cat "$STAMP_FILE" 2>/dev/null || echo none)"
+
+if [ "$deployed_rev" = "$remote_rev" ] && [ "${FINANCE_ERP_FORCE:-0}" != "1" ]; then
+    echo "already deployed at ${deployed_rev:0:8} — nothing to do"
     echo "(set FINANCE_ERP_FORCE=1 to rebuild anyway)"
     exit 0
 fi
 
+if [ "$deployed_rev" = none ]; then
+    echo "no deployment stamp found — treating this as a first deploy"
+else
+    echo "deployed ${deployed_rev:0:8} -> building ${remote_rev:0:8}"
+fi
+
 git -c advice.detachedHead=false checkout --quiet "$BRANCH"
 git reset --hard --quiet "origin/$BRANCH"
-echo "${local_rev:0:8} -> ${remote_rev:0:8}"
-git log --oneline "${local_rev}..${remote_rev}" 2>/dev/null | sed 's/^/  /' || true
+if [ "$deployed_rev" != none ]; then
+    git log --oneline "${deployed_rev}..${remote_rev}" 2>/dev/null | sed 's/^/  /' || true
+fi
 
 # Build before touching the running app, so a compile error costs no downtime.
 step "Building"
@@ -75,6 +88,7 @@ rsync -a --delete \
     --exclude 'uploads/' \
     --exclude 'keys/' \
     --exclude 'logs/' \
+    --exclude '.deployed-revision' \
     "$BUILD_DIR"/ "$APP_DIR"/
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
@@ -107,6 +121,11 @@ if [ "$healthy" -ne 1 ]; then
     echo "  zcat /var/backups/finance-erp/db-$STAMP.sql.gz | mysql $DB_NAME" >&2
     exit 1
 fi
+
+# Written only after the health check passes, so a rolled-back deploy is
+# correctly retried next run rather than being recorded as live.
+printf '%s\n' "$remote_rev" > "$STAMP_FILE"
+chown "$APP_USER:$APP_USER" "$STAMP_FILE"
 
 step "Updated to ${remote_rev:0:8}"
 journalctl -u "$SERVICE" -n 15 --no-pager | sed 's/^/  /'

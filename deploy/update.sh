@@ -76,7 +76,9 @@ rsync -a --delete \
   --exclude 'logs/' \
   -e "ssh -o BatchMode=yes" \
   "$PUBLISH_DIR/" "$SSH_USER@$HOST:$APP_DIR/"
-"${SSH[@]}" "chown -R $APP_USER:$APP_USER $APP_DIR"
+# This ships the local working tree, which may not match any commit, so drop
+# the stamp self-update.sh keys off — it must redeploy rather than skip.
+"${SSH[@]}" "rm -f $APP_DIR/.deployed-revision; chown -R $APP_USER:$APP_USER $APP_DIR"
 
 step "Starting $SERVICE (migrations apply on boot)"
 "${SSH[@]}" "systemctl start $SERVICE"
