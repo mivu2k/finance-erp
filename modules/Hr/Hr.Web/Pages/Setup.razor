@@ -1,0 +1,100 @@
+@page "/hr/setup"
+@attribute [Authorize(Policy = HrPermissions.CatalogManage)]
+@layout HrLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>HR Setup</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Departments &amp; Designations</MudText>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Departments</MudText>
+            <div class="d-flex gap-2 mb-3">
+                <MudTextField @bind-Value="_newDepartment" Label="Name" Margin="Margin.Dense" Immediate="true" />
+                <MudTextField @bind-Value="_newDepartmentCode" Label="Code" Margin="Margin.Dense"
+                              Style="max-width:110px" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddDepartment"
+                           Disabled="@(string.IsNullOrWhiteSpace(_newDepartment))">Add</MudButton>
+            </div>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>Name</th><th>Code</th></tr></thead>
+                <tbody>
+                    @foreach (var d in _departments)
+                    {
+                        <tr><td>@d.Name</td><td>@d.Code</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Designations</MudText>
+            <div class="d-flex gap-2 mb-3">
+                <MudTextField @bind-Value="_newDesignation" Label="Title" Margin="Margin.Dense" Immediate="true" />
+                <MudTextField @bind-Value="_newGrade" Label="Grade" Margin="Margin.Dense"
+                              Style="max-width:110px" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddDesignation"
+                           Disabled="@(string.IsNullOrWhiteSpace(_newDesignation))">Add</MudButton>
+            </div>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>Title</th><th>Grade</th></tr></thead>
+                <tbody>
+                    @foreach (var d in _designations)
+                    {
+                        <tr><td>@d.Title</td><td>@d.Grade</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private List<Department> _departments = [];
+    private List<Designation> _designations = [];
+    private string _newDepartment = "", _newDesignation = "";
+    private string? _newDepartmentCode, _newGrade;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<IEmployeeService>();
+        _departments = await svc.ListDepartmentsAsync();
+        _designations = await svc.ListDesignationsAsync();
+        StateHasChanged();
+    }
+
+    private async Task AddDepartment()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IEmployeeService>()
+                .SaveDepartmentAsync(new Department { Name = _newDepartment.Trim(), Code = _newDepartmentCode });
+            _newDepartment = ""; _newDepartmentCode = null;
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AddDesignation()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IEmployeeService>()
+                .SaveDesignationAsync(new Designation { Title = _newDesignation.Trim(), Grade = _newGrade });
+            _newDesignation = ""; _newGrade = null;
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

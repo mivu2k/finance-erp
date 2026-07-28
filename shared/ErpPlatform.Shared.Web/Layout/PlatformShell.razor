@@ -1,0 +1,93 @@
+@* The chrome every app shares: theme, providers, app bar and drawer. A module
+   supplies its own title, accent colour and nav; everything else is identical so
+   moving between apps doesn't feel like moving between products. *@
+
+<MudThemeProvider @bind-IsDarkMode="_isDarkMode" Theme="@Theme" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1" Dense="true">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
+                       OnClick="@(() => _drawerOpen = !_drawerOpen)" />
+        <MudText Typo="Typo.h6" Class="ml-2">@Title</MudText>
+        <MudSpacer />
+        @Toolbar
+        <AppSwitcher />
+        <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
+                       Color="Color.Inherit" OnClick="@(() => _isDarkMode = !_isDarkMode)" />
+        <AuthorizeView>
+            <Authorized>
+                <MudMenu Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Inherit"
+                         AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                    <MudMenuItem Disabled="true">@context.User.Identity?.Name</MudMenuItem>
+                    <MudMenuItem Href="/Account/Manage">My profile</MudMenuItem>
+                    <MudMenuItem>
+                        <form action="/Account/Logout" method="post" style="margin:0">
+                            <AntiforgeryToken />
+                            <input type="hidden" name="ReturnUrl" value="" />
+                            <button type="submit"
+                                    style="background:none;border:none;padding:0;cursor:pointer;color:inherit;">
+                                Log out
+                            </button>
+                        </form>
+                    </MudMenuItem>
+                </MudMenu>
+            </Authorized>
+        </AuthorizeView>
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen" Elevation="1"
+               ClipMode="DrawerClipMode.Always" Breakpoint="Breakpoint.Md">
+        <MudNavMenu>
+            <MudNavLink Href="/" Icon="@Icons.Material.Filled.GridView" Match="NavLinkMatch.All">
+                All apps
+            </MudNavLink>
+            <MudDivider Class="my-2" />
+        </MudNavMenu>
+        @Nav
+    </MudDrawer>
+
+    <MudMainContent>
+        <div class="pa-4">
+            @ChildContent
+        </div>
+    </MudMainContent>
+</MudLayout>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    /// <summary>App name shown in the bar.</summary>
+    [Parameter] public string Title { get; set; } = "ERP";
+
+    /// <summary>The module's navigation menu.</summary>
+    [Parameter] public RenderFragment? Nav { get; set; }
+
+    /// <summary>Module-specific app-bar items (search, alerts), rendered before the app switcher.</summary>
+    [Parameter] public RenderFragment? Toolbar { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Accent colour for the app bar, so each app is visually distinct.</summary>
+    [Parameter] public string Accent { get; set; } = "#1565C0";
+
+    private bool _drawerOpen = true;
+    private bool _isDarkMode;
+
+    private MudTheme Theme => new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = Accent,
+            AppbarBackground = Accent,
+            Secondary = "#00897B"
+        },
+        PaletteDark = new PaletteDark { Primary = "#90CAF9" }
+    };
+}

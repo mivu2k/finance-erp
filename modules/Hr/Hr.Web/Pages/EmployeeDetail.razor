@@ -1,0 +1,385 @@
+@page "/hr/employees/new"
+@page "/hr/employees/{Id:int}"
+@attribute [Authorize(Policy = HrPermissions.EmployeesView)]
+@layout HrLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_isNew ? "New Employee" : _employee.FullName)</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/hr/employees" />
+    <MudText Typo="Typo.h5">@(_isNew ? "New Employee" : _employee.FullName)</MudText>
+    @if (!_isNew)
+    {
+        <MudChip T="string" Size="Size.Small">@_employee.EmployeeCode</MudChip>
+        <MudChip T="string" Size="Size.Small" Color="@StatusColour(_employee.Status)">@_employee.Status</MudChip>
+    }
+    <MudSpacer />
+    <AuthorizeView Policy="@HrPermissions.EmployeesManage">
+        @if (!_isNew && _employee.LeftOn is null)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Warning"
+                       OnClick="@(() => _separateOpen = true)">Record Separation</MudButton>
+        }
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Class="ml-2">Save</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudTabs Elevation="1" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4">
+    <MudTabPanel Text="Personal">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_employee.FullName" Label="Full name *" Required="true" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_employee.FatherName" Label="Father's / guardian's name" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField @bind-Value="_employee.EmployeeCode" Label="Employee code"
+                              HelperText="Left blank, one is generated on save." />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudDatePicker Label="Date of birth" Date="@ToDate(_employee.DateOfBirth)"
+                               DateChanged="@(d => _employee.DateOfBirth = ToDateOnly(d))" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudSelect T="Gender" @bind-Value="_employee.Gender" Label="Gender">
+                    @foreach (var g in Enum.GetValues<Gender>())
+                    {
+                        <MudSelectItem Value="@g">@g</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudSelect T="MaritalStatus" @bind-Value="_employee.MaritalStatus" Label="Marital status">
+                    @foreach (var m in Enum.GetValues<MaritalStatus>())
+                    {
+                        <MudSelectItem Value="@m">@m</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField @bind-Value="_employee.BloodGroup" Label="Blood group" />
+            </MudItem>
+            <AuthorizeView Policy="@HrPermissions.EmployeesViewSensitive" Context="sens">
+                <MudItem xs="12" md="4">
+                    <MudTextField @bind-Value="_employee.NationalId" Label="National ID / CNIC" />
+                </MudItem>
+            </AuthorizeView>
+        </MudGrid>
+    </MudTabPanel>
+
+    <MudTabPanel Text="Contact">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" md="4"><MudTextField @bind-Value="_employee.Phone" Label="Phone" /></MudItem>
+            <MudItem xs="12" md="4"><MudTextField @bind-Value="_employee.AlternatePhone" Label="Alternate phone" /></MudItem>
+            <MudItem xs="12" md="4"><MudTextField @bind-Value="_employee.Email" Label="Email" /></MudItem>
+            <MudItem xs="12" md="8"><MudTextField @bind-Value="_employee.Address" Label="Address" Lines="2" /></MudItem>
+            <MudItem xs="12" md="4"><MudTextField @bind-Value="_employee.City" Label="City" /></MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_employee.EmergencyContactName" Label="Emergency contact name" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_employee.EmergencyContactPhone" Label="Emergency contact phone" />
+            </MudItem>
+        </MudGrid>
+    </MudTabPanel>
+
+    <MudTabPanel Text="Employment">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" md="4">
+                <MudSelect T="int?" @bind-Value="_employee.DepartmentId" Label="Department" Clearable="true">
+                    @foreach (var d in _departments)
+                    {
+                        <MudSelectItem T="int?" Value="@d.Id">@d.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudSelect T="int?" @bind-Value="_employee.DesignationId" Label="Designation" Clearable="true">
+                    @foreach (var d in _designations)
+                    {
+                        <MudSelectItem T="int?" Value="@d.Id">@d.Title</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudSelect T="EmploymentType" @bind-Value="_employee.EmploymentType" Label="Employment type">
+                    @foreach (var t in Enum.GetValues<EmploymentType>())
+                    {
+                        <MudSelectItem Value="@t">@t</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudDatePicker Label="Joined on *" Date="@ToDate(_employee.JoinedOn)"
+                               DateChanged="@(d => _employee.JoinedOn = ToDateOnly(d) ?? _employee.JoinedOn)" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudDatePicker Label="Confirmed on" Date="@ToDate(_employee.ConfirmedOn)"
+                               DateChanged="@(d => _employee.ConfirmedOn = ToDateOnly(d))" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField @bind-Value="_employee.WorkLocation" Label="Work location" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudSelect T="string" @bind-Value="_employee.ReportsToEmployeeCode"
+                           Label="Reports to" Clearable="true">
+                    @foreach (var m in _managers)
+                    {
+                        <MudSelectItem Value="@m.EmployeeCode">@m.FullName (@m.EmployeeCode)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="8">
+                <MudSelect T="string" @bind-Value="_employee.UserId" Label="Platform login" Clearable="true"
+                           HelperText="Link this person to a login so they can sign in. Employees without a login are still tracked here.">
+                    @if (_linkedUser is not null)
+                    {
+                        <MudSelectItem Value="@_linkedUser.UserId">
+                            @_linkedUser.FullName (@_linkedUser.Email)
+                        </MudSelectItem>
+                    }
+                    @foreach (var u in _unlinkedUsers)
+                    {
+                        <MudSelectItem Value="@u.UserId">@u.FullName (@u.Email)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_employee.Notes" Label="Notes" Lines="3" />
+            </MudItem>
+        </MudGrid>
+    </MudTabPanel>
+
+    <AuthorizeView Policy="@HrPermissions.EmployeesViewSensitive" Context="bank">
+        <MudTabPanel Text="Bank &amp; Statutory">
+            <MudGrid Spacing="3">
+                <MudItem xs="12" md="4"><MudTextField @bind-Value="_employee.BankName" Label="Bank name" /></MudItem>
+                <MudItem xs="12" md="4"><MudTextField @bind-Value="_employee.BankAccountTitle" Label="Account title" /></MudItem>
+                <MudItem xs="12" md="4"><MudTextField @bind-Value="_employee.BankAccountNumber" Label="Account number / IBAN" /></MudItem>
+                <MudItem xs="12" md="4"><MudTextField @bind-Value="_employee.TaxNumber" Label="Tax number (NTN)" /></MudItem>
+                <MudItem xs="12" md="4"><MudTextField @bind-Value="_employee.SocialSecurityNumber" Label="Social security / EOBI number" /></MudItem>
+                <MudItem xs="12">
+                    <MudAlert Severity="Severity.Info" Dense="true">
+                        Salary structures and payslips live in the Finance app; these are the
+                        banking and statutory details payroll reads when paying this person.
+                    </MudAlert>
+                </MudItem>
+            </MudGrid>
+        </MudTabPanel>
+    </AuthorizeView>
+
+    @if (!_isNew)
+    {
+        <AuthorizeView Policy="@HrPermissions.DocumentsView" Context="docs">
+            <MudTabPanel Text="@($"Documents ({_documents.Count})")">
+                <AuthorizeView Policy="@HrPermissions.DocumentsManage" Context="docm">
+                    <MudGrid Spacing="2" Class="mb-4">
+                        <MudItem xs="12" md="4">
+                            <MudTextField @bind-Value="_docTitle" Label="Title" Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="6" md="3">
+                            <MudSelect T="DocumentKind" @bind-Value="_docKind" Label="Kind" Margin="Margin.Dense">
+                                @foreach (var k in Enum.GetValues<DocumentKind>())
+                                {
+                                    <MudSelectItem Value="@k">@k</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="6" md="3">
+                            <MudDatePicker Label="Expires on" Date="@ToDate(_docExpires)"
+                                           DateChanged="@(d => _docExpires = ToDateOnly(d))"
+                                           Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="12" md="2" Class="d-flex align-center">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                       OnClick="AddDocument"
+                                       Disabled="@(string.IsNullOrWhiteSpace(_docTitle))">Add</MudButton>
+                        </MudItem>
+                    </MudGrid>
+                </AuthorizeView>
+
+                <MudSimpleTable Dense="true" Hover="true">
+                    <thead><tr><th>Title</th><th>Kind</th><th>Expires</th><th>Added</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var d in _documents)
+                        {
+                            <tr>
+                                <td>@d.Title</td>
+                                <td>@d.Kind</td>
+                                <td>
+                                    @if (d.ExpiresOn is { } exp)
+                                    {
+                                        <span style="@(exp <= DateOnly.FromDateTime(DateTime.UtcNow.AddDays(60)) ? "color:var(--mud-palette-warning)" : "")">
+                                            @exp.ToString("yyyy-MM-dd")
+                                        </span>
+                                    }
+                                </td>
+                                <td>@d.CreatedAtUtc.ToString("yyyy-MM-dd")</td>
+                                <td>
+                                    <AuthorizeView Policy="@HrPermissions.DocumentsManage" Context="del">
+                                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                                       Color="Color.Error"
+                                                       OnClick="@(() => DeleteDocument(d.Id))" />
+                                    </AuthorizeView>
+                                </td>
+                            </tr>
+                        }
+                        @if (_documents.Count == 0)
+                        {
+                            <tr><td colspan="5" class="mud-text-secondary">No documents recorded.</td></tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudTabPanel>
+        </AuthorizeView>
+    }
+</MudTabs>
+
+@if (_separateOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">Record Separation</MudText>
+            <MudSelect T="EmployeeStatus" @bind-Value="_separateStatus" Label="Reason" Class="mb-2">
+                <MudSelectItem Value="@EmployeeStatus.Resigned">Resigned</MudSelectItem>
+                <MudSelectItem Value="@EmployeeStatus.Terminated">Terminated</MudSelectItem>
+                <MudSelectItem Value="@EmployeeStatus.Retired">Retired</MudSelectItem>
+            </MudSelect>
+            <MudDatePicker Label="Last working day" Date="_separateDate" DateChanged="@(d => _separateDate = d)"
+                           Class="mb-2" />
+            <MudTextField @bind-Value="_separateReason" Label="Notes" Lines="2" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _separateOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Warning" OnClick="Separate">Confirm</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private Employee _employee = new() { JoinedOn = DateOnly.FromDateTime(DateTime.Today) };
+    private List<Department> _departments = [];
+    private List<Designation> _designations = [];
+    private List<Employee> _managers = [];
+    private List<EmployeeDocument> _documents = [];
+    private List<PlatformUser> _unlinkedUsers = [];
+    private PlatformUser? _linkedUser;
+
+    private bool _isNew => Id is null;
+
+    private string _docTitle = "";
+    private DocumentKind _docKind = DocumentKind.Other;
+    private DateOnly? _docExpires;
+
+    private bool _separateOpen;
+    private EmployeeStatus _separateStatus = EmployeeStatus.Resigned;
+    private DateTime? _separateDate = DateTime.Today;
+    private string? _separateReason;
+
+    private static DateTime? ToDate(DateOnly? d) => d?.ToDateTime(TimeOnly.MinValue);
+    private static DateOnly? ToDateOnly(DateTime? d) => d is null ? null : DateOnly.FromDateTime(d.Value);
+
+    private static Color StatusColour(EmployeeStatus s) => s switch
+    {
+        EmployeeStatus.Active => Color.Success,
+        EmployeeStatus.OnLeave => Color.Info,
+        EmployeeStatus.Suspended => Color.Warning,
+        _ => Color.Default
+    };
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var employees = scope.ServiceProvider.GetRequiredService<IEmployeeService>();
+        var directory = scope.ServiceProvider.GetRequiredService<IPlatformUserDirectory>();
+
+        _departments = await employees.ListDepartmentsAsync();
+        _designations = await employees.ListDesignationsAsync();
+        _managers = await employees.ListAsync(new EmployeeFilter());
+        _unlinkedUsers = await employees.ListUnlinkedUsersAsync();
+
+        if (Id is { } id)
+        {
+            _employee = await employees.GetAsync(id)
+                        ?? throw new InvalidOperationException("Employee not found.");
+            _documents = await employees.ListDocumentsAsync(id);
+            _managers = _managers.Where(m => m.Id != id).ToList();
+            _linkedUser = _employee.UserId is null ? null : await directory.FindAsync(_employee.UserId);
+        }
+        else
+        {
+            _employee = new Employee { JoinedOn = DateOnly.FromDateTime(DateTime.Today) };
+            _documents = [];
+            _linkedUser = null;
+        }
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var saved = await scope.ServiceProvider.GetRequiredService<IEmployeeService>()
+                .SaveAsync(_employee);
+            Snackbar.Add("Employee saved.", Severity.Success);
+            if (_isNew) Nav.NavigateTo($"/hr/employees/{saved.Id}");
+            else await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Separate()
+    {
+        try
+        {
+            if (_separateDate is null) throw new InvalidOperationException("Pick a last working day.");
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IEmployeeService>()
+                .SeparateAsync(_employee.Id, DateOnly.FromDateTime(_separateDate.Value),
+                    _separateStatus, _separateReason);
+            _separateOpen = false;
+            Snackbar.Add("Separation recorded.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AddDocument()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IEmployeeService>()
+                .AddDocumentAsync(new EmployeeDocument
+                {
+                    EmployeeId = _employee.Id,
+                    Title = _docTitle.Trim(),
+                    Kind = _docKind,
+                    ExpiresOn = _docExpires,
+                    FilePath = ""
+                });
+            _docTitle = "";
+            _docExpires = null;
+            _docKind = DocumentKind.Other;
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DeleteDocument(int documentId)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<IEmployeeService>()
+            .DeleteDocumentAsync(documentId);
+        await LoadAsync();
+    }
+}

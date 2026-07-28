@@ -1,0 +1,107 @@
+@page "/hr"
+@attribute [Authorize(Policy = HrPermissions.EmployeesView)]
+@layout HrLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>HR</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Human Resources</MudText>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Active employees</MudText>
+            <MudText Typo="Typo.h4">@_active</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">On leave</MudText>
+            <MudText Typo="Typo.h4">@_onLeave</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Left this year</MudText>
+            <MudText Typo="Typo.h4">@_leavers</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Documents expiring</MudText>
+            <MudText Typo="Typo.h4" Color="@(_expiring > 0 ? Color.Warning : Color.Default)">@_expiring</MudText>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Headcount by department</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>Department</th><th style="text-align:right">People</th></tr></thead>
+                <tbody>
+                    @foreach (var row in _byDepartment)
+                    {
+                        <tr><td>@row.Key</td><td style="text-align:right">@row.Value</td></tr>
+                    }
+                    @if (_byDepartment.Count == 0)
+                    {
+                        <tr><td colspan="2" class="mud-text-secondary">No employees yet.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Recent joiners</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>Code</th><th>Name</th><th>Joined</th></tr></thead>
+                <tbody>
+                    @foreach (var e in _recent)
+                    {
+                        <tr>
+                            <td>@e.EmployeeCode</td>
+                            <td><MudLink Href="@($"/hr/employees/{e.Id}")">@e.FullName</MudLink></td>
+                            <td>@e.JoinedOn.ToString("yyyy-MM-dd")</td>
+                        </tr>
+                    }
+                    @if (_recent.Count == 0)
+                    {
+                        <tr><td colspan="3" class="mud-text-secondary">No employees yet.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private int _active, _onLeave, _leavers, _expiring;
+    private Dictionary<string, int> _byDepartment = [];
+    private List<Employee> _recent = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var employees = scope.ServiceProvider.GetRequiredService<IEmployeeService>();
+
+        var all = await employees.ListAsync(new EmployeeFilter(IncludeLeavers: true));
+
+        _active = all.Count(e => e.Status == EmployeeStatus.Active);
+        _onLeave = all.Count(e => e.Status == EmployeeStatus.OnLeave);
+
+        var yearStart = new DateOnly(DateTime.UtcNow.Year, 1, 1);
+        _leavers = all.Count(e => e.LeftOn is { } left && left >= yearStart);
+
+        _byDepartment = all
+            .Where(e => e.Status is EmployeeStatus.Active or EmployeeStatus.OnLeave)
+            .GroupBy(e => e.Department?.Name ?? "Unassigned")
+            .OrderByDescending(g => g.Count())
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        _recent = all.OrderByDescending(e => e.JoinedOn).Take(8).ToList();
+        _expiring = (await employees.ListExpiringDocumentsAsync()).Count;
+    }
+}

@@ -10,6 +10,11 @@
     <Project Path="src/FinanceERP.Domain/FinanceERP.Domain.csproj" />
     <Project Path="src/FinanceERP.Infrastructure/FinanceERP.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/modules/hr/">
+    <Project Path="modules/Hr/Hr.Domain/Hr.Domain.csproj" />
+    <Project Path="modules/Hr/Hr.Infrastructure/Hr.Infrastructure.csproj" />
+    <Project Path="modules/Hr/Hr.Web/Hr.Web.csproj" />
+  </Folder>
   <Folder Name="/apps/">
     <Project Path="src/FinanceERP.Web/FinanceERP.Web.csproj" />
   </Folder>

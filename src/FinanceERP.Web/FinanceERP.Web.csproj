@@ -20,6 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="..\FinanceERP.Infrastructure\FinanceERP.Infrastructure.csproj" />
     <ProjectReference Include="..\..\shared\ErpPlatform.Shared.Web\ErpPlatform.Shared.Web.csproj" />
+    <ProjectReference Include="..\..\modules\Hr\Hr.Web\Hr.Web.csproj" />
   </ItemGroup>
 
 </Project>

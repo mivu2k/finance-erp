@@ -2,6 +2,7 @@ using ErpPlatform.Shared.Identity;
 using ErpPlatform.Shared.Kernel;
 using ErpPlatform.Shared.Web.Security;
 using FinanceERP.Infrastructure;
+using Hr.Infrastructure;
 using FinanceERP.Infrastructure.Persistence;
 using FinanceERP.Web.Components;
 using FinanceERP.Web.Components.Account;
@@ -54,6 +55,7 @@ builder.Services.AddPlatformIdentity(builder.Configuration);
 // Business modules, each on its own database. Adding a module here is what puts
 // its tile on the portal and its roles into the identity seeder.
 builder.Services.AddFinanceModule(builder.Configuration);
+builder.Services.AddHrModule(builder.Configuration);
 
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
 
@@ -86,6 +88,8 @@ using (var scope = app.Services.CreateScope())
         sp.GetRequiredService<AppDbContext>(),
         sp.GetRequiredService<IPlatformUserDirectory>(),
         logger);
+
+    await HrModule.SeedAsync(sp.GetRequiredService<HrDbContext>(), logger);
 }
 
 if (app.Environment.IsDevelopment())
@@ -107,7 +111,9 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()
     // The portal and app switcher live in the shared web library; endpoint routing
     // needs them listed here as well as on the Router.
-    .AddAdditionalAssemblies(typeof(ErpPlatform.Shared.Web.Portal.Portal).Assembly);
+    .AddAdditionalAssemblies(
+        typeof(ErpPlatform.Shared.Web.Portal.Portal).Assembly,
+        typeof(Hr.Web.Layout.HrLayout).Assembly);
 
 app.MapAdditionalIdentityEndpoints();
 app.MapExportEndpoints();

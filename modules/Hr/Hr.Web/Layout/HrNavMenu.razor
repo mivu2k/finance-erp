@@ -1,0 +1,21 @@
+<MudNavMenu>
+    <MudNavLink Href="/hr" Icon="@Icons.Material.Filled.Dashboard" Match="NavLinkMatch.All">
+        Dashboard
+    </MudNavLink>
+
+    <AuthorizeView Policy="@HrPermissions.EmployeesView">
+        <MudNavLink Href="/hr/employees" Icon="@Icons.Material.Filled.Groups">Employees</MudNavLink>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@HrPermissions.ReportsView" Context="rep">
+        <MudNavLink Href="/hr/documents" Icon="@Icons.Material.Filled.Description">
+            Expiring Documents
+        </MudNavLink>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@HrPermissions.CatalogManage" Context="cat">
+        <MudNavLink Href="/hr/setup" Icon="@Icons.Material.Filled.Settings">
+            Departments &amp; Designations
+        </MudNavLink>
+    </AuthorizeView>
+</MudNavMenu>

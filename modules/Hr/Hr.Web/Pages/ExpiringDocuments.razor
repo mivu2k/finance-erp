@@ -1,0 +1,67 @@
+@page "/hr/documents"
+@attribute [Authorize(Policy = HrPermissions.ReportsView)]
+@layout HrLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Expiring Documents</PageTitle>
+
+<div class="d-flex align-center mb-4 gap-3">
+    <MudText Typo="Typo.h5">Expiring Documents</MudText>
+    <MudSpacer />
+    <MudSelect T="int" Value="_withinDays" ValueChanged="OnWindowChanged" Label="Window"
+               Margin="Margin.Dense" Style="width:180px">
+        <MudSelectItem Value="30">Next 30 days</MudSelectItem>
+        <MudSelectItem Value="60">Next 60 days</MudSelectItem>
+        <MudSelectItem Value="90">Next 90 days</MudSelectItem>
+        <MudSelectItem Value="365">Next year</MudSelectItem>
+    </MudSelect>
+</div>
+
+<MudPaper Class="pa-2">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr><th>Employee</th><th>Code</th><th>Document</th><th>Kind</th><th>Expires</th><th>Days left</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var d in _documents)
+            {
+                var days = d.ExpiresOn!.Value.DayNumber - DateOnly.FromDateTime(DateTime.UtcNow).DayNumber;
+                <tr>
+                    <td><MudLink Href="@($"/hr/employees/{d.EmployeeId}")">@d.Employee.FullName</MudLink></td>
+                    <td>@d.Employee.EmployeeCode</td>
+                    <td>@d.Title</td>
+                    <td>@d.Kind</td>
+                    <td>@d.ExpiresOn!.Value.ToString("yyyy-MM-dd")</td>
+                    <td>
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(days < 0 ? Color.Error : days <= 30 ? Color.Warning : Color.Default)">
+                            @(days < 0 ? $"{-days} overdue" : $"{days}")
+                        </MudChip>
+                    </td>
+                </tr>
+            }
+            @if (_documents.Count == 0)
+            {
+                <tr><td colspan="6" class="mud-text-secondary pa-4">Nothing expiring in this window.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private List<EmployeeDocument> _documents = [];
+    private int _withinDays = 60;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task OnWindowChanged(int value) { _withinDays = value; await LoadAsync(); }
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _documents = await scope.ServiceProvider.GetRequiredService<IEmployeeService>()
+            .ListExpiringDocumentsAsync(_withinDays);
+        StateHasChanged();
+    }
+}
