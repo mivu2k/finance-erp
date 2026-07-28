@@ -1,0 +1,407 @@
+@page "/repair/jobs/{Id:int}"
+@attribute [Authorize(Policy = RepairPermissions.JobsView)]
+@layout RepairLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>@_job.JobNumber</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/repair/jobs" />
+    <MudText Typo="Typo.h5">@_job.JobNumber</MudText>
+    <JobStatusChip Status="@_job.Status" />
+    @if (_job.Priority == JobPriority.Urgent)
+    {
+        <MudChip T="string" Size="Size.Small" Color="Color.Warning">Urgent</MudChip>
+    }
+    <MudSpacer />
+
+    <MudButton Variant="Variant.Outlined" Size="Size.Small"
+               StartIcon="@Icons.Material.Filled.PictureAsPdf"
+               Href="@($"/repair/print/job/{_job.Id}")" Target="_blank">Job Card</MudButton>
+
+    <AuthorizeView Policy="@RepairPermissions.JobsAssign" Context="asg">
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" Class="ml-2"
+                   StartIcon="@Icons.Material.Filled.Engineering"
+                   OnClick="OpenAssign">Assign</MudButton>
+    </AuthorizeView>
+
+    @foreach (var next in JobWorkflow.NextFrom(_job.Status))
+    {
+        var target = next;
+        <AuthorizeView Policy="@(target == JobStatus.Delivered
+                                 ? RepairPermissions.JobsDeliver
+                                 : RepairPermissions.JobsManage)" Context="mv">
+            <MudButton Variant="Variant.Filled" Size="Size.Small" Class="ml-2"
+                       Color="@(target == JobStatus.Cancelled ? Color.Error : Color.Primary)"
+                       OnClick="@(() => OpenMove(target))">
+                @JobWorkflow.Describe(target)
+            </MudButton>
+        </AuthorizeView>
+    }
+</div>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-4">
+            <div class="d-flex align-center mb-3">
+                <MudText Typo="Typo.subtitle1">Device</MudText>
+                <MudSpacer />
+                <AuthorizeView Policy="@RepairPermissions.JobsManage" Context="ed">
+                    @if (_canEdit)
+                    {
+                        <MudButton Size="Size.Small" OnClick="SaveJob">Save</MudButton>
+                    }
+                </AuthorizeView>
+            </div>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_job.DeviceName" Label="Device *" Disabled="@(!_canEdit)" />
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudTextField @bind-Value="_job.Brand" Label="Brand" Disabled="@(!_canEdit)" />
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudTextField @bind-Value="_job.Model" Label="Model" Disabled="@(!_canEdit)" />
+                </MudItem>
+                <MudItem xs="6" md="4">
+                    <MudTextField @bind-Value="_job.SerialNumber" Label="Serial" Disabled="@(!_canEdit)" />
+                </MudItem>
+                <MudItem xs="6" md="4">
+                    <MudSelect T="DeviceCondition" @bind-Value="_job.ConditionOnArrival"
+                               Label="Condition on arrival" Disabled="@(!_canEdit)">
+                        @foreach (var c in Enum.GetValues<DeviceCondition>())
+                        {
+                            <MudSelectItem Value="@c">@c</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="4">
+                    <MudSelect T="JobPriority" @bind-Value="_job.Priority" Label="Priority"
+                               Disabled="@(!_canEdit)">
+                        @foreach (var p in Enum.GetValues<JobPriority>())
+                        {
+                            <MudSelectItem Value="@p">@p</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudDatePicker Label="Expected delivery"
+                                   Date="@(_job.ExpectedDeliveryDate?.ToDateTime(TimeOnly.MinValue))"
+                                   DateChanged="@(d => _job.ExpectedDeliveryDate = d is null ? null : DateOnly.FromDateTime(d.Value))"
+                                   Disabled="@(!_canEdit)" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_job.IssueDescription" Label="Reported fault *"
+                                  Lines="3" Disabled="@(!_canEdit)" />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Customer &amp; intake</MudText>
+            <MudSimpleTable Dense="true">
+                <tbody>
+                    <tr><td>Customer</td><td>@_job.Customer.Name</td></tr>
+                    <tr><td>Phone</td><td>@_job.Customer.Phone</td></tr>
+                    <tr><td>Organisation</td><td>@_job.Customer.Organization</td></tr>
+                    <tr><td>Intake</td><td>@_job.Intake.IntakeNumber</td></tr>
+                    <tr><td>Received</td><td>@_job.Intake.ReceivedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td></tr>
+                    <tr><td>Received by</td><td>@_job.Intake.ReceivedByName</td></tr>
+                    <tr><td>Technician</td><td>@(_job.AssignedTechnicianName ?? "unassigned")</td></tr>
+                    @if (_job.DeliveredAtUtc is { } del)
+                    {
+                        <tr><td>Delivered</td><td>@del.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Symptoms</MudText>
+            <MudChipSet T="string" Class="mb-3">
+                @foreach (var s in _job.Symptoms)
+                {
+                    <MudChip T="string" Size="Size.Small">@s.Symptom.Name</MudChip>
+                }
+                @if (_job.Symptoms.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">None recorded.</MudText>
+                }
+            </MudChipSet>
+
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Accessories received</MudText>
+            <MudChipSet T="string">
+                @foreach (var a in _job.Accessories)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info">@a.Accessory.Name</MudChip>
+                }
+                @if (_job.Accessories.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">None recorded.</MudText>
+                }
+            </MudChipSet>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">History</MudText>
+            <MudTimeline TimelinePosition="TimelinePosition.Start">
+                @foreach (var h in _job.StatusHistory.OrderByDescending(h => h.Id))
+                {
+                    <MudTimelineItem Size="Size.Small">
+                        <MudText Typo="Typo.body2">
+                            <b>@JobWorkflow.Describe(h.ToStatus)</b> — @h.ChangedByName
+                        </MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            @h.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                            @(string.IsNullOrWhiteSpace(h.Note) ? "" : $" — {h.Note}")
+                        </MudText>
+                    </MudTimelineItem>
+                }
+            </MudTimeline>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <div class="d-flex align-center mb-3">
+                <MudText Typo="Typo.subtitle1">Diagnoses</MudText>
+                <MudSpacer />
+                <AuthorizeView Policy="@RepairPermissions.JobsDiagnose" Context="dg">
+                    @if (_canEdit)
+                    {
+                        <MudButton StartIcon="@Icons.Material.Filled.Add"
+                                   OnClick="@(() => _diagnosisOpen = true)">Add diagnosis</MudButton>
+                    }
+                </AuthorizeView>
+            </div>
+
+            @foreach (var d in _job.Diagnoses.OrderByDescending(d => d.Id))
+            {
+                <MudPaper Class="pa-3 mb-2" Elevation="0" Style="border:1px solid var(--mud-palette-divider)">
+                    <div class="d-flex align-center">
+                        <MudText Typo="Typo.body2">
+                            <b>@d.TechnicianName</b> — @d.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                        </MudText>
+                        <MudSpacer />
+                        <AuthorizeView Policy="@RepairPermissions.JobsDiagnose" Context="dd">
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Error" OnClick="@(() => DeleteDiagnosis(d.Id))" />
+                        </AuthorizeView>
+                    </div>
+                    <MudText Typo="Typo.body2" Class="mt-2">@d.Findings</MudText>
+                    @if (!string.IsNullOrWhiteSpace(d.RequiredParts))
+                    {
+                        <MudText Typo="Typo.caption">Parts required: @d.RequiredParts</MudText>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(d.WorkPerformed))
+                    {
+                        <MudText Typo="Typo.caption">Work performed: @d.WorkPerformed</MudText>
+                    }
+                    @if (d.EstimatedRepairTimeDays is { } days)
+                    {
+                        <MudText Typo="Typo.caption">Estimated: @days day(s)</MudText>
+                    }
+                </MudPaper>
+            }
+            @if (_job.Diagnoses.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">Nothing recorded yet.</MudText>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@if (_diagnosisOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:600px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">Add Diagnosis</MudText>
+            <MudTextField @bind-Value="_diagnosis.Findings" Label="Findings *" Lines="4" Class="mb-2" />
+            <MudTextField @bind-Value="_diagnosis.RequiredParts" Label="Parts required" Lines="2" Class="mb-2" />
+            <MudTextField @bind-Value="_diagnosis.RequiredLabor" Label="Labour required" Lines="2" Class="mb-2" />
+            <MudTextField @bind-Value="_diagnosis.WorkPerformed" Label="Work performed" Lines="2" Class="mb-2" />
+            <MudNumericField T="int?" @bind-Value="_diagnosis.EstimatedRepairTimeDays"
+                             Label="Estimated days" Min="0" Class="mb-2" />
+            <MudSelect T="int?" @bind-Value="_diagnosis.PartId" Label="Stocked part" Clearable="true" Class="mb-2">
+                @foreach (var p in _parts)
+                {
+                    <MudSelectItem T="int?" Value="@p.Id">@p.Name (@p.StockQuantity in stock)</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField @bind-Value="_diagnosis.InternalNotes" Label="Internal notes" Lines="2" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _diagnosisOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddDiagnosis">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_assignOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:440px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">Assign Technician</MudText>
+            <MudSelect T="string" @bind-Value="_assignTechnicianId" Label="Technician">
+                @foreach (var t in _technicians)
+                {
+                    <MudSelectItem Value="@t.UserId">@t.FullName</MudSelectItem>
+                }
+            </MudSelect>
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _assignOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Assign"
+                           Disabled="@(_assignTechnicianId is null)">Assign</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_moveTo is { } moveTarget)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:440px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                Move to @JobWorkflow.Describe(moveTarget)?
+            </MudText>
+            <MudTextField @bind-Value="_moveNote" Label="Note" Lines="2" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _moveTo = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           OnClick="@(() => Move(moveTarget))">Confirm</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private RepairJob _job = new() { Customer = new Customer(), Intake = new Intake() };
+    private List<Part> _parts = [];
+    private List<PlatformUser> _technicians = [];
+
+    private bool _diagnosisOpen;
+    private Diagnosis _diagnosis = new();
+
+    private bool _assignOpen;
+    private string? _assignTechnicianId;
+
+    private JobStatus? _moveTo;
+    private string? _moveNote;
+
+    private bool _canEdit => _job.Status is not (JobStatus.Delivered or JobStatus.Cancelled);
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _job = await scope.ServiceProvider.GetRequiredService<IRepairJobService>().GetAsync(Id)
+               ?? throw new InvalidOperationException("Job not found.");
+        _parts = await scope.ServiceProvider.GetRequiredService<ICatalogService>().ListPartsAsync();
+    }
+
+    private async Task<(string Id, string Name)> ActorAsync()
+    {
+        var user = (await AuthState.GetAuthenticationStateAsync()).User;
+        return (user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+                user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown");
+    }
+
+    private async Task SaveJob()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IRepairJobService>().UpdateAsync(_job);
+            Snackbar.Add("Job saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task OpenAssign()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        // Anyone who can enter Repair is a candidate; the workshop knows who's who.
+        _technicians = (await scope.ServiceProvider.GetRequiredService<IPlatformUserDirectory>()
+            .ListForModuleAsync(AppModules.Repair)).ToList();
+        _assignTechnicianId = _job.AssignedTechnicianId;
+        _assignOpen = true;
+    }
+
+    private async Task Assign()
+    {
+        try
+        {
+            var technician = _technicians.First(t => t.UserId == _assignTechnicianId);
+            var (actorId, actorName) = await ActorAsync();
+
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IRepairJobService>()
+                .AssignAsync(_job.Id, technician.UserId, technician.FullName, actorId, actorName);
+
+            _assignOpen = false;
+            Snackbar.Add($"Assigned to {technician.FullName}.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private void OpenMove(JobStatus to) { _moveTo = to; _moveNote = null; }
+
+    private async Task Move(JobStatus to)
+    {
+        try
+        {
+            var (actorId, actorName) = await ActorAsync();
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IRepairJobService>()
+                .ChangeStatusAsync(_job.Id, to, _moveNote, actorId, actorName);
+
+            _moveTo = null;
+            Snackbar.Add($"Job is now {JobWorkflow.Describe(to)}.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); _moveTo = null; }
+    }
+
+    private async Task AddDiagnosis()
+    {
+        try
+        {
+            var (actorId, actorName) = await ActorAsync();
+            _diagnosis.RepairJobId = _job.Id;
+            _diagnosis.TechnicianId = actorId;
+            _diagnosis.TechnicianName = actorName;
+
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IRepairJobService>()
+                .AddDiagnosisAsync(_diagnosis);
+
+            _diagnosis = new Diagnosis();
+            _diagnosisOpen = false;
+            Snackbar.Add("Diagnosis recorded.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DeleteDiagnosis(int diagnosisId)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<IRepairJobService>()
+            .DeleteDiagnosisAsync(diagnosisId);
+        await LoadAsync();
+    }
+}

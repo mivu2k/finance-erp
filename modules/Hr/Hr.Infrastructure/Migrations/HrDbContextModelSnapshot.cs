@@ -107,7 +107,7 @@ namespace Hr.Infrastructure.Migrations
                     b.HasIndex("Type", "Year")
                         .IsUnique();
 
-                    b.ToTable("DocumentSequences");
+                    b.ToTable("DocumentSequences", (string)null);
                 });
 
             modelBuilder.Entity("Hr.Domain.Department", b =>
@@ -157,7 +157,7 @@ namespace Hr.Infrastructure.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("Departments");
+                    b.ToTable("Departments", (string)null);
                 });
 
             modelBuilder.Entity("Hr.Domain.Designation", b =>
@@ -203,7 +203,7 @@ namespace Hr.Infrastructure.Migrations
                     b.HasIndex("Title")
                         .IsUnique();
 
-                    b.ToTable("Designations");
+                    b.ToTable("Designations", (string)null);
                 });
 
             modelBuilder.Entity("Hr.Domain.Employee", b =>
@@ -372,7 +372,7 @@ namespace Hr.Infrastructure.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Employees");
+                    b.ToTable("Employees", (string)null);
                 });
 
             modelBuilder.Entity("Hr.Domain.EmployeeDocument", b =>
@@ -440,7 +440,7 @@ namespace Hr.Infrastructure.Migrations
 
                     b.HasIndex("ExpiresOn");
 
-                    b.ToTable("EmployeeDocuments");
+                    b.ToTable("EmployeeDocuments", (string)null);
                 });
 
             modelBuilder.Entity("Hr.Domain.Employee", b =>

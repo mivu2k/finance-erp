@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\shared\ErpPlatform.Shared.Web\ErpPlatform.Shared.Web.csproj" />
     <ProjectReference Include="..\..\modules\Hr\Hr.Web\Hr.Web.csproj" />
     <ProjectReference Include="..\..\modules\GatePass\GatePass.Web\GatePass.Web.csproj" />
+    <ProjectReference Include="..\..\modules\Repair\Repair.Web\Repair.Web.csproj" />
   </ItemGroup>
 
 </Project>

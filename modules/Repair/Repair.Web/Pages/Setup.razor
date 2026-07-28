@@ -1,0 +1,177 @@
+@page "/repair/setup"
+@attribute [Authorize(Policy = RepairPermissions.CatalogManage)]
+@layout RepairLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Repair Setup</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1">Setup</MudText>
+<MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+    The dropdown lists the counter and workshop pick from.
+</MudText>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Symptoms</MudText>
+            <div class="d-flex gap-2 mb-3">
+                <MudTextField @bind-Value="_newSymptom" Label="Name" Margin="Margin.Dense" Immediate="true" />
+                <MudTextField @bind-Value="_newSymptomCategory" Label="Category" Margin="Margin.Dense"
+                              Style="max-width:140px" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddSymptom"
+                           Disabled="@(string.IsNullOrWhiteSpace(_newSymptom))">Add</MudButton>
+            </div>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>Name</th><th>Category</th><th style="width:48px"></th></tr></thead>
+                <tbody>
+                    @foreach (var s in _symptoms)
+                    {
+                        <tr>
+                            <td>@s.Name</td><td>@s.Category</td>
+                            <td><MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                               Color="Color.Error"
+                                               OnClick="@(() => Remove("symptom", s.Id))" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Accessories</MudText>
+            <div class="d-flex gap-2 mb-3">
+                <MudTextField @bind-Value="_newAccessory" Label="Name" Margin="Margin.Dense" Immediate="true" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddAccessory"
+                           Disabled="@(string.IsNullOrWhiteSpace(_newAccessory))">Add</MudButton>
+            </div>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>Name</th><th style="width:48px"></th></tr></thead>
+                <tbody>
+                    @foreach (var a in _accessories)
+                    {
+                        <tr>
+                            <td>@a.Name</td>
+                            <td><MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                               Color="Color.Error"
+                                               OnClick="@(() => Remove("accessory", a.Id))" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Brands</MudText>
+            <div class="d-flex gap-2 mb-3">
+                <MudTextField @bind-Value="_newBrand" Label="Name" Margin="Margin.Dense" Immediate="true" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddBrand"
+                           Disabled="@(string.IsNullOrWhiteSpace(_newBrand))">Add</MudButton>
+            </div>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>Name</th><th style="width:48px"></th></tr></thead>
+                <tbody>
+                    @foreach (var b in _brands)
+                    {
+                        <tr>
+                            <td>@b.Name</td>
+                            <td><MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                               Color="Color.Error"
+                                               OnClick="@(() => Remove("brand", b.Id))" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Device types</MudText>
+            <div class="d-flex gap-2 mb-3">
+                <MudTextField @bind-Value="_newDevice" Label="Name" Margin="Margin.Dense" Immediate="true" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddDevice"
+                           Disabled="@(string.IsNullOrWhiteSpace(_newDevice))">Add</MudButton>
+            </div>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>Name</th><th style="width:48px"></th></tr></thead>
+                <tbody>
+                    @foreach (var d in _deviceTypes)
+                    {
+                        <tr>
+                            <td>@d.Name</td>
+                            <td><MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                               Color="Color.Error"
+                                               OnClick="@(() => Remove("device", d.Id))" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private List<Symptom> _symptoms = [];
+    private List<Accessory> _accessories = [];
+    private List<Brand> _brands = [];
+    private List<DeviceType> _deviceTypes = [];
+
+    private string _newSymptom = "", _newAccessory = "", _newBrand = "", _newDevice = "";
+    private string? _newSymptomCategory;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var catalog = scope.ServiceProvider.GetRequiredService<ICatalogService>();
+        _symptoms = await catalog.ListSymptomsAsync();
+        _accessories = await catalog.ListAccessoriesAsync();
+        _brands = await catalog.ListBrandsAsync();
+        _deviceTypes = await catalog.ListDeviceTypesAsync();
+        StateHasChanged();
+    }
+
+    private async Task Run(Func<ICatalogService, Task> action)
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await action(scope.ServiceProvider.GetRequiredService<ICatalogService>());
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private Task AddSymptom() => Run(async c =>
+    {
+        await c.AddSymptomAsync(_newSymptom, _newSymptomCategory);
+        _newSymptom = ""; _newSymptomCategory = null;
+    });
+
+    private Task AddAccessory() => Run(async c =>
+    {
+        await c.AddAccessoryAsync(_newAccessory);
+        _newAccessory = "";
+    });
+
+    private Task AddBrand() => Run(async c =>
+    {
+        await c.AddBrandAsync(_newBrand);
+        _newBrand = "";
+    });
+
+    private Task AddDevice() => Run(async c =>
+    {
+        await c.AddDeviceTypeAsync(_newDevice);
+        _newDevice = "";
+    });
+
+    private Task Remove(string kind, int id) => Run(c => c.RemoveCatalogEntryAsync(kind, id));
+}

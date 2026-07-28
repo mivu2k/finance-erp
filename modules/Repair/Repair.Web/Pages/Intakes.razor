@@ -1,0 +1,71 @@
+@page "/repair/intakes"
+@attribute [Authorize(Policy = RepairPermissions.IntakesView)]
+@layout RepairLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Intakes</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h5">Intakes</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@RepairPermissions.IntakesManage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.AddBox" Href="/repair/intakes/new">Book In</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudTextField @bind-Value="_search" Label="Search intake number, customer or phone"
+                  Margin="Margin.Dense" Immediate="true" DebounceInterval="300"
+                  OnDebounceIntervalElapsed="LoadAsync"
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr><th>Intake</th><th>Customer</th><th>Devices</th><th>Payment</th><th>Received</th><th>By</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var i in _intakes)
+            {
+                <tr>
+                    <td>@i.IntakeNumber</td>
+                    <td>@i.Customer.Name</td>
+                    <td>
+                        @foreach (var j in i.Jobs)
+                        {
+                            <MudLink Href="@($"/repair/jobs/{j.Id}")" Class="mr-2">@j.JobNumber</MudLink>
+                        }
+                    </td>
+                    <td>@i.PaymentMethod</td>
+                    <td>@i.ReceivedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                    <td>@i.ReceivedByName</td>
+                    <td>
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Receipt"
+                                       Href="@($"/repair/print/intake/{i.Id}")" Target="_blank" />
+                    </td>
+                </tr>
+            }
+            @if (_intakes.Count == 0)
+            {
+                <tr><td colspan="7" class="mud-text-secondary pa-4">Nothing booked in yet.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private List<Intake> _intakes = [];
+    private string? _search;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _intakes = await scope.ServiceProvider.GetRequiredService<IIntakeService>().ListAsync(_search);
+        StateHasChanged();
+    }
+}

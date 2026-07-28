@@ -1,0 +1,401 @@
+@page "/repair/quotations/new"
+@page "/repair/quotations/{Id:int}"
+@attribute [Authorize(Policy = RepairPermissions.QuotationsView)]
+@layout RepairLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>@(_isNew ? "New Quotation" : _q.QuotationNumber)</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/repair/quotations" />
+    <MudText Typo="Typo.h5">@(_isNew ? "New Quotation" : _q.QuotationNumber)</MudText>
+    @if (!_isNew)
+    {
+        <MudChip T="string" Size="Size.Small">@_q.Status</MudChip>
+    }
+    <MudSpacer />
+
+    @if (!_isNew)
+    {
+        <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                   Href="@($"/repair/print/quotation/{_q.Id}")" Target="_blank">PDF</MudButton>
+
+        @if (_q.Status == QuotationStatus.Draft)
+        {
+            <AuthorizeView Policy="@RepairPermissions.QuotationsManage" Context="sd">
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Class="ml-2"
+                           OnClick="Send">Mark Sent</MudButton>
+            </AuthorizeView>
+        }
+
+        @if (_q.Status == QuotationStatus.Approved
+             && _q.CustomerApproval == ApprovalState.Approved)
+        {
+            <AuthorizeView Policy="@RepairPermissions.OrdersManage" Context="om">
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Class="ml-2"
+                           StartIcon="@Icons.Material.Filled.ReceiptLong"
+                           OnClick="CreateOrder">Create Sales Order</MudButton>
+            </AuthorizeView>
+        }
+    }
+
+    @if (_editable)
+    {
+        <AuthorizeView Policy="@RepairPermissions.QuotationsManage" Context="sv">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="ml-2"
+                       OnClick="Save">Save</MudButton>
+        </AuthorizeView>
+    }
+</div>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="8">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Details</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" md="6">
+                    <MudAutocomplete T="RepairJob" Value="_job" ValueChanged="OnJobChanged"
+                                     Label="Repair job" SearchFunc="SearchJobs" Clearable="true"
+                                     ToStringFunc="@(j => j is null ? "" : $"{j.JobNumber} — {j.DeviceName}")"
+                                     Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudAutocomplete T="Customer" Value="_customer" ValueChanged="OnCustomerChanged"
+                                     Label="Customer" SearchFunc="SearchCustomers" Clearable="true"
+                                     ToStringFunc="@(c => c is null ? "" : $"{c.Name} — {c.Phone}")"
+                                     Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_q.Subject" Label="Subject" Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudTextField @bind-Value="_q.Reference" Label="Reference" Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudTextField @bind-Value="_q.Currency" Label="Currency" Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="6" md="4">
+                    <MudDatePicker Label="Date" Date="@(_q.Date.ToDateTime(TimeOnly.MinValue))"
+                                   DateChanged="@(d => _q.Date = d is null ? _q.Date : DateOnly.FromDateTime(d.Value))"
+                                   Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="6" md="4">
+                    <MudDatePicker Label="Valid until"
+                                   Date="@(_q.ValidUntil?.ToDateTime(TimeOnly.MinValue))"
+                                   DateChanged="@(d => _q.ValidUntil = d is null ? null : DateOnly.FromDateTime(d.Value))"
+                                   Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudTextField @bind-Value="_q.Project" Label="Project" Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_q.Notes" Label="Notes" Lines="2" Disabled="@(!_editable)" />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="4">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Approvals</MudText>
+            <div class="d-flex align-center mb-2">
+                <MudText Typo="Typo.body2" Style="width:110px">Customer</MudText>
+                <ApprovalChip State="@_q.CustomerApproval" />
+            </div>
+            <div class="d-flex align-center mb-3">
+                <MudText Typo="Typo.body2" Style="width:110px">Manager</MudText>
+                <ApprovalChip State="@_q.ManagerApproval" />
+            </div>
+
+            @if (!_isNew)
+            {
+                <AuthorizeView Policy="@RepairPermissions.QuotationsApprove" Context="ap">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        Both must approve before the quotation can be ordered; either rejection kills it.
+                    </MudText>
+                    <div class="d-flex gap-2 mt-2 flex-wrap">
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success"
+                                   OnClick="@(() => SetCustomer(ApprovalState.Approved))">Customer ✓</MudButton>
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
+                                   OnClick="@(() => SetCustomer(ApprovalState.Rejected))">Customer ✗</MudButton>
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success"
+                                   OnClick="@(() => SetManager(ApprovalState.Approved))">Manager ✓</MudButton>
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
+                                   OnClick="@(() => SetManager(ApprovalState.Rejected))">Manager ✗</MudButton>
+                    </div>
+                </AuthorizeView>
+            }
+
+            <MudDivider Class="my-4" />
+            <MudSimpleTable Dense="true">
+                <tbody>
+                    <tr><td>Parts</td><td style="text-align:right">@_q.PartsAmount.ToString("N2")</td></tr>
+                    <tr><td>Labour</td><td style="text-align:right">@_q.LaborAmount.ToString("N2")</td></tr>
+                    <tr><td>Subtotal</td><td style="text-align:right">@_q.Subtotal.ToString("N2")</td></tr>
+                    <tr><td>Discount</td><td style="text-align:right">@_q.DiscountAmount.ToString("N2")</td></tr>
+                    <tr><td>Tax</td><td style="text-align:right">@_q.TaxAmount.ToString("N2")</td></tr>
+                    <tr style="font-weight:600"><td>Total</td><td style="text-align:right">@_q.TotalAmount.ToString("N2")</td></tr>
+                </tbody>
+            </MudSimpleTable>
+
+            <MudGrid Spacing="2" Class="mt-2">
+                <MudItem xs="6">
+                    <MudNumericField T="decimal" Value="_q.LaborAmount" ValueChanged="OnLaborChanged"
+                                     Label="Labour charge" Min="0" Margin="Margin.Dense"
+                                     Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField T="decimal" Value="_q.DiscountAmount" ValueChanged="OnDiscountChanged"
+                                     Label="Discount" Min="0" Margin="Margin.Dense"
+                                     Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField T="decimal" Value="_q.TaxPercent" ValueChanged="OnTaxChanged"
+                                     Label="Tax %" Min="0" Max="100" Margin="Margin.Dense"
+                                     Disabled="@(!_editable)" />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <div class="d-flex align-center mb-3">
+                <MudText Typo="Typo.subtitle1">Lines</MudText>
+                <MudSpacer />
+                @if (_editable)
+                {
+                    <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="AddLine">Add line</MudButton>
+                }
+            </div>
+            <MudSimpleTable Dense="true">
+                <thead>
+                    <tr>
+                        <th style="width:130px">Type</th><th style="width:26%">Description</th>
+                        <th style="width:170px">Part</th><th style="width:100px">Qty</th>
+                        <th style="width:120px">Unit price</th><th style="width:110px">Discount</th>
+                        <th style="text-align:right">Amount</th><th style="width:48px"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in _q.Items)
+                    {
+                        var l = line;
+                        <tr>
+                            <td>
+                                <MudSelect T="QuotationItemType" Value="l.ItemType"
+                                           ValueChanged="@(v => { l.ItemType = v; Recalc(); })"
+                                           Margin="Margin.Dense" Disabled="@(!_editable)">
+                                    @foreach (var t in Enum.GetValues<QuotationItemType>())
+                                    {
+                                        <MudSelectItem Value="@t">@t</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </td>
+                            <td><MudTextField @bind-Value="l.Description" Margin="Margin.Dense" Disabled="@(!_editable)" /></td>
+                            <td>
+                                <MudSelect T="int?" Value="l.PartId" ValueChanged="@(v => OnPartPicked(l, v))"
+                                           Margin="Margin.Dense" Clearable="true" Disabled="@(!_editable)">
+                                    @foreach (var p in _parts)
+                                    {
+                                        <MudSelectItem T="int?" Value="@p.Id">@p.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </td>
+                            <td>
+                                <MudNumericField T="decimal" Value="l.Quantity"
+                                                 ValueChanged="@(v => { l.Quantity = v; Recalc(); })"
+                                                 Min="0" Margin="Margin.Dense" Disabled="@(!_editable)" />
+                            </td>
+                            <td>
+                                <MudNumericField T="decimal" Value="l.UnitPrice"
+                                                 ValueChanged="@(v => { l.UnitPrice = v; Recalc(); })"
+                                                 Min="0" Margin="Margin.Dense" Disabled="@(!_editable)" />
+                            </td>
+                            <td>
+                                <MudNumericField T="decimal" Value="l.Discount"
+                                                 ValueChanged="@(v => { l.Discount = v; Recalc(); })"
+                                                 Min="0" Margin="Margin.Dense" Disabled="@(!_editable)" />
+                            </td>
+                            <td style="text-align:right">@l.LineTotal.ToString("N2")</td>
+                            <td>
+                                @if (_editable)
+                                {
+                                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                                   Color="Color.Error"
+                                                   OnClick="@(() => { _q.Items.Remove(l); Recalc(); })" />
+                                }
+                            </td>
+                        </tr>
+                    }
+                    @if (_q.Items.Count == 0)
+                    {
+                        <tr><td colspan="8" class="mud-text-secondary">No lines yet.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private Quotation _q = new() { Date = DateOnly.FromDateTime(DateTime.UtcNow) };
+    private List<Part> _parts = [];
+    private RepairJob? _job;
+    private Customer? _customer;
+
+    private bool _isNew => Id is null;
+    private bool _editable => _isNew || _q.Status != QuotationStatus.Approved;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _parts = await scope.ServiceProvider.GetRequiredService<ICatalogService>().ListPartsAsync();
+
+        if (Id is { } id)
+        {
+            _q = await scope.ServiceProvider.GetRequiredService<IQuotationService>().GetAsync(id)
+                 ?? throw new InvalidOperationException("Quotation not found.");
+            _job = _q.RepairJob;
+            _customer = _q.Customer;
+        }
+        else
+        {
+            _q = new Quotation { Date = DateOnly.FromDateTime(DateTime.UtcNow), Currency = "PKR" };
+            AddLine();
+        }
+    }
+
+    private void AddLine()
+    {
+        _q.Items.Add(new QuotationItem { Quantity = 1 });
+        Recalc();
+    }
+
+    /// <summary>Mirrors the server-side arithmetic so the totals move as you type.</summary>
+    private void Recalc() => IQuotationService.Recalculate(_q);
+
+    private void OnLaborChanged(decimal v) { _q.LaborAmount = v; Recalc(); }
+    private void OnDiscountChanged(decimal v) { _q.DiscountAmount = v; Recalc(); }
+    private void OnTaxChanged(decimal v) { _q.TaxPercent = v; Recalc(); }
+
+    private void OnPartPicked(QuotationItem line, int? partId)
+    {
+        line.PartId = partId;
+        if (_parts.FirstOrDefault(p => p.Id == partId) is { } part)
+        {
+            line.ItemType = QuotationItemType.Part;
+            if (string.IsNullOrWhiteSpace(line.Description)) line.Description = part.Name;
+            if (line.UnitPrice == 0) line.UnitPrice = part.Price;
+        }
+        Recalc();
+    }
+
+    private void OnJobChanged(RepairJob? job)
+    {
+        _job = job;
+        _q.RepairJobId = job?.Id;
+        if (job is not null)
+        {
+            _q.CustomerId = job.CustomerId;
+            _customer = job.Customer;
+            _q.Subject ??= $"{job.DeviceName} repair";
+        }
+    }
+
+    private void OnCustomerChanged(Customer? c)
+    {
+        _customer = c;
+        _q.CustomerId = c?.Id;
+    }
+
+    private async Task<IEnumerable<RepairJob>> SearchJobs(string value, CancellationToken ct)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<IRepairJobService>()
+            .ListAsync(new JobFilter(value), ct);
+    }
+
+    private async Task<IEnumerable<Customer>> SearchCustomers(string value, CancellationToken ct)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<ICustomerService>().ListAsync(value, ct);
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            var user = (await AuthState.GetAuthenticationStateAsync()).User;
+            var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+            var name = user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown";
+
+            using var scope = ScopeFactory.CreateScope();
+            var saved = await scope.ServiceProvider.GetRequiredService<IQuotationService>()
+                .SaveAsync(_q, userId, name);
+
+            Snackbar.Add("Quotation saved.", Severity.Success);
+            if (_isNew) Nav.NavigateTo($"/repair/quotations/{saved.Id}");
+            else await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Send() => await Act(async s =>
+    {
+        await s.SendAsync(_q.Id);
+        Snackbar.Add("Marked as sent.", Severity.Success);
+    });
+
+    private async Task SetCustomer(ApprovalState state) => await Act(async s =>
+    {
+        await s.SetCustomerApprovalAsync(_q.Id, state);
+        Snackbar.Add($"Customer approval: {state}.", Severity.Info);
+    });
+
+    private async Task SetManager(ApprovalState state) => await Act(async s =>
+    {
+        var user = (await AuthState.GetAuthenticationStateAsync()).User;
+        var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+        await s.SetManagerApprovalAsync(_q.Id, state, userId);
+        Snackbar.Add($"Manager approval: {state}.", Severity.Info);
+    });
+
+    private async Task Act(Func<IQuotationService, Task> action)
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await action(scope.ServiceProvider.GetRequiredService<IQuotationService>());
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task CreateOrder()
+    {
+        try
+        {
+            var user = (await AuthState.GetAuthenticationStateAsync()).User;
+            var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+            var name = user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown";
+
+            using var scope = ScopeFactory.CreateScope();
+            var order = await scope.ServiceProvider.GetRequiredService<ISalesOrderService>()
+                .CreateFromQuotationAsync(_q.Id, userId, name);
+
+            Snackbar.Add($"Sales order {order.OrderNumber} created.", Severity.Success);
+            Nav.NavigateTo($"/repair/orders/{order.Id}");
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

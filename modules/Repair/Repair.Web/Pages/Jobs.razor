@@ -1,0 +1,112 @@
+@page "/repair/jobs"
+@attribute [Authorize(Policy = RepairPermissions.JobsView)]
+@layout RepairLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>Repair Jobs</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h5">Repair Jobs</MudText>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_search" Label="Search job no, device, serial or customer"
+                          Margin="Margin.Dense" Immediate="true" DebounceInterval="300"
+                          OnDebounceIntervalElapsed="LoadAsync"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudSelect T="JobStatus?" Value="_status" ValueChanged="OnStatusChanged"
+                       Label="Status" Margin="Margin.Dense" Clearable="true">
+                @foreach (var s in Enum.GetValues<JobStatus>())
+                {
+                    <MudSelectItem T="JobStatus?" Value="@s">@JobWorkflow.Describe(s)</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" md="2" Class="d-flex align-center">
+            <MudSwitch T="bool" Value="_openOnly" ValueChanged="OnOpenChanged"
+                       Label="Open only" Color="Color.Primary" />
+        </MudItem>
+        <MudItem xs="6" md="2" Class="d-flex align-center">
+            <MudSwitch T="bool" Value="_overdueOnly" ValueChanged="OnOverdueChanged"
+                       Label="Overdue" Color="Color.Error" />
+        </MudItem>
+        <MudItem xs="6" md="1" Class="d-flex align-center">
+            <MudSwitch T="bool" Value="_urgentOnly" ValueChanged="OnUrgentChanged"
+                       Label="Urgent" Color="Color.Warning" />
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr>
+                <th>Job No</th><th>Customer</th><th>Device</th><th>Serial</th>
+                <th>Technician</th><th>Due</th><th>Priority</th><th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var j in _jobs)
+            {
+                <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/repair/jobs/{j.Id}"))">
+                    <td>@j.JobNumber</td>
+                    <td>@j.Customer.Name</td>
+                    <td>@j.DeviceName @j.Model</td>
+                    <td>@j.SerialNumber</td>
+                    <td>@(j.AssignedTechnicianName ?? "—")</td>
+                    <td>
+                        @if (j.ExpectedDeliveryDate is { } due)
+                        {
+                            <span style="@(due < _today && JobWorkflow.Open.Contains(j.Status)
+                                           ? "color:var(--mud-palette-error);font-weight:600" : "")">
+                                @due.ToString("yyyy-MM-dd")
+                            </span>
+                        }
+                    </td>
+                    <td>
+                        @if (j.Priority == JobPriority.Urgent)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning">Urgent</MudChip>
+                        }
+                    </td>
+                    <td><JobStatusChip Status="@j.Status" /></td>
+                </tr>
+            }
+            @if (_jobs.Count == 0)
+            {
+                <tr><td colspan="8" class="mud-text-secondary pa-4">No jobs match this filter.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private List<RepairJob> _jobs = [];
+    private string? _search;
+    private JobStatus? _status;
+    private bool _openOnly = true, _overdueOnly, _urgentOnly;
+    private readonly DateOnly _today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task OnStatusChanged(JobStatus? v) { _status = v; await LoadAsync(); }
+    private async Task OnOpenChanged(bool v) { _openOnly = v; await LoadAsync(); }
+    private async Task OnOverdueChanged(bool v) { _overdueOnly = v; await LoadAsync(); }
+    private async Task OnUrgentChanged(bool v) { _urgentOnly = v; await LoadAsync(); }
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _jobs = await scope.ServiceProvider.GetRequiredService<IRepairJobService>()
+            .ListAsync(new JobFilter(
+                _search, _status, _openOnly, null,
+                _urgentOnly ? JobPriority.Urgent : null, _overdueOnly));
+        StateHasChanged();
+    }
+}

@@ -1,0 +1,241 @@
+@page "/repair/intakes/new"
+@attribute [Authorize(Policy = RepairPermissions.IntakesManage)]
+@layout RepairLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>Book In</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/repair/intakes" />
+    <MudText Typo="Typo.h5">Book Devices In</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Receive">
+        Receive @(_devices.Count) device(s)
+    </MudButton>
+</div>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Customer</MudText>
+            <MudAutocomplete T="Customer" Value="_customer" ValueChanged="OnCustomerChanged"
+                             Label="Search existing customer" SearchFunc="SearchCustomers"
+                             ToStringFunc="@(c => c is null ? "" : $"{c.Name} — {c.Phone}")"
+                             Clearable="true" Class="mb-3" />
+
+            <MudExpansionPanels Elevation="0">
+                <MudExpansionPanel Text="Or add a new customer">
+                    <MudTextField @bind-Value="_newCustomer.Name" Label="Name" Class="mb-2" />
+                    <MudTextField @bind-Value="_newCustomer.Phone" Label="Phone" Class="mb-2" />
+                    <MudTextField @bind-Value="_newCustomer.Organization" Label="Organisation" Class="mb-2" />
+                    <MudTextField @bind-Value="_newCustomer.Email" Label="Email" Class="mb-2" />
+                    <MudButton Variant="Variant.Outlined" OnClick="CreateCustomer"
+                               Disabled="@(string.IsNullOrWhiteSpace(_newCustomer.Name)
+                                           || string.IsNullOrWhiteSpace(_newCustomer.Phone))">
+                        Add &amp; select
+                    </MudButton>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+
+            <MudDivider Class="my-4" />
+            <MudSelect T="PaymentMethod" @bind-Value="_intake.PaymentMethod" Label="Payment basis" Class="mb-2">
+                @foreach (var m in Enum.GetValues<PaymentMethod>())
+                {
+                    <MudSelectItem Value="@m">@m</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField @bind-Value="_intake.Notes" Label="Intake notes" Lines="2" />
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-4">
+            <div class="d-flex align-center mb-3">
+                <MudText Typo="Typo.subtitle1">Devices</MudText>
+                <MudSpacer />
+                <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="AddDevice">Add device</MudButton>
+            </div>
+
+            @foreach (var d in _devices)
+            {
+                var device = d;
+                <MudPaper Class="pa-3 mb-3" Elevation="0"
+                          Style="border:1px solid var(--mud-palette-divider)">
+                    <div class="d-flex align-center mb-2">
+                        <MudText Typo="Typo.subtitle2">Device @(_devices.IndexOf(device) + 1)</MudText>
+                        <MudSpacer />
+                        @if (_devices.Count > 1)
+                        {
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Error" OnClick="@(() => _devices.Remove(device))" />
+                        }
+                    </div>
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12" md="5">
+                            <MudAutocomplete T="string" @bind-Value="device.DeviceName" Label="Device *"
+                                             SearchFunc="@((s, _) => SearchList(_deviceTypes, s))"
+                                             CoerceValue="true" Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="6" md="4">
+                            <MudAutocomplete T="string" @bind-Value="device.Brand" Label="Brand"
+                                             SearchFunc="@((s, _) => SearchList(_brands, s))"
+                                             CoerceValue="true" Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="6" md="3">
+                            <MudTextField @bind-Value="device.Model" Label="Model" Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="6" md="4">
+                            <MudTextField @bind-Value="device.SerialNumber" Label="Serial" Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="6" md="4">
+                            <MudSelect T="DeviceCondition" @bind-Value="device.Condition"
+                                       Label="Condition" Margin="Margin.Dense">
+                                @foreach (var c in Enum.GetValues<DeviceCondition>())
+                                {
+                                    <MudSelectItem Value="@c">@c</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="6" md="4">
+                            <MudSelect T="JobPriority" @bind-Value="device.Priority"
+                                       Label="Priority" Margin="Margin.Dense">
+                                @foreach (var p in Enum.GetValues<JobPriority>())
+                                {
+                                    <MudSelectItem Value="@p">@p</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudDatePicker Label="Expected delivery" Date="device.ExpectedDelivery"
+                                           DateChanged="@(x => device.ExpectedDelivery = x)"
+                                           Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="device.IssueDescription" Label="Reported fault *"
+                                          Lines="2" Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudSelect T="int" MultiSelection="true" @bind-SelectedValues="device.SymptomIds"
+                                       Label="Symptoms" Margin="Margin.Dense">
+                                @foreach (var s in _symptoms)
+                                {
+                                    <MudSelectItem T="int" Value="@s.Id">@s.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudSelect T="int" MultiSelection="true" @bind-SelectedValues="device.AccessoryIds"
+                                       Label="Accessories received" Margin="Margin.Dense">
+                                @foreach (var a in _accessories)
+                                {
+                                    <MudSelectItem T="int" Value="@a.Id">@a.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    /// <summary>Mutable form row; converted to the service DTO on submit.</summary>
+    private sealed class DeviceForm
+    {
+        public string DeviceName { get; set; } = "";
+        public string Brand { get; set; } = "";
+        public string? Model { get; set; }
+        public string? SerialNumber { get; set; }
+        public DeviceCondition Condition { get; set; } = DeviceCondition.Good;
+        public string IssueDescription { get; set; } = "";
+        public JobPriority Priority { get; set; } = JobPriority.Normal;
+        public DateTime? ExpectedDelivery { get; set; }
+        public IEnumerable<int> SymptomIds { get; set; } = [];
+        public IEnumerable<int> AccessoryIds { get; set; } = [];
+    }
+
+    private readonly Intake _intake = new();
+    private readonly List<DeviceForm> _devices = [new()];
+    private Customer? _customer;
+    private Customer _newCustomer = new();
+
+    private List<Symptom> _symptoms = [];
+    private List<Accessory> _accessories = [];
+    private List<string> _brands = [];
+    private List<string> _deviceTypes = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var catalog = scope.ServiceProvider.GetRequiredService<ICatalogService>();
+        _symptoms = await catalog.ListSymptomsAsync();
+        _accessories = await catalog.ListAccessoriesAsync();
+        _brands = (await catalog.ListBrandsAsync()).Select(b => b.Name).ToList();
+        _deviceTypes = (await catalog.ListDeviceTypesAsync()).Select(d => d.Name).ToList();
+    }
+
+    private void AddDevice() => _devices.Add(new DeviceForm());
+
+    private void OnCustomerChanged(Customer? c)
+    {
+        _customer = c;
+        _intake.CustomerId = c?.Id ?? 0;
+    }
+
+    private async Task<IEnumerable<Customer>> SearchCustomers(string value, CancellationToken ct)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<ICustomerService>().ListAsync(value, ct);
+    }
+
+    private static Task<IEnumerable<string>> SearchList(List<string> options, string? value) =>
+        Task.FromResult(string.IsNullOrWhiteSpace(value)
+            ? options.AsEnumerable()
+            : options.Where(o => o.Contains(value, StringComparison.OrdinalIgnoreCase)));
+
+    private async Task CreateCustomer()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var saved = await scope.ServiceProvider.GetRequiredService<ICustomerService>()
+                .SaveAsync(_newCustomer);
+            OnCustomerChanged(saved);
+            _newCustomer = new Customer();
+            Snackbar.Add("Customer added.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Receive()
+    {
+        try
+        {
+            if (_customer is null) throw new InvalidOperationException("Select a customer first.");
+
+            var user = (await AuthState.GetAuthenticationStateAsync()).User;
+            var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+            var name = user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown";
+
+            var devices = _devices.Select(d => new IntakeDeviceDto(
+                d.DeviceName, d.Brand, d.Model, d.SerialNumber, d.Condition,
+                d.IssueDescription, d.Priority,
+                d.ExpectedDelivery is null ? null : DateOnly.FromDateTime(d.ExpectedDelivery.Value),
+                d.SymptomIds.ToList(), d.AccessoryIds.ToList())).ToList();
+
+            using var scope = ScopeFactory.CreateScope();
+            var intake = await scope.ServiceProvider.GetRequiredService<IIntakeService>()
+                .ReceiveAsync(_intake, devices, userId, name);
+
+            Snackbar.Add($"{intake.IntakeNumber} booked in with {intake.Jobs.Count} job(s).",
+                Severity.Success);
+            Nav.NavigateTo("/repair/intakes");
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

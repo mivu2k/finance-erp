@@ -1,0 +1,48 @@
+<MudNavMenu>
+    <MudNavLink Href="/repair" Icon="@Icons.Material.Filled.Dashboard" Match="NavLinkMatch.All">
+        Dashboard
+    </MudNavLink>
+
+    <AuthorizeView Policy="@RepairPermissions.JobsView">
+        <MudNavGroup Title="Workshop" Icon="@Icons.Material.Filled.Build" Expanded="true">
+            <MudNavLink Href="/repair/jobs" Icon="@Icons.Material.Filled.List">Jobs</MudNavLink>
+            <AuthorizeView Policy="@RepairPermissions.IntakesView" Context="iv">
+                <MudNavLink Href="/repair/intakes" Icon="@Icons.Material.Filled.Inbox">Intakes</MudNavLink>
+            </AuthorizeView>
+            <AuthorizeView Policy="@RepairPermissions.IntakesManage" Context="im">
+                <MudNavLink Href="/repair/intakes/new" Icon="@Icons.Material.Filled.AddBox">
+                    Book In
+                </MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@RepairPermissions.CustomersView" Context="cv">
+        <MudNavLink Href="/repair/customers" Icon="@Icons.Material.Filled.People">Customers</MudNavLink>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@RepairPermissions.QuotationsView" Context="qv">
+        <MudNavGroup Title="Commercial" Icon="@Icons.Material.Filled.RequestQuote" Expanded="true">
+            <MudNavLink Href="/repair/quotations" Icon="@Icons.Material.Filled.Description">
+                Quotations
+            </MudNavLink>
+            <AuthorizeView Policy="@RepairPermissions.OrdersView" Context="ov">
+                <MudNavLink Href="/repair/orders" Icon="@Icons.Material.Filled.ReceiptLong">
+                    Sales Orders
+                </MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@RepairPermissions.PartsView" Context="pv">
+        <MudNavLink Href="/repair/parts" Icon="@Icons.Material.Filled.Inventory2">Parts</MudNavLink>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@RepairPermissions.ReportsView" Context="rv">
+        <MudNavLink Href="/repair/tracking" Icon="@Icons.Material.Filled.Timeline">Tracking</MudNavLink>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@RepairPermissions.CatalogManage" Context="cm">
+        <MudNavLink Href="/repair/setup" Icon="@Icons.Material.Filled.Settings">Setup</MudNavLink>
+    </AuthorizeView>
+</MudNavMenu>

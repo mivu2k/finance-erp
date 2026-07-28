@@ -1,0 +1,89 @@
+@page "/repair/orders"
+@attribute [Authorize(Policy = RepairPermissions.OrdersView)]
+@layout RepairLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>Sales Orders</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Sales Orders</MudText>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="8">
+            <MudTextField @bind-Value="_search" Label="Search order number or customer"
+                          Margin="Margin.Dense" Immediate="true" DebounceInterval="300"
+                          OnDebounceIntervalElapsed="LoadAsync"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudSelect T="PaymentStatus?" Value="_status" ValueChanged="OnStatusChanged"
+                       Label="Payment status" Margin="Margin.Dense" Clearable="true">
+                @foreach (var s in Enum.GetValues<PaymentStatus>())
+                {
+                    <MudSelectItem T="PaymentStatus?" Value="@s">@s</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr>
+                <th>Order</th><th>Customer</th><th>Date</th>
+                <th style="text-align:right">Total</th><th style="text-align:right">Paid</th>
+                <th style="text-align:right">Balance</th><th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var o in _orders)
+            {
+                <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/repair/orders/{o.Id}"))">
+                    <td>@o.OrderNumber</td>
+                    <td>@o.Customer.Name</td>
+                    <td>@o.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                    <td style="text-align:right">@o.TotalAmount.ToString("N2")</td>
+                    <td style="text-align:right">@o.AmountPaid.ToString("N2")</td>
+                    <td style="text-align:right">@o.Balance.ToString("N2")</td>
+                    <td>
+                        <MudChip T="string" Size="Size.Small" Color="@Colour(o.PaymentStatus)">
+                            @o.PaymentStatus
+                        </MudChip>
+                    </td>
+                </tr>
+            }
+            @if (_orders.Count == 0)
+            {
+                <tr><td colspan="7" class="mud-text-secondary pa-4">No orders match this filter.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private List<SalesOrder> _orders = [];
+    private string? _search;
+    private PaymentStatus? _status;
+
+    private static Color Colour(PaymentStatus s) => s switch
+    {
+        PaymentStatus.Paid => Color.Success,
+        PaymentStatus.Partial => Color.Warning,
+        _ => Color.Error
+    };
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task OnStatusChanged(PaymentStatus? v) { _status = v; await LoadAsync(); }
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _orders = await scope.ServiceProvider.GetRequiredService<ISalesOrderService>()
+            .ListAsync(_search, _status);
+        StateHasChanged();
+    }
+}

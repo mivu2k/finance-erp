@@ -1,0 +1,66 @@
+@page "/repair/tracking"
+@attribute [Authorize(Policy = RepairPermissions.ReportsView)]
+@layout RepairLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Tracking</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1">Workshop Tracking</MudText>
+<MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+    Where every device is in the pipeline, and how long it has been sitting there.
+</MudText>
+
+<MudGrid Spacing="3">
+    @foreach (var stage in JobWorkflow.Open)
+    {
+        var jobs = _byStage.GetValueOrDefault(stage, []);
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-3" Style="height:100%">
+                <div class="d-flex align-center mb-2">
+                    <MudText Typo="Typo.subtitle2">@JobWorkflow.Describe(stage)</MudText>
+                    <MudSpacer />
+                    <MudChip T="string" Size="Size.Small">@jobs.Count</MudChip>
+                </div>
+                @foreach (var j in jobs)
+                {
+                    var days = (DateTime.UtcNow - j.StatusUpdatedAtUtc).TotalDays;
+                    <MudPaper Class="pa-2 mb-2" Elevation="0"
+                              Style="border:1px solid var(--mud-palette-divider)">
+                        <MudLink Href="@($"/repair/jobs/{j.Id}")" Typo="Typo.body2">
+                            <b>@j.JobNumber</b>
+                        </MudLink>
+                        <MudText Typo="Typo.caption" Class="d-block">@j.DeviceName</MudText>
+                        <MudText Typo="Typo.caption" Class="d-block mud-text-secondary">
+                            @j.Customer.Name
+                        </MudText>
+                        <MudText Typo="Typo.caption"
+                                 Style="@(days > 7 ? "color:var(--mud-palette-error)" : "")">
+                            @($"{days:0} day(s) at this stage")
+                        </MudText>
+                    </MudPaper>
+                }
+                @if (jobs.Count == 0)
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Empty.</MudText>
+                }
+            </MudPaper>
+        </MudItem>
+    }
+</MudGrid>
+
+@code {
+    private Dictionary<JobStatus, List<RepairJob>> _byStage = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var jobs = await scope.ServiceProvider.GetRequiredService<IRepairJobService>()
+            .ListAsync(new JobFilter(OpenOnly: true));
+
+        _byStage = jobs
+            .GroupBy(j => j.Status)
+            .ToDictionary(g => g.Key,
+                g => g.OrderBy(j => j.StatusUpdatedAtUtc).ToList());
+    }
+}

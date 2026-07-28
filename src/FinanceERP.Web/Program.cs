@@ -4,11 +4,13 @@ using ErpPlatform.Shared.Web.Security;
 using FinanceERP.Infrastructure;
 using GatePass.Infrastructure;
 using Hr.Infrastructure;
+using Repair.Infrastructure;
 using FinanceERP.Infrastructure.Persistence;
 using FinanceERP.Web.Components;
 using FinanceERP.Web.Components.Account;
 using FinanceERP.Web.Endpoints;
 using GatePass.Web;
+using Repair.Web;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -59,6 +61,7 @@ builder.Services.AddPlatformIdentity(builder.Configuration);
 builder.Services.AddFinanceModule(builder.Configuration);
 builder.Services.AddHrModule(builder.Configuration);
 builder.Services.AddGatePassModule(builder.Configuration);
+builder.Services.AddRepairModule(builder.Configuration);
 
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
 
@@ -94,6 +97,7 @@ using (var scope = app.Services.CreateScope())
 
     await HrModule.SeedAsync(sp.GetRequiredService<HrDbContext>(), logger);
     await GatePassModule.SeedAsync(sp.GetRequiredService<GatePassDbContext>(), logger);
+    await RepairModule.SeedAsync(sp.GetRequiredService<RepairDbContext>(), logger);
 }
 
 if (app.Environment.IsDevelopment())
@@ -118,12 +122,14 @@ app.MapRazorComponents<App>()
     .AddAdditionalAssemblies(
         typeof(ErpPlatform.Shared.Web.Portal.Portal).Assembly,
         typeof(Hr.Web.Layout.HrLayout).Assembly,
-        typeof(GatePass.Web.Layout.GatePassLayout).Assembly);
+        typeof(GatePass.Web.Layout.GatePassLayout).Assembly,
+        typeof(Repair.Web.Layout.RepairLayout).Assembly);
 
 app.MapAdditionalIdentityEndpoints();
 app.MapExportEndpoints();
 app.MapPrintEndpoints();
 app.MapGatePassPrintEndpoints();
+app.MapRepairPrintEndpoints();
 
 // Authenticated receipt downloads (files live outside wwwroot).
 app.MapGet("/files/receipts/{name}", (string name, FinanceERP.Web.Services.ReceiptStorage storage) =>

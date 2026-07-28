@@ -1,0 +1,99 @@
+@page "/repair/quotations"
+@attribute [Authorize(Policy = RepairPermissions.QuotationsView)]
+@layout RepairLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>Quotations</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h5">Quotations</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@RepairPermissions.QuotationsManage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.AddBox"
+                   Href="/repair/quotations/new">New Quotation</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="8">
+            <MudTextField @bind-Value="_search" Label="Search number, subject, customer or job"
+                          Margin="Margin.Dense" Immediate="true" DebounceInterval="300"
+                          OnDebounceIntervalElapsed="LoadAsync"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudSelect T="QuotationStatus?" Value="_status" ValueChanged="OnStatusChanged"
+                       Label="Status" Margin="Margin.Dense" Clearable="true">
+                @foreach (var s in Enum.GetValues<QuotationStatus>())
+                {
+                    <MudSelectItem T="QuotationStatus?" Value="@s">@s</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr>
+                <th>Number</th><th>Date</th><th>Customer</th><th>Job</th><th>Subject</th>
+                <th style="text-align:right">Total</th><th>Customer OK</th><th>Manager OK</th><th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var q in _quotations)
+            {
+                <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/repair/quotations/{q.Id}"))">
+                    <td>@q.QuotationNumber</td>
+                    <td>@q.Date.ToString("yyyy-MM-dd")</td>
+                    <td>@q.Customer?.Name</td>
+                    <td>@q.RepairJob?.JobNumber</td>
+                    <td>@q.Subject</td>
+                    <td style="text-align:right">@q.TotalAmount.ToString("N2")</td>
+                    <td><ApprovalChip State="@q.CustomerApproval" /></td>
+                    <td><ApprovalChip State="@q.ManagerApproval" /></td>
+                    <td>
+                        <MudChip T="string" Size="Size.Small" Color="@Colour(q.Status)">@q.Status</MudChip>
+                    </td>
+                </tr>
+            }
+            @if (_quotations.Count == 0)
+            {
+                <tr><td colspan="9" class="mud-text-secondary pa-4">No quotations match this filter.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private List<Quotation> _quotations = [];
+    private string? _search;
+    private QuotationStatus? _status;
+
+    private static Color Colour(QuotationStatus s) => s switch
+    {
+        QuotationStatus.Draft => Color.Default,
+        QuotationStatus.Sent or QuotationStatus.Pending => Color.Info,
+        QuotationStatus.Approved => Color.Success,
+        QuotationStatus.Rejected => Color.Error,
+        QuotationStatus.Expired => Color.Warning,
+        _ => Color.Default
+    };
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task OnStatusChanged(QuotationStatus? v) { _status = v; await LoadAsync(); }
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _quotations = await scope.ServiceProvider.GetRequiredService<IQuotationService>()
+            .ListAsync(_search, _status);
+        StateHasChanged();
+    }
+}

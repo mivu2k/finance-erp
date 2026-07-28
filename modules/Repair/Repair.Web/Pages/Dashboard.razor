@@ -1,0 +1,115 @@
+@page "/repair"
+@attribute [Authorize(Policy = "module:repair")]
+@layout RepairLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Repair</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Repair Workshop</MudText>
+
+<MudGrid Spacing="3">
+    @foreach (var (label, count, colour) in _tiles)
+    {
+        <MudItem xs="6" sm="4" md="2">
+            <MudPaper Class="pa-4">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">@label</MudText>
+                <MudText Typo="Typo.h4" Color="@colour">@count</MudText>
+            </MudPaper>
+        </MudItem>
+    }
+
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Open jobs</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead>
+                    <tr><th>Job</th><th>Customer</th><th>Device</th><th>Technician</th><th>Due</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var j in _open.Take(12))
+                    {
+                        <tr>
+                            <td><MudLink Href="@($"/repair/jobs/{j.Id}")">@j.JobNumber</MudLink></td>
+                            <td>@j.Customer.Name</td>
+                            <td>@j.DeviceName</td>
+                            <td>@(j.AssignedTechnicianName ?? "—")</td>
+                            <td>
+                                @if (j.ExpectedDeliveryDate is { } due)
+                                {
+                                    <span style="@(due < _today ? "color:var(--mud-palette-error);font-weight:600" : "")">
+                                        @due.ToString("yyyy-MM-dd")
+                                    </span>
+                                }
+                            </td>
+                            <td><JobStatusChip Status="@j.Status" /></td>
+                        </tr>
+                    }
+                    @if (_open.Count == 0)
+                    {
+                        <tr><td colspan="6" class="mud-text-secondary pa-4">Nothing in the workshop.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Low stock</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>Part</th><th>SKU</th><th style="text-align:right">On hand</th></tr></thead>
+                <tbody>
+                    @foreach (var p in _lowStock.Take(10))
+                    {
+                        <tr>
+                            <td>@p.Name</td>
+                            <td>@p.Sku</td>
+                            <td style="text-align:right">
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(p.StockQuantity == 0 ? Color.Error : Color.Warning)">
+                                    @p.StockQuantity
+                                </MudChip>
+                            </td>
+                        </tr>
+                    }
+                    @if (_lowStock.Count == 0)
+                    {
+                        <tr><td colspan="3" class="mud-text-secondary pa-4">Stock levels are fine.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private List<RepairJob> _open = [];
+    private List<Part> _lowStock = [];
+    private List<(string Label, int Count, Color Colour)> _tiles = [];
+    private readonly DateOnly _today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var jobs = scope.ServiceProvider.GetRequiredService<IRepairJobService>();
+        var catalog = scope.ServiceProvider.GetRequiredService<ICatalogService>();
+        var orders = scope.ServiceProvider.GetRequiredService<ISalesOrderService>();
+
+        _open = await jobs.ListAsync(new JobFilter(OpenOnly: true));
+        _lowStock = await catalog.ListPartsAsync(lowStockOnly: true);
+        var unpaid = await orders.ListAsync(status: PaymentStatus.Unpaid);
+
+        int At(JobStatus s) => _open.Count(j => j.Status == s);
+
+        _tiles =
+        [
+            ("Received", At(JobStatus.Received), Color.Default),
+            ("Diagnosing", At(JobStatus.Diagnosing), Color.Info),
+            ("Awaiting OK", At(JobStatus.WaitingApproval), Color.Warning),
+            ("In progress", At(JobStatus.InProgress), Color.Primary),
+            ("Overdue", _open.Count(j => j.ExpectedDeliveryDate is { } d && d < _today), Color.Error),
+            ("Unpaid orders", unpaid.Count, Color.Secondary)
+        ];
+    }
+}

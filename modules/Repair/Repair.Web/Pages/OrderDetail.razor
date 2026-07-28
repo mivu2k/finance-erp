@@ -1,0 +1,199 @@
+@page "/repair/orders/{Id:int}"
+@attribute [Authorize(Policy = RepairPermissions.OrdersView)]
+@layout RepairLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>@_order.OrderNumber</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/repair/orders" />
+    <MudText Typo="Typo.h5">@_order.OrderNumber</MudText>
+    <MudChip T="string" Size="Size.Small" Color="@Colour(_order.PaymentStatus)">
+        @_order.PaymentStatus
+    </MudChip>
+    <MudSpacer />
+    <MudButton Variant="Variant.Outlined" Size="Size.Small"
+               StartIcon="@Icons.Material.Filled.PictureAsPdf"
+               Href="@($"/repair/print/invoice/{_order.Id}")" Target="_blank">Invoice</MudButton>
+    @if (_order.PaymentStatus != PaymentStatus.Paid)
+    {
+        <AuthorizeView Policy="@RepairPermissions.PaymentsRecord" Context="pr">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="ml-2"
+                       StartIcon="@Icons.Material.Filled.Payments"
+                       OnClick="OpenPayment">Record Payment</MudButton>
+        </AuthorizeView>
+    }
+</div>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Lines</MudText>
+            <MudSimpleTable Dense="true">
+                <thead>
+                    <tr><th>Description</th><th style="text-align:right">Qty</th>
+                        <th style="text-align:right">Unit</th><th style="text-align:right">Amount</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in _order.Quotation.Items)
+                    {
+                        <tr>
+                            <td>@item.Description</td>
+                            <td style="text-align:right">@item.Quantity.ToString("0.##")</td>
+                            <td style="text-align:right">@item.UnitPrice.ToString("N2")</td>
+                            <td style="text-align:right">@item.LineTotal.ToString("N2")</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Summary</MudText>
+            <MudSimpleTable Dense="true">
+                <tbody>
+                    <tr><td>Customer</td><td>@_order.Customer.Name</td></tr>
+                    <tr><td>Quotation</td><td>
+                        <MudLink Href="@($"/repair/quotations/{_order.QuotationId}")">
+                            @_order.Quotation.QuotationNumber
+                        </MudLink></td></tr>
+                    <tr><td>Finalised by</td><td>@_order.FinalizedByName</td></tr>
+                    <tr><td>Parts</td><td style="text-align:right">@_order.PartsAmount.ToString("N2")</td></tr>
+                    <tr><td>Labour</td><td style="text-align:right">@_order.LaborAmount.ToString("N2")</td></tr>
+                    <tr><td>Discount</td><td style="text-align:right">@_order.DiscountAmount.ToString("N2")</td></tr>
+                    <tr><td>Tax</td><td style="text-align:right">@_order.TaxAmount.ToString("N2")</td></tr>
+                    <tr style="font-weight:600"><td>Total</td><td style="text-align:right">@_order.TotalAmount.ToString("N2")</td></tr>
+                    <tr><td>Paid</td><td style="text-align:right">@_order.AmountPaid.ToString("N2")</td></tr>
+                    <tr style="font-weight:600"><td>Balance</td><td style="text-align:right">@_order.Balance.ToString("N2")</td></tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Payments</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead>
+                    <tr><th>Date</th><th>Method</th><th>Reference</th><th>Recorded by</th>
+                        <th style="text-align:right">Amount</th><th style="width:48px"></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in _order.Payments.OrderByDescending(p => p.Id))
+                    {
+                        <tr>
+                            <td>@p.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                            <td>@p.Method</td>
+                            <td>@p.ReferenceNumber</td>
+                            <td>@p.RecordedByName</td>
+                            <td style="text-align:right">@p.Amount.ToString("N2")</td>
+                            <td>
+                                <AuthorizeView Policy="@RepairPermissions.PaymentsRecord" Context="dp">
+                                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                                   Color="Color.Error" OnClick="@(() => Delete(p.Id))" />
+                                </AuthorizeView>
+                            </td>
+                        </tr>
+                    }
+                    @if (_order.Payments.Count == 0)
+                    {
+                        <tr><td colspan="6" class="mud-text-secondary">Nothing received yet.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@if (_paymentOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:440px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">Record Payment</MudText>
+            <MudText Typo="Typo.body2" Class="mb-2 mud-text-secondary">
+                Balance outstanding: @_order.Balance.ToString("N2")
+            </MudText>
+            <MudNumericField T="decimal" @bind-Value="_payment.Amount" Label="Amount" Min="0"
+                             Max="@_order.Balance" Class="mb-2" />
+            <MudSelect T="PaymentMethod" @bind-Value="_payment.Method" Label="Method" Class="mb-2">
+                @foreach (var m in new[] { PaymentMethod.Cash, PaymentMethod.Card, PaymentMethod.BankTransfer })
+                {
+                    <MudSelectItem Value="@m">@m</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField @bind-Value="_payment.ReferenceNumber" Label="Reference" Class="mb-2" />
+            <MudTextField @bind-Value="_payment.Notes" Label="Notes" Lines="2" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _paymentOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="RecordPayment">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private SalesOrder _order = new()
+    {
+        Customer = new Customer(),
+        Quotation = new Quotation()
+    };
+
+    private bool _paymentOpen;
+    private Payment _payment = new();
+
+    private static Color Colour(PaymentStatus s) => s switch
+    {
+        PaymentStatus.Paid => Color.Success,
+        PaymentStatus.Partial => Color.Warning,
+        _ => Color.Error
+    };
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _order = await scope.ServiceProvider.GetRequiredService<ISalesOrderService>().GetAsync(Id)
+                 ?? throw new InvalidOperationException("Sales order not found.");
+    }
+
+    private void OpenPayment()
+    {
+        _payment = new Payment { SalesOrderId = _order.Id, Amount = _order.Balance };
+        _paymentOpen = true;
+    }
+
+    private async Task RecordPayment()
+    {
+        try
+        {
+            var user = (await AuthState.GetAuthenticationStateAsync()).User;
+            _payment.RecordedById = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+            _payment.RecordedByName = user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown";
+
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<ISalesOrderService>()
+                .RecordPaymentAsync(_payment);
+
+            _paymentOpen = false;
+            Snackbar.Add("Payment recorded.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Delete(int paymentId)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<ISalesOrderService>()
+            .DeletePaymentAsync(paymentId);
+        await LoadAsync();
+    }
+}

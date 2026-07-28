@@ -1,0 +1,152 @@
+@page "/repair/parts"
+@attribute [Authorize(Policy = RepairPermissions.PartsView)]
+@layout RepairLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Parts</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h5">Parts</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@RepairPermissions.PartsManage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Open(null))">New Part</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="9">
+            <MudTextField @bind-Value="_search" Label="Search name, SKU, brand or model"
+                          Margin="Margin.Dense" Immediate="true" DebounceInterval="300"
+                          OnDebounceIntervalElapsed="LoadAsync"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+        </MudItem>
+        <MudItem xs="12" md="3" Class="d-flex align-center">
+            <MudSwitch T="bool" Value="_lowOnly" ValueChanged="OnLowChanged"
+                       Label="Low stock only" Color="Color.Warning" />
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr><th>SKU</th><th>Name</th><th>Brand</th><th>Model</th>
+                <th style="text-align:right">Price</th><th style="text-align:right">Stock</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var p in _parts)
+            {
+                <tr>
+                    <td>@p.Sku</td>
+                    <td>@p.Name</td>
+                    <td>@p.Brand</td>
+                    <td>@p.Model</td>
+                    <td style="text-align:right">@p.Price.ToString("N2")</td>
+                    <td style="text-align:right">
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(p.StockQuantity == 0 ? Color.Error
+                                          : p.StockQuantity <= CatalogService.LowStockThreshold ? Color.Warning
+                                          : Color.Default)">
+                            @p.StockQuantity
+                        </MudChip>
+                    </td>
+                    <td style="white-space:nowrap">
+                        <AuthorizeView Policy="@RepairPermissions.PartsManage" Context="pm">
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Remove"
+                                           OnClick="@(() => Adjust(p.Id, -1))" />
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Add"
+                                           OnClick="@(() => Adjust(p.Id, 1))" />
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                           OnClick="@(() => Open(p))" />
+                        </AuthorizeView>
+                    </td>
+                </tr>
+            }
+            @if (_parts.Count == 0)
+            {
+                <tr><td colspan="7" class="mud-text-secondary pa-4">No parts match this filter.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@if (_editorOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:480px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_edit.Id == 0 ? "New Part" : _edit.Name)</MudText>
+            <MudTextField @bind-Value="_edit.Name" Label="Name *" Class="mb-2" />
+            <MudTextField @bind-Value="_edit.Sku" Label="SKU" Class="mb-2" />
+            <MudTextField @bind-Value="_edit.Brand" Label="Brand" Class="mb-2" />
+            <MudTextField @bind-Value="_edit.Model" Label="Model" Class="mb-2" />
+            <MudNumericField T="decimal" @bind-Value="_edit.Price" Label="Price" Min="0" Class="mb-2" />
+            <MudNumericField T="int" @bind-Value="_edit.StockQuantity" Label="Stock on hand" Min="0" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _editorOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    private List<Part> _parts = [];
+    private string? _search;
+    private bool _lowOnly;
+
+    private bool _editorOpen;
+    private Part _edit = new();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task OnLowChanged(bool v) { _lowOnly = v; await LoadAsync(); }
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _parts = await scope.ServiceProvider.GetRequiredService<ICatalogService>()
+            .ListPartsAsync(_search, _lowOnly);
+        StateHasChanged();
+    }
+
+    private void Open(Part? p)
+    {
+        _edit = p is null
+            ? new Part()
+            : new Part
+            {
+                Id = p.Id, Sku = p.Sku, Name = p.Name, Brand = p.Brand,
+                Model = p.Model, Price = p.Price, StockQuantity = p.StockQuantity
+            };
+        _editorOpen = true;
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<ICatalogService>().SavePartAsync(_edit);
+            _editorOpen = false;
+            Snackbar.Add("Part saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Adjust(int partId, int delta)
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<ICatalogService>()
+                .AdjustStockAsync(partId, delta);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

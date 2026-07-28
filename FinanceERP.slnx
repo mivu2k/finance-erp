@@ -20,6 +20,11 @@
     <Project Path="modules/GatePass/GatePass.Infrastructure/GatePass.Infrastructure.csproj" />
     <Project Path="modules/GatePass/GatePass.Web/GatePass.Web.csproj" />
   </Folder>
+  <Folder Name="/modules/repair/">
+    <Project Path="modules/Repair/Repair.Domain/Repair.Domain.csproj" />
+    <Project Path="modules/Repair/Repair.Infrastructure/Repair.Infrastructure.csproj" />
+    <Project Path="modules/Repair/Repair.Web/Repair.Web.csproj" />
+  </Folder>
   <Folder Name="/apps/">
     <Project Path="src/FinanceERP.Web/FinanceERP.Web.csproj" />
   </Folder>

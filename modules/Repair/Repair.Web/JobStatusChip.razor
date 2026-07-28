@@ -1,0 +1,18 @@
+@* Consistent colouring for a job's pipeline stage wherever it appears. *@
+<MudChip T="string" Size="Size.Small" Color="@Colour">@JobWorkflow.Describe(Status)</MudChip>
+
+@code {
+    [Parameter, EditorRequired] public JobStatus Status { get; set; }
+
+    private Color Colour => Status switch
+    {
+        JobStatus.Received => Color.Default,
+        JobStatus.Diagnosing => Color.Info,
+        JobStatus.WaitingApproval => Color.Warning,
+        JobStatus.InProgress => Color.Primary,
+        JobStatus.Completed => Color.Success,
+        JobStatus.Delivered => Color.Dark,
+        JobStatus.Cancelled => Color.Error,
+        _ => Color.Default
+    };
+}

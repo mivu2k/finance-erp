@@ -1,0 +1,13 @@
+@* A quotation carries two independent approvals; this renders either one. *@
+<MudChip T="string" Size="Size.Small" Color="@Colour">@State</MudChip>
+
+@code {
+    [Parameter, EditorRequired] public ApprovalState State { get; set; }
+
+    private Color Colour => State switch
+    {
+        ApprovalState.Approved => Color.Success,
+        ApprovalState.Rejected => Color.Error,
+        _ => Color.Default
+    };
+}
