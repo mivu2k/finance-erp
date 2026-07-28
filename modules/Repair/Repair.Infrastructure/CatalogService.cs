@@ -9,13 +9,11 @@ namespace Repair.Infrastructure;
 /// </summary>
 public interface ICatalogService
 {
-    Task<List<Part>> ListPartsAsync(string? search = null, bool lowStockOnly = false,
+    Task<List<Part>> ListPartsAsync(string? search = null, bool neverPurchasedOnly = false,
         CancellationToken ct = default);
     Task<Part?> GetPartAsync(int id, CancellationToken ct = default);
     Task<Part> SavePartAsync(Part part, CancellationToken ct = default);
     Task DeletePartAsync(int id, CancellationToken ct = default);
-    /// <summary>Adjusts stock by a signed delta; refuses to go negative.</summary>
-    Task AdjustStockAsync(int partId, int delta, CancellationToken ct = default);
 
     Task<List<Symptom>> ListSymptomsAsync(CancellationToken ct = default);
     Task<List<Accessory>> ListAccessoriesAsync(CancellationToken ct = default);
@@ -31,15 +29,13 @@ public interface ICatalogService
 
 public class CatalogService(RepairDbContext db) : ICatalogService
 {
-    /// <summary>Parts at or below this level show up on the low-stock filter.</summary>
-    public const int LowStockThreshold = 3;
-
     public async Task<List<Part>> ListPartsAsync(
-        string? search = null, bool lowStockOnly = false, CancellationToken ct = default)
+        string? search = null, bool neverPurchasedOnly = false, CancellationToken ct = default)
     {
-        var q = db.Parts.AsNoTracking().AsQueryable();
+        var q = db.Parts.Include(p => p.LastSupplier).AsNoTracking().AsQueryable();
 
-        if (lowStockOnly) q = q.Where(p => p.StockQuantity <= LowStockThreshold);
+        // Parts with no purchase behind them are being quoted at a guessed price.
+        if (neverPurchasedOnly) q = q.Where(p => p.LastPurchaseCost == null);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -62,8 +58,6 @@ public class CatalogService(RepairDbContext db) : ICatalogService
             throw new InvalidOperationException("Part name is required.");
         if (part.Price < 0)
             throw new InvalidOperationException("Price can't be negative.");
-        if (part.StockQuantity < 0)
-            throw new InvalidOperationException("Stock can't be negative.");
 
         part.Sku = string.IsNullOrWhiteSpace(part.Sku) ? null : part.Sku.Trim();
         if (part.Sku is not null &&
@@ -80,19 +74,6 @@ public class CatalogService(RepairDbContext db) : ICatalogService
         var part = await db.Parts.FirstOrDefaultAsync(p => p.Id == id, ct);
         if (part is null) return;
         db.Parts.Remove(part);
-        await db.SaveChangesAsync(ct);
-    }
-
-    public async Task AdjustStockAsync(int partId, int delta, CancellationToken ct = default)
-    {
-        var part = await db.Parts.FirstOrDefaultAsync(p => p.Id == partId, ct)
-                   ?? throw new InvalidOperationException("Part not found.");
-
-        if (part.StockQuantity + delta < 0)
-            throw new InvalidOperationException(
-                $"Only {part.StockQuantity} of {part.Name} in stock.");
-
-        part.StockQuantity += delta;
         await db.SaveChangesAsync(ct);
     }
 

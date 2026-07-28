@@ -16,6 +16,8 @@ public static class RepairPermissions
 
     public const string PartsView = "repair.parts.view";
     public const string PartsManage = "repair.parts.manage";
+    public const string PurchasesView = "repair.purchases.view";
+    public const string PurchasesManage = "repair.purchases.manage";
 
     public const string QuotationsView = "repair.quotations.view";
     public const string QuotationsManage = "repair.quotations.manage";
@@ -26,6 +28,8 @@ public static class RepairPermissions
     public const string PaymentsRecord = "repair.payments.record";
 
     public const string ReportsView = "repair.reports.view";
+    /// <summary>Separated so a supervisor can see throughput without seeing margin.</summary>
+    public const string ReportsFinancial = "repair.reports.financial";
     public const string CatalogManage = "repair.catalog.manage";
 
     public static IReadOnlyList<string> All =>
@@ -33,10 +37,10 @@ public static class RepairPermissions
         CustomersView, CustomersManage,
         IntakesView, IntakesManage,
         JobsView, JobsManage, JobsAssign, JobsDiagnose, JobsDeliver,
-        PartsView, PartsManage,
+        PartsView, PartsManage, PurchasesView, PurchasesManage,
         QuotationsView, QuotationsManage, QuotationsApprove,
         OrdersView, OrdersManage, PaymentsRecord,
-        ReportsView, CatalogManage
+        ReportsView, ReportsFinancial, CatalogManage
     ];
 }
 

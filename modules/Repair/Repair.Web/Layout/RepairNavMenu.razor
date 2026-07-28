@@ -3,6 +3,10 @@
         Dashboard
     </MudNavLink>
 
+    <AuthorizeView Policy="@RepairPermissions.JobsView" Context="scan">
+        <MudNavLink Href="/repair/scan" Icon="@Icons.Material.Filled.QrCodeScanner">Scan</MudNavLink>
+    </AuthorizeView>
+
     <AuthorizeView Policy="@RepairPermissions.JobsView">
         <MudNavGroup Title="Workshop" Icon="@Icons.Material.Filled.Build" Expanded="true">
             <MudNavLink Href="/repair/jobs" Icon="@Icons.Material.Filled.List">Jobs</MudNavLink>
@@ -35,11 +39,23 @@
     </AuthorizeView>
 
     <AuthorizeView Policy="@RepairPermissions.PartsView" Context="pv">
-        <MudNavLink Href="/repair/parts" Icon="@Icons.Material.Filled.Inventory2">Parts</MudNavLink>
+        <MudNavGroup Title="Parts &amp; Purchasing" Icon="@Icons.Material.Filled.Inventory2"
+                     Expanded="true">
+            <MudNavLink Href="/repair/parts" Icon="@Icons.Material.Filled.Category">Parts</MudNavLink>
+            <AuthorizeView Policy="@RepairPermissions.PurchasesView" Context="pu">
+                <MudNavLink Href="/repair/purchases" Icon="@Icons.Material.Filled.ShoppingCart">
+                    Purchases
+                </MudNavLink>
+                <MudNavLink Href="/repair/suppliers" Icon="@Icons.Material.Filled.Store">
+                    Suppliers
+                </MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
     </AuthorizeView>
 
     <AuthorizeView Policy="@RepairPermissions.ReportsView" Context="rv">
         <MudNavLink Href="/repair/tracking" Icon="@Icons.Material.Filled.Timeline">Tracking</MudNavLink>
+        <MudNavLink Href="/repair/reports" Icon="@Icons.Material.Filled.Assessment">Reports</MudNavLink>
     </AuthorizeView>
 
     <AuthorizeView Policy="@RepairPermissions.CatalogManage" Context="cm">

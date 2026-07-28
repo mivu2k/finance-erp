@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Repair.Domain;
+using Repair.Infrastructure.Reports;
 
 namespace Repair.Infrastructure;
 
@@ -27,8 +28,12 @@ public static class RepairModule
             P(RepairPermissions.JobsDiagnose, "Repair Jobs", "Record diagnoses and work done"),
             P(RepairPermissions.JobsDeliver, "Repair Jobs", "Hand a device back to the customer"),
 
-            P(RepairPermissions.PartsView, "Inventory", "View parts and stock"),
-            P(RepairPermissions.PartsManage, "Inventory", "Manage parts and adjust stock"),
+            P(RepairPermissions.PartsView, "Parts & Purchasing", "View the parts catalog and costs"),
+            P(RepairPermissions.PartsManage, "Parts & Purchasing", "Manage parts and prices"),
+            P(RepairPermissions.PurchasesView, "Parts & Purchasing",
+                "View purchases and supplier spend"),
+            P(RepairPermissions.PurchasesManage, "Parts & Purchasing",
+                "Record purchases and manage suppliers"),
 
             P(RepairPermissions.QuotationsView, "Quotations", "View quotations"),
             P(RepairPermissions.QuotationsManage, "Quotations", "Prepare and send quotations"),
@@ -40,6 +45,8 @@ public static class RepairModule
             P(RepairPermissions.PaymentsRecord, "Sales Orders", "Record customer payments"),
 
             P(RepairPermissions.ReportsView, "Reports", "Workshop tracking and reports"),
+            P(RepairPermissions.ReportsFinancial, "Reports",
+                "Reports showing revenue, margin, receivables and supplier cost"),
             P(RepairPermissions.CatalogManage, "Setup",
                 "Manage symptoms, accessories, brands and device types")
         ],
@@ -55,7 +62,8 @@ public static class RepairModule
                 RepairPermissions.JobsDiagnose, RepairPermissions.JobsDeliver,
                 RepairPermissions.PartsView, RepairPermissions.QuotationsView,
                 RepairPermissions.QuotationsManage, RepairPermissions.QuotationsApprove,
-                RepairPermissions.OrdersView, RepairPermissions.ReportsView
+                RepairPermissions.OrdersView, RepairPermissions.ReportsView,
+                RepairPermissions.ReportsFinancial, RepairPermissions.PurchasesView
             ]),
 
             new(RepairRoles.Technician, "Works the bench: sees assigned jobs and records findings.",
@@ -76,6 +84,7 @@ public static class RepairModule
             new(RepairRoles.Store, "Looks after parts and stock.",
             [
                 RepairPermissions.PartsView, RepairPermissions.PartsManage,
+                RepairPermissions.PurchasesView, RepairPermissions.PurchasesManage,
                 RepairPermissions.JobsView, RepairPermissions.ReportsView
             ]),
 
@@ -84,6 +93,7 @@ public static class RepairModule
                 RepairPermissions.CustomersView, RepairPermissions.QuotationsView,
                 RepairPermissions.OrdersView, RepairPermissions.OrdersManage,
                 RepairPermissions.PaymentsRecord, RepairPermissions.ReportsView,
+                RepairPermissions.ReportsFinancial, RepairPermissions.PurchasesView,
                 RepairPermissions.JobsView
             ]),
 
@@ -112,6 +122,10 @@ public static class RepairModule
         services.AddScoped<IQuotationService, QuotationService>();
         services.AddScoped<ISalesOrderService, SalesOrderService>();
         services.AddScoped<ICatalogService, CatalogService>();
+        services.AddScoped<IPurchaseService, PurchaseService>();
+        services.AddScoped<IRepairReportService, RepairReportService>();
+        services.AddScoped<ReportTableBuilder>();
+        services.AddSingleton<IReportExportService, ReportExportService>();
         services.AddSingleton<IRepairPrintService, RepairPrintService>();
 
         ModuleRegistry.Register(Registration);

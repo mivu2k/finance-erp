@@ -5,6 +5,8 @@
 @inject IServiceScopeFactory ScopeFactory
 @inject ISnackbar Snackbar
 @inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+@using ErpPlatform.Shared.Kernel
 
 <PageTitle>@_job.JobNumber</PageTitle>
 
@@ -18,9 +20,19 @@
     }
     <MudSpacer />
 
-    <MudButton Variant="Variant.Outlined" Size="Size.Small"
-               StartIcon="@Icons.Material.Filled.PictureAsPdf"
-               Href="@($"/repair/print/job/{_job.Id}")" Target="_blank">Job Card</MudButton>
+    <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+        <MudButton StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                   Href="@($"/repair/print/job/{_job.Id}")" Target="_blank">Job Card</MudButton>
+        <MudButton StartIcon="@Icons.Material.Filled.Label"
+                   Href="@($"/repair/print/job/{_job.Id}/label")" Target="_blank">Label</MudButton>
+        @if (_job.Status == JobStatus.Delivered)
+        {
+            <MudButton StartIcon="@Icons.Material.Filled.Assignment"
+                       Href="@($"/repair/print/delivery/{_job.Id}/a4")" Target="_blank">Delivery A4</MudButton>
+            <MudButton StartIcon="@Icons.Material.Filled.Receipt"
+                       Href="@($"/repair/print/delivery/{_job.Id}/pos")" Target="_blank">Slip</MudButton>
+        }
+    </MudButtonGroup>
 
     <AuthorizeView Policy="@RepairPermissions.JobsAssign" Context="asg">
         <MudButton Variant="Variant.Outlined" Size="Size.Small" Class="ml-2"
@@ -35,7 +47,8 @@
                                  ? RepairPermissions.JobsDeliver
                                  : RepairPermissions.JobsManage)" Context="mv">
             <MudButton Variant="Variant.Filled" Size="Size.Small" Class="ml-2"
-                       Color="@(target == JobStatus.Cancelled ? Color.Error : Color.Primary)"
+                       Color="@(target == JobStatus.Cancelled ? Color.Error
+                                : target == JobStatus.Delivered ? Color.Success : Color.Primary)"
                        OnClick="@(() => OpenMove(target))">
                 @JobWorkflow.Describe(target)
             </MudButton>
@@ -116,9 +129,17 @@
                     @if (_job.DeliveredAtUtc is { } del)
                     {
                         <tr><td>Delivered</td><td>@del.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td></tr>
+                        <tr><td>Collected by</td><td>@_job.DeliveredToName</td></tr>
+                        <tr><td>Released by</td><td>@_job.DeliveredByName</td></tr>
                     }
                 </tbody>
             </MudSimpleTable>
+
+            @* The same barcode as the label and the job card, so the screen can be
+               scanned straight off a phone if the paperwork has gone missing. *@
+            <div class="d-flex justify-center mt-3">
+                <img src="@Barcode.ToDataUri(_job.JobNumber, 44, 2)" alt="@_job.JobNumber" />
+            </div>
         </MudPaper>
     </MudItem>
 
@@ -234,7 +255,7 @@
             <MudSelect T="int?" @bind-Value="_diagnosis.PartId" Label="Stocked part" Clearable="true" Class="mb-2">
                 @foreach (var p in _parts)
                 {
-                    <MudSelectItem T="int?" Value="@p.Id">@p.Name (@p.StockQuantity in stock)</MudSelectItem>
+                    <MudSelectItem T="int?" Value="@p.Id">@p.Name</MudSelectItem>
                 }
             </MudSelect>
             <MudTextField @bind-Value="_diagnosis.InternalNotes" Label="Internal notes" Lines="2" />
@@ -261,6 +282,36 @@
                 <MudButton OnClick="@(() => _assignOpen = false)">Cancel</MudButton>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Assign"
                            Disabled="@(_assignTechnicianId is null)">Assign</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_deliverOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:480px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-1">Hand over the device</MudText>
+            <MudText Typo="Typo.body2" Class="mb-3 mud-text-secondary">
+                Record who is collecting it — the delivery note is signed against this,
+                and it's often not the customer in person.
+            </MudText>
+
+            <MudTextField @bind-Value="_collectedBy" Label="Collected by (name) *" Class="mb-2" />
+            <MudTextField @bind-Value="_collectedPhone" Label="Phone" Class="mb-2" />
+            <MudTextField @bind-Value="_collectedCnic" Label="CNIC / ID number" Class="mb-2" />
+            <MudTextField @bind-Value="_deliveryNote" Label="Note" Lines="2" />
+
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
+                Accessories logged at intake are listed on the note for the customer to check.
+            </MudAlert>
+
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _deliverOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="Deliver"
+                           Disabled="@(string.IsNullOrWhiteSpace(_collectedBy))">
+                    Deliver &amp; Print Note
+                </MudButton>
             </div>
         </MudPaper>
     </MudOverlay>
@@ -298,6 +349,12 @@
 
     private JobStatus? _moveTo;
     private string? _moveNote;
+
+    private bool _deliverOpen;
+    private string _collectedBy = "";
+    private string? _collectedPhone;
+    private string? _collectedCnic;
+    private string? _deliveryNote;
 
     private bool _canEdit => _job.Status is not (JobStatus.Delivered or JobStatus.Cancelled);
 
@@ -358,7 +415,42 @@
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
     }
 
-    private void OpenMove(JobStatus to) { _moveTo = to; _moveNote = null; }
+    private void OpenMove(JobStatus to)
+    {
+        // Delivery needs the handover details, so it gets its own dialog.
+        if (to == JobStatus.Delivered)
+        {
+            _collectedBy = _job.Customer.Name;
+            _collectedPhone = _job.Customer.Phone;
+            _collectedCnic = null;
+            _deliveryNote = null;
+            _deliverOpen = true;
+            return;
+        }
+
+        _moveTo = to;
+        _moveNote = null;
+    }
+
+    private async Task Deliver()
+    {
+        try
+        {
+            var (actorId, actorName) = await ActorAsync();
+
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IRepairJobService>()
+                .DeliverAsync(_job.Id, _collectedBy, _collectedPhone, _collectedCnic,
+                    _deliveryNote, actorId, actorName);
+
+            _deliverOpen = false;
+            Snackbar.Add($"Delivered to {_collectedBy}.", Severity.Success);
+            await LoadAsync();
+
+            Nav.NavigateTo($"/repair/print/delivery/{_job.Id}/a4", forceLoad: true);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
 
     private async Task Move(JobStatus to)
     {

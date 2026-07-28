@@ -1,0 +1,259 @@
+@page "/repair/purchases/new"
+@page "/repair/purchases/{Id:int}"
+@attribute [Authorize(Policy = RepairPermissions.PurchasesView)]
+@layout RepairLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>@(_isNew ? "Record Purchase" : _purchase.PurchaseNumber)</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/repair/purchases" />
+    <MudText Typo="Typo.h5">@(_isNew ? "Record Purchase" : _purchase.PurchaseNumber)</MudText>
+    <MudSpacer />
+    @if (!_isNew)
+    {
+        <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                   Href="@($"/repair/print/purchase/{_purchase.Id}")" Target="_blank">
+            Goods Received Note
+        </MudButton>
+    }
+    else
+    {
+        <AuthorizeView Policy="@RepairPermissions.PurchasesManage">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">
+                Record &amp; Update Costs
+            </MudButton>
+        </AuthorizeView>
+    }
+</div>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Supplier</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" md="6">
+                    <MudSelect T="int" @bind-Value="_purchase.SupplierId" Label="Supplier *"
+                               Disabled="@(!_isNew)">
+                        @foreach (var s in _suppliers)
+                        {
+                            <MudSelectItem T="int" Value="@s.Id">@s.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudTextField @bind-Value="_purchase.SupplierInvoiceNumber"
+                                  Label="Their invoice no" Disabled="@(!_isNew)" />
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudDatePicker Label="Purchased on"
+                                   Date="@_purchase.PurchasedOn.ToDateTime(TimeOnly.MinValue)"
+                                   DateChanged="@(d => _purchase.PurchasedOn = d is null
+                                       ? _purchase.PurchasedOn : DateOnly.FromDateTime(d.Value))"
+                                   Disabled="@(!_isNew)" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudSelect T="PaymentMethod" @bind-Value="_purchase.PaymentMethod"
+                               Label="Paid by" Disabled="@(!_isNew)">
+                        @foreach (var m in new[] { PaymentMethod.Cash, PaymentMethod.Card,
+                                                   PaymentMethod.BankTransfer, PaymentMethod.Credit })
+                        {
+                            <MudSelectItem Value="@m">@m</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="8">
+                    <MudTextField @bind-Value="_purchase.Notes" Label="Notes" Disabled="@(!_isNew)" />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Totals</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="6">
+                    <MudNumericField T="decimal" Value="_purchase.DiscountAmount"
+                                     ValueChanged="@(v => { _purchase.DiscountAmount = v; Recalc(); })"
+                                     Label="Discount" Min="0" Margin="Margin.Dense"
+                                     Disabled="@(!_isNew)" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField T="decimal" Value="_purchase.TaxAmount"
+                                     ValueChanged="@(v => { _purchase.TaxAmount = v; Recalc(); })"
+                                     Label="Tax" Min="0" Margin="Margin.Dense"
+                                     Disabled="@(!_isNew)" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField T="decimal" Value="_purchase.OtherCharges"
+                                     ValueChanged="@(v => { _purchase.OtherCharges = v; Recalc(); })"
+                                     Label="Freight / other" Min="0" Margin="Margin.Dense"
+                                     Disabled="@(!_isNew)" />
+                </MudItem>
+            </MudGrid>
+
+            <MudSimpleTable Dense="true" Class="mt-3">
+                <tbody>
+                    <tr><td>Subtotal</td>
+                        <td style="text-align:right">@_purchase.Subtotal.ToString("N2")</td></tr>
+                    <tr style="font-weight:600"><td>Total</td>
+                        <td style="text-align:right">@_purchase.TotalAmount.ToString("N2")</td></tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <div class="d-flex align-center mb-3">
+                <MudText Typo="Typo.subtitle1">Parts received</MudText>
+                <MudSpacer />
+                @if (_isNew)
+                {
+                    <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="AddLine">Add line</MudButton>
+                }
+            </div>
+            <MudSimpleTable Dense="true">
+                <thead>
+                    <tr>
+                        <th style="width:30%">Part</th><th style="width:110px">Qty</th>
+                        <th style="width:130px">Unit cost</th>
+                        <th style="width:140px">New selling price</th>
+                        <th>Remarks</th>
+                        <th style="text-align:right;width:110px">Amount</th>
+                        <th style="width:48px"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in _purchase.Items)
+                    {
+                        var l = line;
+                        <tr>
+                            <td>
+                                <MudSelect T="int" Value="l.PartId"
+                                           ValueChanged="@(v => OnPartPicked(l, v))"
+                                           Margin="Margin.Dense" Disabled="@(!_isNew)">
+                                    @foreach (var p in _parts)
+                                    {
+                                        <MudSelectItem T="int" Value="@p.Id">@p.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </td>
+                            <td>
+                                <MudNumericField T="decimal" Value="l.Quantity"
+                                                 ValueChanged="@(v => { l.Quantity = v; Recalc(); })"
+                                                 Min="0" Margin="Margin.Dense" Disabled="@(!_isNew)" />
+                            </td>
+                            <td>
+                                <MudNumericField T="decimal" Value="l.UnitCost"
+                                                 ValueChanged="@(v => { l.UnitCost = v; Recalc(); })"
+                                                 Min="0" Margin="Margin.Dense" Disabled="@(!_isNew)" />
+                            </td>
+                            <td>
+                                <MudNumericField T="decimal?" @bind-Value="l.NewSellingPrice"
+                                                 Min="0" Margin="Margin.Dense" Disabled="@(!_isNew)"
+                                                 Placeholder="leave blank to keep" />
+                            </td>
+                            <td>
+                                <MudTextField @bind-Value="l.Remarks" Margin="Margin.Dense"
+                                              Disabled="@(!_isNew)" />
+                            </td>
+                            <td style="text-align:right">@l.LineTotal.ToString("N2")</td>
+                            <td>
+                                @if (_isNew)
+                                {
+                                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                                   Color="Color.Error"
+                                                   OnClick="@(() => { _purchase.Items.Remove(l); Recalc(); })" />
+                                }
+                            </td>
+                        </tr>
+                    }
+                    @if (_purchase.Items.Count == 0)
+                    {
+                        <tr><td colspan="7" class="mud-text-secondary">No lines yet.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private PartPurchase _purchase = new() { PurchasedOn = DateOnly.FromDateTime(DateTime.Today) };
+    private List<Supplier> _suppliers = [];
+    private List<Part> _parts = [];
+
+    private bool _isNew => Id is null;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var purchases = scope.ServiceProvider.GetRequiredService<IPurchaseService>();
+
+        _suppliers = await purchases.ListSuppliersAsync();
+        _parts = await scope.ServiceProvider.GetRequiredService<ICatalogService>().ListPartsAsync();
+
+        if (Id is { } id)
+        {
+            _purchase = await purchases.GetAsync(id)
+                        ?? throw new InvalidOperationException("Purchase not found.");
+        }
+        else
+        {
+            _purchase = new PartPurchase
+            {
+                PurchasedOn = DateOnly.FromDateTime(DateTime.Today),
+                SupplierId = _suppliers.FirstOrDefault()?.Id ?? 0
+            };
+            AddLine();
+        }
+    }
+
+    private void AddLine()
+    {
+        _purchase.Items.Add(new PartPurchaseItem { Quantity = 1 });
+        Recalc();
+    }
+
+    private void Recalc() => IPurchaseService.Recalculate(_purchase);
+
+    private void OnPartPicked(PartPurchaseItem line, int partId)
+    {
+        line.PartId = partId;
+
+        // Default to what it cost last time — usually right, always a starting point.
+        if (line.UnitCost == 0 && _parts.FirstOrDefault(p => p.Id == partId) is { } part)
+            line.UnitCost = part.LastPurchaseCost ?? 0;
+
+        Recalc();
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            var user = (await AuthState.GetAuthenticationStateAsync()).User;
+            var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+            var name = user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown";
+
+            using var scope = ScopeFactory.CreateScope();
+            var saved = await scope.ServiceProvider.GetRequiredService<IPurchaseService>()
+                .ReceiveAsync(_purchase, userId, name);
+
+            Snackbar.Add($"{saved.PurchaseNumber} recorded; part costs updated.", Severity.Success);
+            Nav.NavigateTo($"/repair/purchases/{saved.Id}");
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

@@ -1,0 +1,131 @@
+@page "/repair/scan"
+@attribute [Authorize(Policy = RepairPermissions.JobsView)]
+@layout RepairLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>Scan</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-8">
+    <MudPaper Class="pa-8">
+        <div class="d-flex align-center mb-2">
+            <MudIcon Icon="@Icons.Material.Filled.QrCodeScanner" Size="Size.Large"
+                     Color="Color.Primary" Class="mr-3" />
+            <div>
+                <MudText Typo="Typo.h5">Scan a document</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    Point a USB scanner at any barcode in the workshop — job card, device
+                    label, intake receipt, quotation, invoice or GRN.
+                </MudText>
+            </div>
+        </div>
+
+        @* A USB scanner types the number then presses Enter, so the field just
+           needs to react to Enter — no camera or JS interop involved. *@
+        <MudTextField @bind-Value="_code" Label="Barcode" Immediate="true"
+                      Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search"
+                      OnAdornmentClick="Lookup" OnKeyUp="OnKey" AutoFocus="true"
+                      Class="mt-4" HelperText="Or type a number and press Enter." />
+
+        @if (_message is { Length: > 0 })
+        {
+            <MudAlert Severity="@_severity" Dense="true" Class="mt-4">@_message</MudAlert>
+        }
+
+        @if (_recent.Count > 0)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mt-6 mb-2">Recently scanned</MudText>
+            <MudList T="string" Dense="true">
+                @foreach (var (label, url) in _recent)
+                {
+                    <MudListItem T="string" Href="@url" Icon="@Icons.Material.Filled.History">
+                        @label
+                    </MudListItem>
+                }
+            </MudList>
+        }
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private string _code = "";
+    private string? _message;
+    private Severity _severity = Severity.Info;
+    private readonly List<(string Label, string Url)> _recent = [];
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key is "Enter" or "NumpadEnter") await Lookup();
+    }
+
+    /// <summary>
+    /// Resolves a scanned number to whatever it belongs to. The prefixes are
+    /// distinct by design, but the lookup tries every type anyway so a number typed
+    /// without its prefix still finds its record.
+    /// </summary>
+    private async Task Lookup()
+    {
+        var code = _code.Trim();
+        if (code.Length == 0) return;
+
+        _message = null;
+
+        using var scope = ScopeFactory.CreateScope();
+        var sp = scope.ServiceProvider;
+        var db = sp.GetRequiredService<RepairDbContext>();
+
+        var job = await db.RepairJobs.AsNoTracking()
+            .FirstOrDefaultAsync(j => j.JobNumber == code);
+        if (job is not null) { Go($"Job {job.JobNumber} — {job.DeviceName}", $"/repair/jobs/{job.Id}"); return; }
+
+        var intake = await db.Intakes.AsNoTracking()
+            .FirstOrDefaultAsync(i => i.IntakeNumber == code);
+        if (intake is not null) { Go($"Intake {intake.IntakeNumber}", "/repair/intakes"); return; }
+
+        var quotation = await db.Quotations.AsNoTracking()
+            .FirstOrDefaultAsync(q => q.QuotationNumber == code);
+        if (quotation is not null)
+        {
+            Go($"Quotation {quotation.QuotationNumber}", $"/repair/quotations/{quotation.Id}");
+            return;
+        }
+
+        var order = await db.SalesOrders.AsNoTracking()
+            .FirstOrDefaultAsync(o => o.OrderNumber == code);
+        if (order is not null) { Go($"Order {order.OrderNumber}", $"/repair/orders/{order.Id}"); return; }
+
+        var purchase = await db.PartPurchases.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.PurchaseNumber == code);
+        if (purchase is not null)
+        {
+            Go($"Purchase {purchase.PurchaseNumber}", $"/repair/purchases/{purchase.Id}");
+            return;
+        }
+
+        // Not a document number — try it as a device serial, which is what someone
+        // scanning the equipment's own plate will get.
+        var bySerial = await db.RepairJobs.AsNoTracking()
+            .Where(j => j.SerialNumber == code)
+            .OrderByDescending(j => j.Id)
+            .FirstOrDefaultAsync();
+
+        if (bySerial is not null)
+        {
+            Go($"Serial {code} → job {bySerial.JobNumber}", $"/repair/jobs/{bySerial.Id}");
+            return;
+        }
+
+        _message = $"Nothing matches '{code}'. Check the barcode is from this workshop.";
+        _severity = Severity.Warning;
+        _code = "";
+    }
+
+    private void Go(string label, string url)
+    {
+        _recent.Insert(0, (label, url));
+        if (_recent.Count > 8) _recent.RemoveAt(_recent.Count - 1);
+        _code = "";
+        Nav.NavigateTo(url);
+    }
+}

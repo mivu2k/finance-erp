@@ -1,0 +1,237 @@
+@page "/repair/reports"
+@attribute [Authorize(Policy = RepairPermissions.ReportsView)]
+@layout RepairLayout
+@rendermode InteractiveServer
+@using Repair.Infrastructure.Reports
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Reports</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Reports</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Outlined" Size="Size.Small"
+               StartIcon="@Icons.Material.Filled.Download" Href="@ExportUrl("all", "xlsx")">
+        Full pack (Excel)
+    </MudButton>
+    <MudButton Variant="Variant.Outlined" Size="Size.Small"
+               StartIcon="@Icons.Material.Filled.PictureAsPdf" Href="@ExportUrl("all", "pdf")">
+        Full pack (PDF)
+    </MudButton>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="From" Date="@_from.ToDateTime(TimeOnly.MinValue)"
+                           DateChanged="@(d => OnFrom(d))" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="To" Date="@_to.ToDateTime(TimeOnly.MinValue)"
+                           DateChanged="@(d => OnTo(d))" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="6" Class="d-flex align-center gap-1 flex-wrap">
+            <MudButton Size="Size.Small" OnClick="@(() => Preset(0))">This month</MudButton>
+            <MudButton Size="Size.Small" OnClick="@(() => Preset(1))">Last month</MudButton>
+            <MudButton Size="Size.Small" OnClick="@(() => Preset(2))">Last 90 days</MudButton>
+            <MudButton Size="Size.Small" OnClick="@(() => Preset(3))">This year</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="3">
+        <MudPaper Class="pa-2" Style="position:sticky;top:80px">
+            <MudList T="string" Dense="true">
+                @foreach (var definition in ReportCatalog.All)
+                {
+                    var d = definition;
+                    <MudListItem T="string" OnClick="@(() => Select(d))"
+                                 Icon="@ResolveIcon(d.Icon)"
+                                 Style="@(d.Kind == _selected.Kind
+                                          ? "background:var(--mud-palette-action-default-hover)" : "")">
+                        <MudText Typo="Typo.body2">@d.Title</MudText>
+                    </MudListItem>
+                }
+            </MudList>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="9">
+        <MudPaper Class="pa-4">
+            <div class="d-flex align-center mb-1 flex-wrap gap-2">
+                <MudText Typo="Typo.h6">@_selected.Title</MudText>
+                <MudSpacer />
+                <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                           StartIcon="@Icons.Material.Filled.Download"
+                           Href="@ExportUrl(_selected.Kind.ToString(), "xlsx")">Excel</MudButton>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                           StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                           Href="@ExportUrl(_selected.Kind.ToString(), "pdf")">PDF</MudButton>
+            </div>
+            <MudText Typo="Typo.body2" Class="mb-1 mud-text-secondary">@_selected.Description</MudText>
+            <MudText Typo="Typo.caption" Class="mb-3 mud-text-secondary">
+                @(_selected.UsesDateRange
+                    ? $"{_from:yyyy-MM-dd} to {_to:yyyy-MM-dd}"
+                    : "Snapshot of right now — the date range doesn't apply.")
+            </MudText>
+
+            @if (_loading)
+            {
+                <MudProgressLinear Indeterminate="true" Class="my-4" />
+            }
+            else
+            {
+                @foreach (var table in _tables)
+                {
+                    @if (_tables.Count > 1)
+                    {
+                        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">@table.Title</MudText>
+                    }
+
+                    <div style="overflow-x:auto">
+                        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+                            <thead>
+                                <tr>
+                                    @for (var i = 0; i < table.Headers.Count; i++)
+                                    {
+                                        <th style="@(Right(table, i) ? "text-align:right" : "")">
+                                            @table.Headers[i]
+                                        </th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in table.Rows)
+                                {
+                                    <tr>
+                                        @for (var i = 0; i < row.Count; i++)
+                                        {
+                                            <td style="@CellStyle(table, i, row[i])">@row[i]</td>
+                                        }
+                                    </tr>
+                                }
+                                @if (table.Rows.Count == 0)
+                                {
+                                    <tr>
+                                        <td colspan="@table.Headers.Count" class="mud-text-secondary pa-4">
+                                            Nothing to report for this period.
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </div>
+                }
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private ReportDefinition _selected = ReportCatalog.All[0];
+    private IReadOnlyList<ReportTable> _tables = [];
+    private bool _loading;
+
+    private DateOnly _from = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateOnly _to = DateOnly.FromDateTime(DateTime.Today);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private string ExportUrl(string kind, string format) =>
+        $"/repair/reports/export/{kind.ToLowerInvariant()}/{format}?from={_from:yyyy-MM-dd}&to={_to:yyyy-MM-dd}";
+
+    private static bool Right(ReportTable table, int index) =>
+        table.RightAlign is { } flags && index < flags.Count && flags[index];
+
+    /// <summary>Draws the eye to the numbers that mean something is wrong.</summary>
+    private static string CellStyle(ReportTable table, int index, string value)
+    {
+        var style = Right(table, index) ? "text-align:right;" : "";
+
+        if (value == "LATE" || value.StartsWith("Over 90"))
+            style += "color:var(--mud-palette-error);font-weight:600;";
+        else if (value.StartsWith("Over 30") || value.StartsWith("61–90"))
+            style += "color:var(--mud-palette-warning);font-weight:600;";
+
+        return style;
+    }
+
+    private async Task Select(ReportDefinition definition)
+    {
+        _selected = definition;
+        await LoadAsync();
+    }
+
+    private async Task OnFrom(DateTime? d)
+    {
+        if (d is null) return;
+        _from = DateOnly.FromDateTime(d.Value);
+        await LoadAsync();
+    }
+
+    private async Task OnTo(DateTime? d)
+    {
+        if (d is null) return;
+        _to = DateOnly.FromDateTime(d.Value);
+        await LoadAsync();
+    }
+
+    private async Task Preset(int which)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        (_from, _to) = which switch
+        {
+            0 => (new DateOnly(today.Year, today.Month, 1), today),
+            1 => (new DateOnly(today.Year, today.Month, 1).AddMonths(-1),
+                  new DateOnly(today.Year, today.Month, 1).AddDays(-1)),
+            2 => (today.AddDays(-90), today),
+            _ => (new DateOnly(today.Year, 1, 1), today)
+        };
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            _tables = await scope.ServiceProvider.GetRequiredService<ReportTableBuilder>()
+                .BuildAsync(_selected.Kind, new ReportRange(_from, _to));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            _tables = [];
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string ResolveIcon(string name) => name switch
+    {
+        "Dashboard" => Icons.Material.Filled.Dashboard,
+        "AccountTree" => Icons.Material.Filled.AccountTree,
+        "HourglassBottom" => Icons.Material.Filled.HourglassBottom,
+        "Timer" => Icons.Material.Filled.Timer,
+        "Engineering" => Icons.Material.Filled.Engineering,
+        "RequestQuote" => Icons.Material.Filled.RequestQuote,
+        "People" => Icons.Material.Filled.People,
+        "Warning" => Icons.Material.Filled.Warning,
+        "BugReport" => Icons.Material.Filled.BugReport,
+        "Inventory2" => Icons.Material.Filled.Inventory2,
+        "LocalShipping" => Icons.Material.Filled.LocalShipping,
+        "MoneyOff" => Icons.Material.Filled.MoneyOff,
+        "Payments" => Icons.Material.Filled.Payments,
+        "CalendarMonth" => Icons.Material.Filled.CalendarMonth,
+        "Shield" => Icons.Material.Filled.Shield,
+        _ => Icons.Material.Filled.Assessment
+    };
+}

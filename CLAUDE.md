@@ -130,6 +130,15 @@ These apply to the **Finance** module specifically:
   pass stops being editable the moment it leaves Issued.
 - **Demo goods support partial returns**: the issuance stays open until the last
   item is ticked back.
+- **Parts carry no stock quantity.** The workshop buys against a job, so what is
+  tracked is cost, not count. `PartPurchase` is the only thing that sets a part's
+  cost; last cost, weighted-average cost and margin are derived from it. An older
+  invoice entered late updates the average but never overwrites a newer last cost.
+- **Every document carries a Code 128 barcode of its own number**, and `/repair/scan`
+  resolves any of them — or a device serial — back to its record. `Barcode` lives in
+  Shared.Kernel; `BarcodeRenderer` draws it into QuestPDF.
+- **Delivery captures who collected the device**, not just a status change: the
+  delivery note is signed against that name.
 - **Attendance is derived, never raw.** `AttendancePunch` is exactly what the
   terminal reported and is never edited; `AttendanceDay` is the judged summary and
   is rebuilt from punches. First punch of the day is the arrival, last is the
@@ -150,7 +159,7 @@ Four apps behind one login, chosen from the portal at `/`:
 | App | Route | Database | State |
 |---|---|---|---|
 | Finance | `/finance` | `finance_erp` | mature — see below |
-| Repair | `/repair` | `erp_repair` | ported from Laravel, end-to-end |
+| Repair | `/repair` | `erp_repair` | ported from Laravel, plus purchasing, barcodes and 15 reports |
 | Gate Pass & Demo Goods | `/gatepass` | `erp_gatepass` | complete |
 | HR | `/hr` | `erp_hr` | employee master, biometric attendance, leave |
 
@@ -174,18 +183,43 @@ UI yet. Not ported: the customer-facing tracking page, Excel report exports.
 
 Known gaps, roughly in priority order:
 
-1. **Tests cover HR attendance only** (`tests/Hr.Tests`, 32 of them: the ZK wire
-   format, the attendance calculator, and two integration tests that rebuild
-   against a throwaway MySQL database). Nothing else is covered. Highest-value
-   next: `VoucherService`, `PaymentRequestService.SettleAsync`,
-   `PayrollService.GenerateAsync`/`PayRunAsync`, `CloseFiscalYearAsync`,
-   `JobWorkflow`, `QuotationService.Recalculate` and `SalesOrderService`'s payment
-   arithmetic — all subtle and unverified.
+1. **Finance is the untested module.** 77 tests exist —
+   `tests/ErpPlatform.Shared.Tests` (15, barcode round-trip through a decoder),
+   `tests/Hr.Tests` (32, ZK wire format and attendance arithmetic) and
+   `tests/Repair.Tests` (30, job workflow, quotation and purchase pricing). The
+   integration tests create and drop their own throwaway databases and skip when no
+   server is reachable. Nothing covers Finance: `VoucherService`,
+   `PaymentRequestService.SettleAsync`, `PayrollService.GenerateAsync`/`PayRunAsync`
+   and `CloseFiscalYearAsync` remain subtle and unverified.
 2. **Receipt endpoint is auth-only** (`Program.cs`, `/files/receipts/{name}`) — any
    logged-in user can fetch any receipt by filename; no ownership or permission check.
 3. `README.md` predates year-close, reconciliation, utilities, projects, the
    justification flow and SMTP.
 4. No CI.
+
+## Repair printing and reports
+
+Eleven printable documents, at `/repair/print/*`:
+
+| Step | Document | Sizes |
+|---|---|---|
+| Receiving | intake receipt | A4, 80mm |
+| Receiving | device labels (one per device) | 62mm roll |
+| Workshop | job card, device label | A4, 62mm |
+| Commercial | quotation, invoice | A4, invoice also 80mm |
+| Delivering | delivery note | A4, 80mm |
+| Purchasing | goods received note | A4 |
+
+**Barcodes must be drawn with the stretching `Barcode()` renderer inside a
+fixed-width container.** `BarcodeFixed()` sets its own width and will overflow — an
+11-character number at 1.2 modules/pt busts a 170pt header and QuestPDF throws a
+layout exception. Only use `BarcodeFixed` where the container is known to be wider.
+
+Fifteen reports at `/repair/reports`, each exportable to Excel and PDF, plus an
+"all" pack. `ReportCatalog` lists them; `ReportTableBuilder` shapes every report
+into the same flat table so the screen, the Excel and the PDF can't disagree.
+`repair.reports.financial` is separate from `repair.reports.view` so a supervisor
+can see throughput without seeing margin.
 
 ## Biometric attendance (ZKTeco)
 

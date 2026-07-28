@@ -1,0 +1,106 @@
+@page "/repair/purchases"
+@attribute [Authorize(Policy = RepairPermissions.PurchasesView)]
+@layout RepairLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>Purchases</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Parts Purchases</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@RepairPermissions.PurchasesManage">
+        <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Store"
+                   Href="/repair/suppliers">Suppliers</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.AddShoppingCart"
+                   Href="/repair/purchases/new">Record Purchase</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+    Recording a purchase is what sets a part's cost. The last and average cost on
+    the parts page come from here, and the margin in the reports is measured
+    against them.
+</MudAlert>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="6">
+            <MudTextField @bind-Value="_search" Label="Search purchase no, supplier or invoice"
+                          Margin="Margin.Dense" Immediate="true" DebounceInterval="300"
+                          OnDebounceIntervalElapsed="LoadAsync"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudSelect T="int?" Value="_supplierId" ValueChanged="OnSupplierChanged"
+                       Label="Supplier" Margin="Margin.Dense" Clearable="true">
+                @foreach (var s in _suppliers)
+                {
+                    <MudSelectItem T="int?" Value="@s.Id">@s.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr>
+                <th>Purchase</th><th>Date</th><th>Supplier</th><th>Their invoice</th>
+                <th>Lines</th><th style="text-align:right">Total</th><th>Received by</th><th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in _purchases)
+            {
+                <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/repair/purchases/{p.Id}"))">
+                    <td>@p.PurchaseNumber</td>
+                    <td>@p.PurchasedOn.ToString("yyyy-MM-dd")</td>
+                    <td>@p.Supplier.Name</td>
+                    <td>@p.SupplierInvoiceNumber</td>
+                    <td>@p.Items.Count</td>
+                    <td style="text-align:right">@p.TotalAmount.ToString("N2")</td>
+                    <td>@p.ReceivedByName</td>
+                    <td>
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PictureAsPdf"
+                                       Title="Goods received note"
+                                       Href="@($"/repair/print/purchase/{p.Id}")" Target="_blank" />
+                    </td>
+                </tr>
+            }
+            @if (_purchases.Count == 0)
+            {
+                <tr><td colspan="8" class="mud-text-secondary pa-4">No purchases recorded yet.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private List<PartPurchase> _purchases = [];
+    private List<Supplier> _suppliers = [];
+    private string? _search;
+    private int? _supplierId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _suppliers = await scope.ServiceProvider.GetRequiredService<IPurchaseService>()
+            .ListSuppliersAsync();
+        await LoadAsync();
+    }
+
+    private async Task OnSupplierChanged(int? id) { _supplierId = id; await LoadAsync(); }
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _purchases = await scope.ServiceProvider.GetRequiredService<IPurchaseService>()
+            .ListAsync(new PurchaseFilter(_search, _supplierId));
+        StateHasChanged();
+    }
+}

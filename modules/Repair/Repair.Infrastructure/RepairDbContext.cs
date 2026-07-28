@@ -19,6 +19,9 @@ public class RepairDbContext(DbContextOptions<RepairDbContext> options, ICurrent
     public DbSet<Diagnosis> Diagnoses => Set<Diagnosis>();
     public DbSet<JobPhoto> JobPhotos => Set<JobPhoto>();
     public DbSet<Part> Parts => Set<Part>();
+    public DbSet<Supplier> Suppliers => Set<Supplier>();
+    public DbSet<PartPurchase> PartPurchases => Set<PartPurchase>();
+    public DbSet<PartPurchaseItem> PartPurchaseItems => Set<PartPurchaseItem>();
     public DbSet<Quotation> Quotations => Set<Quotation>();
     public DbSet<QuotationItem> QuotationItems => Set<QuotationItem>();
     public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
@@ -77,6 +80,11 @@ public class RepairDbContext(DbContextOptions<RepairDbContext> options, ICurrent
             e.Property(x => x.Model).HasMaxLength(100);
             e.Property(x => x.SerialNumber).HasMaxLength(100);
             e.Property(x => x.IssueDescription).HasMaxLength(2000);
+            e.Property(x => x.DeliveredToName).HasMaxLength(200);
+            e.Property(x => x.DeliveredToPhone).HasMaxLength(40);
+            e.Property(x => x.DeliveredToCnic).HasMaxLength(50);
+            e.Property(x => x.DeliveredByName).HasMaxLength(200);
+            e.Property(x => x.DeliveryNote).HasMaxLength(1000);
             e.HasOne(x => x.Intake).WithMany(x => x.Jobs)
                 .HasForeignKey(x => x.IntakeId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Customer).WithMany()
@@ -162,7 +170,57 @@ public class RepairDbContext(DbContextOptions<RepairDbContext> options, ICurrent
             e.Property(x => x.Brand).HasMaxLength(100);
             e.Property(x => x.Model).HasMaxLength(100);
             e.Property(x => x.Price).HasPrecision(18, 2);
+            e.Property(x => x.LastPurchaseCost).HasPrecision(18, 4);
+            e.Property(x => x.AverageCost).HasPrecision(18, 4);
+            e.Property(x => x.PurchasedQuantity).HasPrecision(14, 2);
+            e.Ignore(x => x.MarginPercent);
+            e.HasOne(x => x.LastSupplier).WithMany()
+                .HasForeignKey(x => x.LastSupplierId).OnDelete(DeleteBehavior.SetNull);
             e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<Supplier>(e =>
+        {
+            e.HasIndex(x => x.Name);
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Phone).HasMaxLength(40);
+            e.Property(x => x.Email).HasMaxLength(256);
+            e.Property(x => x.Address).HasMaxLength(500);
+            e.Property(x => x.TaxNumber).HasMaxLength(64);
+            e.Property(x => x.Notes).HasMaxLength(1000);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<PartPurchase>(e =>
+        {
+            e.HasIndex(x => x.PurchaseNumber).IsUnique();
+            e.HasIndex(x => x.PurchasedOn);
+            e.Property(x => x.PurchaseNumber).HasMaxLength(32);
+            e.Property(x => x.SupplierInvoiceNumber).HasMaxLength(100);
+            e.Property(x => x.ReceivedById).HasMaxLength(450);
+            e.Property(x => x.ReceivedByName).HasMaxLength(200);
+            e.Property(x => x.Notes).HasMaxLength(2000);
+            foreach (var money in new[] { "Subtotal", "TaxAmount", "DiscountAmount",
+                                          "OtherCharges", "TotalAmount" })
+                e.Property(money).HasPrecision(18, 2);
+            e.HasOne(x => x.Supplier).WithMany()
+                .HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<PartPurchaseItem>(e =>
+        {
+            e.HasIndex(x => x.PartId);
+            e.Property(x => x.Quantity).HasPrecision(14, 2);
+            e.Property(x => x.UnitCost).HasPrecision(18, 4);
+            e.Property(x => x.LineTotal).HasPrecision(18, 2);
+            e.Property(x => x.NewSellingPrice).HasPrecision(18, 2);
+            e.Property(x => x.Remarks).HasMaxLength(400);
+            e.HasOne(x => x.PartPurchase).WithMany(x => x.Items)
+                .HasForeignKey(x => x.PartPurchaseId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Part).WithMany()
+                .HasForeignKey(x => x.PartId).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => !x.PartPurchase.IsDeleted);
         });
 
         b.Entity<Quotation>(e =>

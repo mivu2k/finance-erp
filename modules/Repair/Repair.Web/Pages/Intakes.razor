@@ -42,9 +42,16 @@
                     <td>@i.PaymentMethod</td>
                     <td>@i.ReceivedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
                     <td>@i.ReceivedByName</td>
-                    <td>
+                    <td style="white-space:nowrap">
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PictureAsPdf"
+                                       Title="Receipt (A4)"
+                                       Href="@($"/repair/print/intake/{i.Id}/a4")" Target="_blank" />
                         <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Receipt"
-                                       Href="@($"/repair/print/intake/{i.Id}")" Target="_blank" />
+                                       Title="Receipt (80mm slip)"
+                                       Href="@($"/repair/print/intake/{i.Id}/pos")" Target="_blank" />
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Label"
+                                       Title="Device labels"
+                                       Href="@($"/repair/print/intake/{i.Id}/labels")" Target="_blank" />
                     </td>
                 </tr>
             }

@@ -1,0 +1,117 @@
+@page "/repair/suppliers"
+@attribute [Authorize(Policy = RepairPermissions.PurchasesView)]
+@layout RepairLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Suppliers</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/repair/purchases" />
+    <MudText Typo="Typo.h5">Suppliers</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@RepairPermissions.PurchasesManage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => Open(null))">New Supplier</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudTextField @bind-Value="_search" Label="Search name or phone" Margin="Margin.Dense"
+                  Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="LoadAsync"
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr><th>Name</th><th>Phone</th><th>Email</th><th>Tax number</th><th>Address</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var s in _suppliers)
+            {
+                <tr>
+                    <td>@s.Name</td>
+                    <td>@s.Phone</td>
+                    <td>@s.Email</td>
+                    <td>@s.TaxNumber</td>
+                    <td>@s.Address</td>
+                    <td>
+                        <AuthorizeView Policy="@RepairPermissions.PurchasesManage" Context="e">
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                           OnClick="@(() => Open(s))" />
+                        </AuthorizeView>
+                    </td>
+                </tr>
+            }
+            @if (_suppliers.Count == 0)
+            {
+                <tr><td colspan="6" class="mud-text-secondary pa-4">No suppliers yet.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@if (_editorOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:520px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_edit.Id == 0 ? "New Supplier" : _edit.Name)</MudText>
+            <MudTextField @bind-Value="_edit.Name" Label="Name *" Class="mb-2" />
+            <MudTextField @bind-Value="_edit.Phone" Label="Phone" Class="mb-2" />
+            <MudTextField @bind-Value="_edit.Email" Label="Email" Class="mb-2" />
+            <MudTextField @bind-Value="_edit.TaxNumber" Label="Tax number (NTN)" Class="mb-2" />
+            <MudTextField @bind-Value="_edit.Address" Label="Address" Lines="2" Class="mb-2" />
+            <MudTextField @bind-Value="_edit.Notes" Label="Notes" Lines="2" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _editorOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    private List<Supplier> _suppliers = [];
+    private string? _search;
+    private bool _editorOpen;
+    private Supplier _edit = new();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _suppliers = await scope.ServiceProvider.GetRequiredService<IPurchaseService>()
+            .ListSuppliersAsync(_search);
+        StateHasChanged();
+    }
+
+    private void Open(Supplier? s)
+    {
+        _edit = s is null
+            ? new Supplier()
+            : new Supplier
+            {
+                Id = s.Id, Name = s.Name, Phone = s.Phone, Email = s.Email,
+                Address = s.Address, TaxNumber = s.TaxNumber, Notes = s.Notes
+            };
+        _editorOpen = true;
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IPurchaseService>()
+                .SaveSupplierAsync(_edit);
+            _editorOpen = false;
+            Snackbar.Add("Supplier saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

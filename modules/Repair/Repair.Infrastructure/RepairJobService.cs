@@ -23,6 +23,15 @@ public interface IRepairJobService
     Task<RepairJob> ChangeStatusAsync(int id, JobStatus to, string? note,
         string actorId, string actorName, CancellationToken ct = default);
 
+    /// <summary>
+    /// Hands the device back, recording who collected it. Kept separate from a
+    /// plain status change because the handover details are what the delivery note
+    /// is signed against.
+    /// </summary>
+    Task<RepairJob> DeliverAsync(int id, string collectedByName, string? collectedByPhone,
+        string? collectedByCnic, string? note, string actorId, string actorName,
+        CancellationToken ct = default);
+
     Task<Diagnosis> AddDiagnosisAsync(Diagnosis diagnosis, CancellationToken ct = default);
     Task DeleteDiagnosisAsync(int diagnosisId, CancellationToken ct = default);
 
@@ -177,6 +186,43 @@ public class RepairJobService(RepairDbContext db) : IRepairJobService
         job.Status = to;
         job.StatusUpdatedAtUtc = DateTime.UtcNow;
         if (to == JobStatus.Delivered) job.DeliveredAtUtc = DateTime.UtcNow;
+
+        await db.SaveChangesAsync(ct);
+        return job;
+    }
+
+    public async Task<RepairJob> DeliverAsync(
+        int id, string collectedByName, string? collectedByPhone, string? collectedByCnic,
+        string? note, string actorId, string actorName, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(collectedByName))
+            throw new InvalidOperationException(
+                "Record who collected the device — the delivery note is signed against it.");
+
+        var job = await db.RepairJobs.Include(j => j.StatusHistory)
+                      .FirstOrDefaultAsync(j => j.Id == id, ct)
+                  ?? throw new InvalidOperationException("Job not found.");
+
+        JobWorkflow.EnsureCanMove(job.Status, JobStatus.Delivered);
+
+        job.StatusHistory.Add(new JobStatusHistory
+        {
+            ChangedById = actorId,
+            ChangedByName = actorName,
+            FromStatus = job.Status,
+            ToStatus = JobStatus.Delivered,
+            Note = $"Collected by {collectedByName}" +
+                   (string.IsNullOrWhiteSpace(note) ? "" : $" — {note}")
+        });
+
+        job.Status = JobStatus.Delivered;
+        job.StatusUpdatedAtUtc = DateTime.UtcNow;
+        job.DeliveredAtUtc = DateTime.UtcNow;
+        job.DeliveredToName = collectedByName.Trim();
+        job.DeliveredToPhone = collectedByPhone;
+        job.DeliveredToCnic = collectedByCnic;
+        job.DeliveredByName = actorName;
+        job.DeliveryNote = note;
 
         await db.SaveChangesAsync(ct);
         return job;

@@ -15,9 +15,12 @@
         @_order.PaymentStatus
     </MudChip>
     <MudSpacer />
-    <MudButton Variant="Variant.Outlined" Size="Size.Small"
-               StartIcon="@Icons.Material.Filled.PictureAsPdf"
-               Href="@($"/repair/print/invoice/{_order.Id}")" Target="_blank">Invoice</MudButton>
+    <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+        <MudButton StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                   Href="@($"/repair/print/invoice/{_order.Id}/a4")" Target="_blank">Invoice A4</MudButton>
+        <MudButton StartIcon="@Icons.Material.Filled.Receipt"
+                   Href="@($"/repair/print/invoice/{_order.Id}/pos")" Target="_blank">Receipt</MudButton>
+    </MudButtonGroup>
     @if (_order.PaymentStatus != PaymentStatus.Paid)
     {
         <AuthorizeView Policy="@RepairPermissions.PaymentsRecord" Context="pr">

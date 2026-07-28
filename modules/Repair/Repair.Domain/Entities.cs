@@ -59,7 +59,15 @@ public class RepairJob : AuditableEntity
 
     public JobStatus Status { get; set; } = JobStatus.Received;
     public DateTime StatusUpdatedAtUtc { get; set; }
+
+    // --- handover, captured when the device goes back to the customer ---
     public DateTime? DeliveredAtUtc { get; set; }
+    /// <summary>Who physically collected it — often not the customer themselves.</summary>
+    public string? DeliveredToName { get; set; }
+    public string? DeliveredToPhone { get; set; }
+    public string? DeliveredToCnic { get; set; }
+    public string? DeliveredByName { get; set; }
+    public string? DeliveryNote { get; set; }
 
     public List<JobStatusHistory> StatusHistory { get; set; } = [];
     public List<JobSymptom> Symptoms { get; set; } = [];
@@ -141,15 +149,94 @@ public class JobPhoto : AuditableEntity
     public string? Caption { get; set; }
 }
 
-/// <summary>Spare parts inventory.</summary>
+/// <summary>
+/// A spare part in the catalog. Deliberately carries no stock quantity — the
+/// workshop buys against a job rather than holding a counted store, so what
+/// matters is what the part costs and what it sells for, not how many are on a
+/// shelf. Cost comes from the purchase history.
+/// </summary>
 public class Part : AuditableEntity
 {
     public string? Sku { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Brand { get; set; }
     public string? Model { get; set; }
+
+    /// <summary>What it is quoted at. Seeded from cost plus margin, then editable.</summary>
     public decimal Price { get; set; }
-    public int StockQuantity { get; set; }
+
+    // --- derived from PartPurchase, refreshed on every purchase ---
+
+    /// <summary>Unit cost on the most recent purchase.</summary>
+    public decimal? LastPurchaseCost { get; set; }
+    public DateOnly? LastPurchasedOn { get; set; }
+    public int? LastSupplierId { get; set; }
+    public Supplier? LastSupplier { get; set; }
+    /// <summary>Quantity-weighted mean cost across every purchase.</summary>
+    public decimal? AverageCost { get; set; }
+    /// <summary>Total quantity ever bought — the denominator behind the average.</summary>
+    public decimal PurchasedQuantity { get; set; }
+
+    /// <summary>Margin on the last purchase, as a percentage of cost.</summary>
+    public decimal? MarginPercent => LastPurchaseCost is > 0
+        ? Math.Round((Price - LastPurchaseCost.Value) / LastPurchaseCost.Value * 100m, 2)
+        : null;
+}
+
+/// <summary>Where parts are bought from.</summary>
+public class Supplier : AuditableEntity
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Phone { get; set; }
+    public string? Email { get; set; }
+    public string? Address { get; set; }
+    public string? TaxNumber { get; set; }
+    public string? Notes { get; set; }
+}
+
+/// <summary>
+/// A purchase of parts from a supplier. This is the price-tracking mechanism:
+/// every receipt updates the part's last and average cost, so quotations can be
+/// priced against what the part actually costs today.
+/// </summary>
+public class PartPurchase : AuditableEntity
+{
+    public string PurchaseNumber { get; set; } = string.Empty;
+    public int SupplierId { get; set; }
+    public Supplier Supplier { get; set; } = null!;
+
+    /// <summary>The supplier's own invoice or bill number.</summary>
+    public string? SupplierInvoiceNumber { get; set; }
+    public DateOnly PurchasedOn { get; set; }
+
+    public string ReceivedById { get; set; } = string.Empty;
+    public string ReceivedByName { get; set; } = string.Empty;
+
+    public decimal Subtotal { get; set; }
+    public decimal TaxAmount { get; set; }
+    public decimal DiscountAmount { get; set; }
+    public decimal OtherCharges { get; set; }
+    public decimal TotalAmount { get; set; }
+
+    public PaymentMethod PaymentMethod { get; set; } = PaymentMethod.Cash;
+    public string? Notes { get; set; }
+
+    public List<PartPurchaseItem> Items { get; set; } = [];
+}
+
+public class PartPurchaseItem : BaseEntity
+{
+    public int PartPurchaseId { get; set; }
+    public PartPurchase PartPurchase { get; set; } = null!;
+    public int PartId { get; set; }
+    public Part Part { get; set; } = null!;
+
+    public decimal Quantity { get; set; } = 1;
+    public decimal UnitCost { get; set; }
+    public decimal LineTotal { get; set; }
+    /// <summary>Optionally re-price the part's selling price from this receipt.</summary>
+    public decimal? NewSellingPrice { get; set; }
+    public string? Remarks { get; set; }
 }
 
 /// <summary>

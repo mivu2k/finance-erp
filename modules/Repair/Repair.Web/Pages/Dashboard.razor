@@ -56,26 +56,28 @@
 
     <MudItem xs="12" md="5">
         <MudPaper Class="pa-4">
-            <MudText Typo="Typo.subtitle1" Class="mb-2">Low stock</MudText>
+            <MudText Typo="Typo.subtitle1" Class="mb-1">Parts with no cost on file</MudText>
+            <MudText Typo="Typo.caption" Class="mb-2 mud-text-secondary">
+                Never purchased, so anything quoted against them is a guessed margin.
+            </MudText>
             <MudSimpleTable Dense="true" Hover="true">
-                <thead><tr><th>Part</th><th>SKU</th><th style="text-align:right">On hand</th></tr></thead>
+                <thead>
+                    <tr><th>Part</th><th>SKU</th><th style="text-align:right">Sell price</th></tr>
+                </thead>
                 <tbody>
-                    @foreach (var p in _lowStock.Take(10))
+                    @foreach (var p in _uncosted.Take(10))
                     {
                         <tr>
                             <td>@p.Name</td>
                             <td>@p.Sku</td>
-                            <td style="text-align:right">
-                                <MudChip T="string" Size="Size.Small"
-                                         Color="@(p.StockQuantity == 0 ? Color.Error : Color.Warning)">
-                                    @p.StockQuantity
-                                </MudChip>
-                            </td>
+                            <td style="text-align:right">@p.Price.ToString("N2")</td>
                         </tr>
                     }
-                    @if (_lowStock.Count == 0)
+                    @if (_uncosted.Count == 0)
                     {
-                        <tr><td colspan="3" class="mud-text-secondary pa-4">Stock levels are fine.</td></tr>
+                        <tr><td colspan="3" class="mud-text-secondary pa-4">
+                            Every part has a purchase behind it.
+                        </td></tr>
                     }
                 </tbody>
             </MudSimpleTable>
@@ -85,7 +87,7 @@
 
 @code {
     private List<RepairJob> _open = [];
-    private List<Part> _lowStock = [];
+    private List<Part> _uncosted = [];
     private List<(string Label, int Count, Color Colour)> _tiles = [];
     private readonly DateOnly _today = DateOnly.FromDateTime(DateTime.UtcNow);
 
@@ -97,7 +99,7 @@
         var orders = scope.ServiceProvider.GetRequiredService<ISalesOrderService>();
 
         _open = await jobs.ListAsync(new JobFilter(OpenOnly: true));
-        _lowStock = await catalog.ListPartsAsync(lowStockOnly: true);
+        _uncosted = await catalog.ListPartsAsync(neverPurchasedOnly: true);
         var unpaid = await orders.ListAsync(status: PaymentStatus.Unpaid);
 
         int At(JobStatus s) => _open.Count(j => j.Status == s);
