@@ -1,8 +1,8 @@
-@page "/payroll/structures"
+@page "/finance/payroll/structures"
 @attribute [Authorize(Policy = Permissions.PayrollManage)]
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.EntityFrameworkCore
-@using FinanceERP.Infrastructure.Identity
+@using ErpPlatform.Shared.Identity
 @inject IServiceScopeFactory ScopeFactory
 @inject ISnackbar Snackbar
 

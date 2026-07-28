@@ -1,27 +1,75 @@
-using System.Security.Claims;
+using ErpPlatform.Shared.Identity;
 using FinanceERP.Domain.Entities;
 using FinanceERP.Domain.Enums;
-using FinanceERP.Domain.Security;
-using FinanceERP.Infrastructure.Identity;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace FinanceERP.Infrastructure.Persistence;
 
 public static class DbSeeder
 {
-    public static async Task SeedAsync(AppDbContext db, UserManager<ApplicationUser> userManager,
-        RoleManager<IdentityRole> roleManager, IConfiguration config, ILogger logger)
+    /// <summary>
+    /// Brings the accounts database up to date. Roles, permissions and the admin
+    /// account are no longer seeded here — they belong to the shared identity
+    /// database and are handled by <c>IdentitySeeder</c>.
+    /// </summary>
+    public static async Task SeedAsync(AppDbContext db, IPlatformUserDirectory directory, ILogger logger)
     {
         await db.Database.MigrateAsync();
 
-        await SeedRolesAsync(roleManager);
-        await SeedAdminUserAsync(userManager, config, logger);
         await SeedChartOfAccountsAsync(db);
         await SeedDefaultsAsync(db);
         await SeedPayComponentsAsync(db);
+        await SyncEmployeeProfilesAsync(db, directory, logger);
+    }
+
+    /// <summary>
+    /// Mirrors platform users who can enter Finance into the accounts database.
+    /// Payroll and reporting query this table instead of reaching across to the
+    /// identity database, which keeps every finance query inside one connection.
+    /// Accounts-owned fields (department, ledger account) are never overwritten.
+    /// </summary>
+    public static async Task SyncEmployeeProfilesAsync(
+        AppDbContext db, IPlatformUserDirectory directory, ILogger logger)
+    {
+        var users = await directory.ListForModuleAsync(AppModules.Finance);
+        var existing = await db.EmployeeProfiles.ToDictionaryAsync(p => p.UserId);
+        var added = 0;
+
+        foreach (var u in users)
+        {
+            if (existing.TryGetValue(u.UserId, out var profile))
+            {
+                profile.FullName = u.FullName;
+                profile.Email = u.Email;
+                profile.EmployeeCode = u.EmployeeCode;
+                profile.IsActive = u.IsActive;
+            }
+            else
+            {
+                db.EmployeeProfiles.Add(new EmployeeProfile
+                {
+                    UserId = u.UserId,
+                    FullName = u.FullName,
+                    Email = u.Email,
+                    EmployeeCode = u.EmployeeCode,
+                    IsActive = u.IsActive
+                });
+                added++;
+            }
+        }
+
+        // Someone who lost Finance access keeps their profile — payslips and
+        // vouchers still point at it — but stops showing up as selectable.
+        var current = users.Select(u => u.UserId).ToHashSet();
+        foreach (var (userId, profile) in existing)
+            if (!current.Contains(userId)) profile.IsActive = false;
+
+        if (db.ChangeTracker.HasChanges())
+        {
+            await db.SaveChangesAsync();
+            if (added > 0) logger.LogInformation("Mirrored {Count} new finance employee profiles", added);
+        }
     }
 
     /// <summary>Starter salary component catalog. Amounts are zero — each employee's
@@ -55,113 +103,6 @@ public static class DbSeeder
                 DefaultValue = r.Value, AccountId = Acct(r.Account!), SortOrder = r.Sort, IsSystem = true
             });
         await db.SaveChangesAsync();
-    }
-
-    private static async Task SeedRolesAsync(RoleManager<IdentityRole> roleManager)
-    {
-        foreach (var role in AppRoles.All)
-            if (!await roleManager.RoleExistsAsync(role))
-                await roleManager.CreateAsync(new IdentityRole(role));
-
-        var matrix = new Dictionary<string, string[]>
-        {
-            [AppRoles.SuperAdmin] = Permissions.All.ToArray(),
-            [AppRoles.Admin] = Permissions.All.Where(p => p != Permissions.SettingsManage).ToArray(),
-            [AppRoles.Director] =
-            [
-                Permissions.AccountsView, Permissions.LedgerView, Permissions.VouchersView,
-                Permissions.ReportsView, Permissions.ReportsExport, Permissions.PettyCashView,
-                Permissions.PettyCashAssign, Permissions.RequestsViewAll, Permissions.DirectorFundsRequest,
-                Permissions.DirectorFundsView, Permissions.AdvancesViewAll, Permissions.AdvancesApprove,
-                Permissions.LoansView, Permissions.InvestmentsView, Permissions.ThirdPartiesView,
-                Permissions.UtilitiesView, Permissions.PayrollView, Permissions.PayrollApprove
-            ],
-            [AppRoles.FinanceManager] =
-            [
-                Permissions.AccountsView, Permissions.AccountsManage, Permissions.LedgerView,
-                Permissions.VouchersView, Permissions.VouchersCreate, Permissions.VouchersEdit,
-                Permissions.VouchersPost, Permissions.ReportsView, Permissions.ReportsExport,
-                Permissions.PettyCashView, Permissions.PettyCashManage, Permissions.RequestsViewAll,
-                Permissions.RequestsApproveAdmin, Permissions.AdvancesViewAll, Permissions.AdvancesApprove,
-                Permissions.AdvancesManage, Permissions.LoansView, Permissions.LoansManage,
-                Permissions.InvestmentsView, Permissions.InvestmentsManage,
-                Permissions.ThirdPartiesView, Permissions.ThirdPartiesManage,
-                Permissions.UtilitiesView, Permissions.UtilitiesManage, Permissions.UtilitiesPay,
-                Permissions.PayrollView, Permissions.PayrollManage, Permissions.PayrollApprove
-            ],
-            [AppRoles.Accountant] =
-            [
-                Permissions.AccountsView, Permissions.LedgerView, Permissions.VouchersView,
-                Permissions.VouchersCreate, Permissions.VouchersEdit, Permissions.VouchersPost,
-                Permissions.ReportsView, Permissions.ReportsExport, Permissions.PettyCashView,
-                Permissions.PettyCashManage, Permissions.RequestsViewAll, Permissions.RequestsPay,
-                Permissions.AdvancesViewAll, Permissions.AdvancesManage,
-                Permissions.LoansView, Permissions.InvestmentsView,
-                Permissions.ThirdPartiesView, Permissions.ThirdPartiesManage,
-                Permissions.UtilitiesView, Permissions.UtilitiesManage, Permissions.UtilitiesPay,
-                Permissions.PayrollView, Permissions.PayrollManage, Permissions.PayrollPay
-            ],
-            [AppRoles.Manager] =
-            [
-                Permissions.RequestsCreate, Permissions.RequestsViewOwn, Permissions.RequestsApproveManager,
-                Permissions.AdvancesCreate, Permissions.AdvancesViewOwn, Permissions.ReportsView,
-                Permissions.PayrollViewOwn
-            ],
-            [AppRoles.Employee] =
-            [
-                Permissions.RequestsCreate, Permissions.RequestsViewOwn,
-                Permissions.AdvancesCreate, Permissions.AdvancesViewOwn, Permissions.PayrollViewOwn
-            ],
-            [AppRoles.Auditor] =
-            [
-                Permissions.AccountsView, Permissions.LedgerView, Permissions.VouchersView,
-                Permissions.ReportsView, Permissions.ReportsExport, Permissions.AuditView,
-                Permissions.RequestsViewAll, Permissions.AdvancesViewAll, Permissions.LoansView,
-                Permissions.InvestmentsView, Permissions.ThirdPartiesView, Permissions.PettyCashView,
-                Permissions.UtilitiesView, Permissions.PayrollView
-            ],
-            [AppRoles.Viewer] =
-            [
-                Permissions.AccountsView, Permissions.LedgerView, Permissions.VouchersView, Permissions.ReportsView
-            ]
-        };
-
-        foreach (var (roleName, perms) in matrix)
-        {
-            var role = await roleManager.FindByNameAsync(roleName);
-            if (role is null) continue;
-            var existing = (await roleManager.GetClaimsAsync(role))
-                .Where(c => c.Type == Permissions.ClaimType).Select(c => c.Value).ToHashSet();
-            foreach (var p in perms.Where(p => !existing.Contains(p)))
-                await roleManager.AddClaimAsync(role, new Claim(Permissions.ClaimType, p));
-        }
-    }
-
-    private static async Task SeedAdminUserAsync(UserManager<ApplicationUser> userManager, IConfiguration config, ILogger logger)
-    {
-        var email = config["Seed:AdminEmail"] ?? "admin@financeerp.local";
-        var password = config["Seed:AdminPassword"] ?? "ChangeMe!123";
-
-        if (await userManager.FindByEmailAsync(email) is not null) return;
-
-        var admin = new ApplicationUser
-        {
-            UserName = email,
-            Email = email,
-            EmailConfirmed = true,
-            FullName = "System Administrator",
-            IsActive = true
-        };
-        var result = await userManager.CreateAsync(admin, password);
-        if (result.Succeeded)
-        {
-            await userManager.AddToRoleAsync(admin, AppRoles.SuperAdmin);
-            logger.LogInformation("Seeded Super Admin {Email}", email);
-        }
-        else
-        {
-            logger.LogError("Failed to seed admin: {Errors}", string.Join("; ", result.Errors.Select(e => e.Description)));
-        }
     }
 
     private static async Task SeedChartOfAccountsAsync(AppDbContext db)

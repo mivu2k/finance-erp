@@ -1,0 +1,261 @@
+@page "/admin/users"
+@attribute [Authorize(Policy = PlatformPermissions.UsersManage)]
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Users</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h5">Users</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd"
+               OnClick="@(() => OpenEditor(null))">New User</MudButton>
+</div>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr>
+                <th>Name</th><th>Email</th><th>Employee Code</th>
+                <th>Apps</th><th>Roles</th><th>Active</th><th>Locked</th><th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var u in _users)
+            {
+                <tr>
+                    <td>@u.User.FullName</td>
+                    <td>@u.User.Email</td>
+                    <td>@u.User.EmployeeCode</td>
+                    <td>
+                        @foreach (var key in u.Modules)
+                        {
+                            var def = AppModules.Find(key);
+                            <MudChip T="string" Size="Size.Small" Class="ma-1"
+                                     Style="@($"background:{def?.Color ?? "#666"};color:#fff")">
+                                @(def?.Name ?? key)
+                            </MudChip>
+                        }
+                    </td>
+                    <td>@string.Join(", ", u.Roles)</td>
+                    <td>@(u.User.IsActive ? "Yes" : "No")</td>
+                    <td>@(u.User.LockoutEnd > DateTimeOffset.UtcNow ? "Yes" : "No")</td>
+                    <td style="white-space:nowrap">
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                       OnClick="@(() => OpenEditor(u))" />
+                        <MudIconButton Size="Size.Small"
+                                       Icon="@(u.User.LockoutEnd > DateTimeOffset.UtcNow
+                                               ? Icons.Material.Filled.LockOpen : Icons.Material.Filled.Lock)"
+                                       Color="Color.Warning" OnClick="@(() => ToggleLock(u.User))" />
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@if (_editorOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:620px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_isNew ? "New User" : _fullName)</MudText>
+
+            <MudTextField @bind-Value="_fullName" Label="Full name" Class="mb-2" />
+            <MudTextField @bind-Value="_email" Label="Email" Disabled="@(!_isNew)" Class="mb-2" />
+            <MudTextField @bind-Value="_employeeCode" Label="Employee code" Class="mb-2"
+                          HelperText="Links this person to their HR and attendance records." />
+            @if (_isNew)
+            {
+                <MudTextField @bind-Value="_password" Label="Initial password" InputType="InputType.Password"
+                              Class="mb-2" HelperText="Min 8 chars incl. digit, upper, lower, symbol" />
+            }
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle2" Class="mb-1">Roles</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                Roles are grouped by app. Giving someone a role in an app is what puts
+                that app's tile on their portal.
+            </MudText>
+
+            @foreach (var group in _allRoles.GroupBy(r => r.ModuleKey))
+            {
+                <MudText Typo="Typo.body2" Class="mt-3" Style="font-weight:600">
+                    @(group.Key is null ? "Platform" : AppModules.Find(group.Key)?.Name ?? group.Key)
+                </MudText>
+                @foreach (var role in group.OrderBy(r => r.Name))
+                {
+                    var name = role.Name!;
+                    <MudCheckBox T="bool" Dense="true" Label="@name"
+                                 Value="@_selectedRoles.Contains(name)"
+                                 ValueChanged="@(v => ToggleRole(name, v))" />
+                }
+            }
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle2" Class="mb-1">App access overrides</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                Optional. Leave on "From roles" unless you need to let someone into an
+                app they hold no role in, or lock them out without removing their role.
+            </MudText>
+
+            @foreach (var m in AppModules.All)
+            {
+                <div class="d-flex align-center mt-2">
+                    <MudText Typo="Typo.body2" Style="width:220px">@m.Name</MudText>
+                    <MudSelect T="string" Value="@OverrideOf(m.Key)" Margin="Margin.Dense" Dense="true"
+                               ValueChanged="@(v => SetOverride(m.Key, v))" Style="width:180px">
+                        <MudSelectItem Value="@("inherit")">From roles</MudSelectItem>
+                        <MudSelectItem Value="@("grant")">Always allow</MudSelectItem>
+                        <MudSelectItem Value="@("deny")">Always block</MudSelectItem>
+                    </MudSelect>
+                </div>
+            }
+
+            <MudDivider Class="my-4" />
+            <MudSwitch T="bool" @bind-Value="_isActive" Label="Active" Color="Color.Primary" />
+
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _editorOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    private record UserRow(ApplicationUser User, List<string> Roles, List<string> Modules);
+
+    private List<UserRow> _users = [];
+    private List<ApplicationRole> _allRoles = [];
+
+    private bool _editorOpen;
+    private bool _isNew;
+    private string? _editUserId;
+    private string _fullName = "";
+    private string _email = "";
+    private string? _employeeCode;
+    private string _password = "";
+    private bool _isActive = true;
+    private HashSet<string> _selectedRoles = [];
+    private Dictionary<string, bool?> _overrides = [];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var sp = scope.ServiceProvider;
+        var userManager = sp.GetRequiredService<UserManager<ApplicationUser>>();
+        var roleManager = sp.GetRequiredService<RoleManager<ApplicationRole>>();
+        var access = sp.GetRequiredService<IModuleAccessService>();
+
+        _allRoles = await roleManager.Roles.ToListAsync();
+
+        var users = await userManager.Users.OrderBy(u => u.FullName).ToListAsync();
+        _users = [];
+        foreach (var u in users)
+            _users.Add(new UserRow(u,
+                (await userManager.GetRolesAsync(u)).ToList(),
+                (await access.GetAccessibleModuleKeysAsync(u.Id)).ToList()));
+
+        StateHasChanged();
+    }
+
+    private void ToggleRole(string role, bool on)
+    {
+        if (on) _selectedRoles.Add(role); else _selectedRoles.Remove(role);
+    }
+
+    private string OverrideOf(string moduleKey) =>
+        _overrides.TryGetValue(moduleKey, out var v)
+            ? v switch { true => "grant", false => "deny", _ => "inherit" }
+            : "inherit";
+
+    private void SetOverride(string moduleKey, string value) =>
+        _overrides[moduleKey] = value switch { "grant" => true, "deny" => false, _ => (bool?)null };
+
+    private async Task OpenEditor(UserRow? row)
+    {
+        _isNew = row is null;
+        _editUserId = row?.User.Id;
+        _fullName = row?.User.FullName ?? "";
+        _email = row?.User.Email ?? "";
+        _employeeCode = row?.User.EmployeeCode;
+        _isActive = row?.User.IsActive ?? true;
+        _selectedRoles = row is null ? [] : [.. row.Roles];
+        _password = "";
+        _overrides = [];
+
+        if (row is not null)
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<PlatformIdentityDbContext>();
+            var rows = await db.UserModuleAccess.Where(a => a.UserId == row.User.Id).ToListAsync();
+            foreach (var a in rows) _overrides[a.ModuleKey] = a.IsGranted;
+        }
+
+        _editorOpen = true;
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var sp = scope.ServiceProvider;
+            var userManager = sp.GetRequiredService<UserManager<ApplicationUser>>();
+            var access = sp.GetRequiredService<IModuleAccessService>();
+
+            ApplicationUser user;
+            if (_isNew)
+            {
+                user = new ApplicationUser
+                {
+                    UserName = _email, Email = _email, EmailConfirmed = true,
+                    FullName = _fullName, EmployeeCode = _employeeCode, IsActive = _isActive
+                };
+                var create = await userManager.CreateAsync(user, _password);
+                if (!create.Succeeded)
+                    throw new InvalidOperationException(
+                        string.Join("; ", create.Errors.Select(e => e.Description)));
+            }
+            else
+            {
+                user = (await userManager.FindByIdAsync(_editUserId!))!;
+                user.FullName = _fullName;
+                user.EmployeeCode = _employeeCode;
+                user.IsActive = _isActive;
+                await userManager.UpdateAsync(user);
+            }
+
+            var current = await userManager.GetRolesAsync(user);
+            await userManager.RemoveFromRolesAsync(user, current.Except(_selectedRoles));
+            await userManager.AddToRolesAsync(user, _selectedRoles.Except(current));
+
+            foreach (var m in AppModules.All)
+                await access.SetAccessAsync(user.Id, m.Key,
+                    _overrides.GetValueOrDefault(m.Key), _fullName);
+
+            Snackbar.Add("User saved. App access applies at their next sign-in.", Severity.Success);
+            _editorOpen = false;
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task ToggleLock(ApplicationUser user)
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var target = (await userManager.FindByIdAsync(user.Id))!;
+        var locked = target.LockoutEnd > DateTimeOffset.UtcNow;
+        await userManager.SetLockoutEnabledAsync(target, true);
+        await userManager.SetLockoutEndDateAsync(target,
+            locked ? null : DateTimeOffset.UtcNow.AddYears(100));
+        Snackbar.Add(locked ? "User unlocked." : "User locked.", Severity.Info);
+        await LoadAsync();
+    }
+}

@@ -1,8 +1,16 @@
 <Solution>
-  <Folder Name="/src/">
+  <Folder Name="/shared/">
+    <Project Path="shared/ErpPlatform.Shared.Kernel/ErpPlatform.Shared.Kernel.csproj" />
+    <Project Path="shared/ErpPlatform.Shared.Persistence/ErpPlatform.Shared.Persistence.csproj" />
+    <Project Path="shared/ErpPlatform.Shared.Identity/ErpPlatform.Shared.Identity.csproj" />
+    <Project Path="shared/ErpPlatform.Shared.Web/ErpPlatform.Shared.Web.csproj" />
+  </Folder>
+  <Folder Name="/modules/finance/">
     <Project Path="src/FinanceERP.Application/FinanceERP.Application.csproj" />
     <Project Path="src/FinanceERP.Domain/FinanceERP.Domain.csproj" />
     <Project Path="src/FinanceERP.Infrastructure/FinanceERP.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/apps/">
     <Project Path="src/FinanceERP.Web/FinanceERP.Web.csproj" />
   </Folder>
 </Solution>

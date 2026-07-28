@@ -1,5 +1,7 @@
-﻿@using FinanceERP.Web.Components.Account.Shared
-<Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+@using FinanceERP.Web.Components.Account.Shared
+@* Portal and app-switcher pages ship in the shared web library. *@
+<Router AppAssembly="typeof(Program).Assembly"
+        AdditionalAssemblies="new[] { typeof(ErpPlatform.Shared.Web.Portal.Portal).Assembly }" NotFoundPage="typeof(Pages.NotFound)">
     <Found Context="routeData">
         <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
             <NotAuthorized>

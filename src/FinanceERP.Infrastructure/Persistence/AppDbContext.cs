@@ -1,25 +1,20 @@
 using System.Text.Json;
-using FinanceERP.Domain.Common;
+using ErpPlatform.Shared.Kernel;
 using FinanceERP.Domain.Entities;
-using FinanceERP.Infrastructure.Identity;
-using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace FinanceERP.Infrastructure.Persistence;
 
-/// <summary>Supplies the current user/request context to the audit pipeline.</summary>
-public interface ICurrentUserService
-{
-    string? UserId { get; }
-    string? UserName { get; }
-    string? IpAddress { get; }
-    string? Browser { get; }
-    bool HasPermission(string permission);
-}
-
+/// <summary>
+/// The Finance module's database (<c>erp_accounts</c>). Identity no longer lives
+/// here — users, roles and permissions are in the shared identity database, and
+/// this context refers to people only by their Identity user id string. See
+/// <see cref="EmployeeProfile"/> for the accounts-side mirror.
+/// </summary>
 public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUserService currentUser)
-    : IdentityDbContext<ApplicationUser>(options)
+    : DbContext(options)
 {
+    public DbSet<EmployeeProfile> EmployeeProfiles => Set<EmployeeProfile>();
     public DbSet<Account> Accounts => Set<Account>();
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<CostCenter> CostCenters => Set<CostCenter>();
@@ -280,6 +275,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUserSe
 
         b.Entity<Notification>(e => e.HasIndex(x => new { x.UserId, x.IsRead }));
         b.Entity<AppSetting>(e => e.HasIndex(x => x.Key).IsUnique());
+
+        b.Entity<EmployeeProfile>(e =>
+        {
+            e.HasIndex(x => x.UserId).IsUnique();
+            e.Property(x => x.UserId).HasMaxLength(450);
+            e.Property(x => x.FullName).HasMaxLength(200);
+            e.Property(x => x.Email).HasMaxLength(256);
+            e.Property(x => x.EmployeeCode).HasMaxLength(50);
+            e.HasOne(x => x.Department).WithMany()
+                .HasForeignKey(x => x.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.LedgerAccount).WithMany()
+                .HasForeignKey(x => x.LedgerAccountId).OnDelete(DeleteBehavior.Restrict);
+        });
     }
 
     public override async Task<int> SaveChangesAsync(CancellationToken ct = default)

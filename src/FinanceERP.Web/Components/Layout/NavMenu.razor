@@ -1,99 +1,101 @@
 @using FinanceERP.Domain.Security
 
 <MudNavMenu Bordered="true">
-    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
-    <MudNavLink Href="/notifications" Icon="@Icons.Material.Filled.Notifications">Notifications</MudNavLink>
-    <MudNavLink Href="/my-ledger" Icon="@Icons.Material.Filled.AccountBalanceWallet">My Ledger</MudNavLink>
+    <MudNavLink Href="/finance" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+    <MudNavLink Href="/finance/notifications" Icon="@Icons.Material.Filled.Notifications">Notifications</MudNavLink>
+    <MudNavLink Href="/finance/my-ledger" Icon="@Icons.Material.Filled.AccountBalanceWallet">My Ledger</MudNavLink>
 
     <AuthorizeView Policy="@Permissions.AccountsView">
         <MudNavGroup Title="Accounting" Icon="@Icons.Material.Filled.AccountBalance" Expanded="true">
-            <MudNavLink Href="/accounts" Icon="@Icons.Material.Filled.AccountTree">Chart of Accounts</MudNavLink>
+            <MudNavLink Href="/finance/accounts" Icon="@Icons.Material.Filled.AccountTree">Chart of Accounts</MudNavLink>
             <AuthorizeView Policy="@Permissions.VouchersView" Context="v">
-                <MudNavLink Href="/vouchers" Icon="@Icons.Material.Filled.ReceiptLong">Vouchers</MudNavLink>
+                <MudNavLink Href="/finance/vouchers" Icon="@Icons.Material.Filled.ReceiptLong">Vouchers</MudNavLink>
             </AuthorizeView>
             <AuthorizeView Policy="@Permissions.LedgerView" Context="l">
-                <MudNavLink Href="/ledger" Icon="@Icons.Material.Filled.MenuBook">General Ledger</MudNavLink>
-                <MudNavLink Href="/day-book" Icon="@Icons.Material.Filled.AutoStories">Day Book</MudNavLink>
+                <MudNavLink Href="/finance/ledger" Icon="@Icons.Material.Filled.MenuBook">General Ledger</MudNavLink>
+                <MudNavLink Href="/finance/day-book" Icon="@Icons.Material.Filled.AutoStories">Day Book</MudNavLink>
             </AuthorizeView>
             <AuthorizeView Policy="@Permissions.PettyCashView" Context="p">
-                <MudNavLink Href="/petty-cash" Icon="@Icons.Material.Filled.Payments">Petty Cash</MudNavLink>
+                <MudNavLink Href="/finance/petty-cash" Icon="@Icons.Material.Filled.Payments">Petty Cash</MudNavLink>
             </AuthorizeView>
             <AuthorizeView Policy="@Permissions.UtilitiesView" Context="u">
-                <MudNavLink Href="/utilities" Icon="@Icons.Material.Filled.ElectricBolt">Utilities</MudNavLink>
+                <MudNavLink Href="/finance/utilities" Icon="@Icons.Material.Filled.ElectricBolt">Utilities</MudNavLink>
             </AuthorizeView>
             <AuthorizeView Policy="@Permissions.LedgerView" Context="rec">
-                <MudNavLink Href="/reconciliation" Icon="@Icons.Material.Filled.Rule">Reconciliation</MudNavLink>
+                <MudNavLink Href="/finance/reconciliation" Icon="@Icons.Material.Filled.Rule">Reconciliation</MudNavLink>
             </AuthorizeView>
         </MudNavGroup>
     </AuthorizeView>
 
     <AuthorizeView Policy="@Permissions.RequestsCreate">
-        <MudNavLink Href="/requests/my" Icon="@Icons.Material.Filled.RequestQuote">My Requests</MudNavLink>
+        <MudNavLink Href="/finance/requests/my" Icon="@Icons.Material.Filled.RequestQuote">My Requests</MudNavLink>
     </AuthorizeView>
     <AuthorizeView Policy="@Permissions.AdvancesCreate">
-        <MudNavLink Href="/advances/my" Icon="@Icons.Material.Filled.CreditScore">My Advances</MudNavLink>
+        <MudNavLink Href="/finance/advances/my" Icon="@Icons.Material.Filled.CreditScore">My Advances</MudNavLink>
     </AuthorizeView>
     <AuthorizeView Policy="@Permissions.DirectorFundsRequest">
-        <MudNavLink Href="/director-funds" Icon="@Icons.Material.Filled.AccountBalanceWallet">Director Funds</MudNavLink>
+        <MudNavLink Href="/finance/director-funds" Icon="@Icons.Material.Filled.AccountBalanceWallet">Director Funds</MudNavLink>
     </AuthorizeView>
 
     <AuthorizeView Policy="@Permissions.RequestsViewAll">
         <MudNavGroup Title="Workflow" Icon="@Icons.Material.Filled.Approval" Expanded="true">
-            <MudNavLink Href="/requests" Icon="@Icons.Material.Filled.FactCheck">Payment Requests</MudNavLink>
+            <MudNavLink Href="/finance/requests" Icon="@Icons.Material.Filled.FactCheck">Payment Requests</MudNavLink>
             <AuthorizeView Policy="@Permissions.AdvancesViewAll" Context="a">
-                <MudNavLink Href="/advances" Icon="@Icons.Material.Filled.CreditCard">Employee Advances</MudNavLink>
+                <MudNavLink Href="/finance/advances" Icon="@Icons.Material.Filled.CreditCard">Employee Advances</MudNavLink>
             </AuthorizeView>
         </MudNavGroup>
     </AuthorizeView>
     @if (_canApprove)
     {
-        <MudNavLink Href="/approvals" Icon="@Icons.Material.Filled.HowToVote">Approvals</MudNavLink>
+        <MudNavLink Href="/finance/approvals" Icon="@Icons.Material.Filled.HowToVote">Approvals</MudNavLink>
     }
 
     <AuthorizeView Policy="@Permissions.PayrollViewOwn">
-        <MudNavLink Href="/my-payslips" Icon="@Icons.Material.Filled.Receipt">My Payslips</MudNavLink>
+        <MudNavLink Href="/finance/my-payslips" Icon="@Icons.Material.Filled.Receipt">My Payslips</MudNavLink>
     </AuthorizeView>
 
     <AuthorizeView Policy="@Permissions.PayrollView">
         <MudNavGroup Title="Payroll" Icon="@Icons.Material.Filled.Payment">
-            <MudNavLink Href="/payroll" Icon="@Icons.Material.Filled.EventRepeat">Payroll Runs</MudNavLink>
+            <MudNavLink Href="/finance/payroll" Icon="@Icons.Material.Filled.EventRepeat">Payroll Runs</MudNavLink>
             <AuthorizeView Policy="@Permissions.PayrollManage" Context="ps">
-                <MudNavLink Href="/payroll/structures" Icon="@Icons.Material.Filled.Badge">Salary Structures</MudNavLink>
-                <MudNavLink Href="/payroll/components" Icon="@Icons.Material.Filled.Tune">Pay Components</MudNavLink>
+                <MudNavLink Href="/finance/payroll/structures" Icon="@Icons.Material.Filled.Badge">Salary Structures</MudNavLink>
+                <MudNavLink Href="/finance/payroll/components" Icon="@Icons.Material.Filled.Tune">Pay Components</MudNavLink>
             </AuthorizeView>
         </MudNavGroup>
     </AuthorizeView>
 
     <AuthorizeView Policy="@Permissions.ThirdPartiesView">
         <MudNavGroup Title="Partners &amp; Portfolio" Icon="@Icons.Material.Filled.Handshake">
-            <MudNavLink Href="/third-parties" Icon="@Icons.Material.Filled.Groups">Third Parties</MudNavLink>
+            <MudNavLink Href="/finance/third-parties" Icon="@Icons.Material.Filled.Groups">Third Parties</MudNavLink>
             <AuthorizeView Policy="@Permissions.LoansView" Context="lo">
-                <MudNavLink Href="/loans" Icon="@Icons.Material.Filled.RealEstateAgent">Loans</MudNavLink>
+                <MudNavLink Href="/finance/loans" Icon="@Icons.Material.Filled.RealEstateAgent">Loans</MudNavLink>
             </AuthorizeView>
             <AuthorizeView Policy="@Permissions.InvestmentsView" Context="inv">
-                <MudNavLink Href="/investments" Icon="@Icons.Material.Filled.TrendingUp">Investments</MudNavLink>
+                <MudNavLink Href="/finance/investments" Icon="@Icons.Material.Filled.TrendingUp">Investments</MudNavLink>
             </AuthorizeView>
         </MudNavGroup>
     </AuthorizeView>
 
     <AuthorizeView Policy="@Permissions.ReportsView">
-        <MudNavLink Href="/reports" Icon="@Icons.Material.Filled.Assessment">Reports</MudNavLink>
+        <MudNavLink Href="/finance/reports" Icon="@Icons.Material.Filled.Assessment">Reports</MudNavLink>
     </AuthorizeView>
 
-    <AuthorizeView Policy="@Permissions.UsersManage">
-        <MudNavGroup Title="Administration" Icon="@Icons.Material.Filled.AdminPanelSettings">
-            <MudNavLink Href="/admin/users" Icon="@Icons.Material.Filled.ManageAccounts">Users</MudNavLink>
-            <AuthorizeView Policy="@Permissions.RolesManage" Context="r">
-                <MudNavLink Href="/admin/roles" Icon="@Icons.Material.Filled.Security">Roles &amp; Permissions</MudNavLink>
-            </AuthorizeView>
+    @* Users and roles are platform-wide, so they are gated by the platform's own
+       permissions rather than by anything Finance owns. *@
+    <MudNavGroup Title="Administration" Icon="@Icons.Material.Filled.AdminPanelSettings">
+        <AuthorizeView Policy="@PlatformPermissions.UsersManage" Context="pu">
+            <MudNavLink Href="/admin/users" Icon="@Icons.Material.Filled.ManageAccounts">Users &amp; App Access</MudNavLink>
+        </AuthorizeView>
+        <AuthorizeView Policy="@PlatformPermissions.RolesManage" Context="r">
+            <MudNavLink Href="/admin/roles" Icon="@Icons.Material.Filled.Security">Roles &amp; Permissions</MudNavLink>
+        </AuthorizeView>
             <AuthorizeView Policy="@Permissions.AuditView" Context="au">
-                <MudNavLink Href="/admin/audit" Icon="@Icons.Material.Filled.History">Audit Trail</MudNavLink>
+                <MudNavLink Href="/finance/admin/audit" Icon="@Icons.Material.Filled.History">Audit Trail</MudNavLink>
             </AuthorizeView>
             <AuthorizeView Policy="@Permissions.SettingsManage" Context="st">
-                <MudNavLink Href="/admin/settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
+                <MudNavLink Href="/finance/admin/settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
             </AuthorizeView>
-        </MudNavGroup>
-    </AuthorizeView>
+    </MudNavGroup>
 </MudNavMenu>
 
 @code {

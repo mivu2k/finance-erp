@@ -6,6 +6,11 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- ICurrentUserService moved to the shared kernel; it's referenced widely enough to be a global using. -->
+  <ItemGroup>
+    <Using Include="ErpPlatform.Shared.Kernel" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="9.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
@@ -19,6 +24,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FinanceERP.Application\FinanceERP.Application.csproj" />
+    <ProjectReference Include="..\..\shared\ErpPlatform.Shared.Kernel\ErpPlatform.Shared.Kernel.csproj" />
+    <ProjectReference Include="..\..\shared\ErpPlatform.Shared.Identity\ErpPlatform.Shared.Identity.csproj" />
   </ItemGroup>
 
 </Project>

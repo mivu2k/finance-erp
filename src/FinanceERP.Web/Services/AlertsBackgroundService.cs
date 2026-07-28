@@ -82,7 +82,7 @@ public class AlertsBackgroundService(IServiceScopeFactory scopeFactory, ILogger<
             {
                 await notifications.NotifyRoleAsync(AppRoles.FinanceManager, title,
                     $"{inst.Loan.ThirdParty.Name} — due {inst.DueDate:yyyy-MM-dd}, {inst.Amount - inst.PaidAmount:N2} outstanding",
-                    NotificationType.LoanDue, "/loans");
+                    NotificationType.LoanDue, "/finance/loans");
             }
         }
         await db.SaveChangesAsync(ct);
@@ -101,7 +101,7 @@ public class AlertsBackgroundService(IServiceScopeFactory scopeFactory, ILogger<
                 await notifications.NotifyRoleAsync(AppRoles.Accountant, title,
                     $"{bill.Amount:N2} due {bill.DueDate:yyyy-MM-dd}" +
                     (bill.Connection.ConsumerNumber is null ? "" : $" · Consumer # {bill.Connection.ConsumerNumber}"),
-                    NotificationType.PaymentDue, "/utilities");
+                    NotificationType.PaymentDue, "/finance/utilities");
         }
 
         // Low cash
@@ -117,8 +117,8 @@ public class AlertsBackgroundService(IServiceScopeFactory scopeFactory, ILogger<
             if (cash < threshold && !await AlreadySentToday(title))
             {
                 var msg = $"Cash in hand is {cash:N2}, below the threshold of {threshold:N2}.";
-                await notifications.NotifyRoleAsync(AppRoles.Accountant, title, msg, NotificationType.LowCash, "/petty-cash");
-                await notifications.NotifyRoleAsync(AppRoles.Director, title, msg, NotificationType.LowCash, "/reports");
+                await notifications.NotifyRoleAsync(AppRoles.Accountant, title, msg, NotificationType.LowCash, "/finance/petty-cash");
+                await notifications.NotifyRoleAsync(AppRoles.Director, title, msg, NotificationType.LowCash, "/finance/reports");
             }
         }
 

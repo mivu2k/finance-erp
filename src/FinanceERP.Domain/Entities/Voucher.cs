@@ -1,4 +1,3 @@
-using FinanceERP.Domain.Common;
 using FinanceERP.Domain.Enums;
 
 namespace FinanceERP.Domain.Entities;

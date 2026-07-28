@@ -1,0 +1,34 @@
+@* Drops into any module's app bar so a user can hop between the apps they hold. *@
+<MudMenu Icon="@Icons.Material.Filled.Apps" Color="Color.Inherit" AriaLabel="Switch app" Dense="true">
+    <MudMenuItem Href="/">
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.GridView" Size="Size.Small" Class="mr-2" />
+            All apps
+        </div>
+    </MudMenuItem>
+    <MudDivider />
+    @foreach (var m in _modules)
+    {
+        <MudMenuItem Href="@m.BasePath">
+            <div class="d-flex align-center">
+                <MudIcon Icon="@ModuleIcons.Resolve(m.Icon)" Size="Size.Small" Class="mr-2"
+                         Style="@($"color:{m.Color}")" />
+                @m.Name
+            </div>
+        </MudMenuItem>
+    }
+</MudMenu>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private List<ModuleDefinition> _modules = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is null) return;
+        var keys = (await AuthState).User.AccessibleModules();
+        _modules = AppModules.All.Where(m => keys.Contains(m.Key, StringComparer.OrdinalIgnoreCase))
+            .OrderBy(m => m.SortOrder).ToList();
+    }
+}

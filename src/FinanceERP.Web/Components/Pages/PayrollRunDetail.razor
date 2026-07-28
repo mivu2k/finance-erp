@@ -1,4 +1,4 @@
-@page "/payroll/{Id:int}"
+@page "/finance/payroll/{Id:int}"
 @attribute [Authorize(Policy = Permissions.PayrollView)]
 @inject IServiceScopeFactory ScopeFactory
 @inject ISnackbar Snackbar
@@ -428,6 +428,6 @@ else
     {
         await svc.CancelRunAsync(Id, _comment);
         Snackbar.Add("Run cancelled.", Severity.Warning);
-        Nav.NavigateTo("/payroll");
+        Nav.NavigateTo("/finance/payroll");
     });
 }

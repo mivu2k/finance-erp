@@ -1,4 +1,4 @@
-@page "/requests/{Id:int}"
+@page "/finance/requests/{Id:int}"
 @attribute [Authorize]
 @inject IServiceScopeFactory ScopeFactory
 @inject ISnackbar Snackbar
@@ -26,7 +26,7 @@ else
         <MudSpacer />
         <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PictureAsPdf"
                    Href="@($"/print/request/{_request.Id}")" Target="_blank">Print</MudButton>
-        <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack" OnClick="@(() => Nav.NavigateTo("/requests/my"))">Back</MudButton>
+        <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack" OnClick="@(() => Nav.NavigateTo("/finance/requests/my"))">Back</MudButton>
         @if (_request.Status == RequestStatus.Draft)
         {
             <MudButton Variant="Variant.Outlined" Href="@($"/requests/{_request.Id}/edit")">Edit</MudButton>
@@ -490,7 +490,7 @@ else
             using var scope = ScopeFactory.CreateScope();
             await scope.ServiceProvider.GetRequiredService<IPaymentRequestService>().DeleteAsync(Id);
             Snackbar.Add("Request deleted.", Severity.Info);
-            Nav.NavigateTo("/requests");
+            Nav.NavigateTo("/finance/requests");
         }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); _busy = false; }
     }

@@ -9,8 +9,8 @@
 #   ./dev.sh down    stop both
 #   ./dev.sh status   what is running
 #   ./dev.sh logs    tail the app log
-#   ./dev.sh db      open a SQL shell
-#   ./dev.sh reset   drop the database and re-seed from scratch
+#   ./dev.sh db [name]  open a SQL shell (default: finance_erp)
+#   ./dev.sh reset   drop every module database and re-seed from scratch
 set -euo pipefail
 
 ENV_DIR="$HOME/.local/finance-erp-dev"
@@ -34,6 +34,22 @@ check_env() {
 }
 
 db_running() { [ -S "$SOCK" ] && "$PKG/usr/bin/mariadb-admin" --socket="$SOCK" -u root ping >/dev/null 2>&1; }
+
+# One database per app, plus the shared identity database every app authenticates
+# against. The accounts module keeps the original `finance_erp` name so existing
+# installs upgrade in place rather than starting empty.
+DATABASES=(erp_identity finance_erp erp_repair erp_gatepass erp_hr)
+
+db_ensure() {
+    local sql=""
+    for d in "${DATABASES[@]}"; do
+        sql+="CREATE DATABASE IF NOT EXISTS $d CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+        sql+="GRANT ALL PRIVILEGES ON $d.* TO 'finance'@'localhost';"
+        sql+="GRANT ALL PRIVILEGES ON $d.* TO 'finance'@'127.0.0.1';"
+    done
+    sql+="FLUSH PRIVILEGES;"
+    "$PKG/usr/bin/mariadb" --socket="$SOCK" -u root -e "$sql"
+}
 app_running() { pgrep -x FinanceERP.Web >/dev/null 2>&1; }
 
 db_up() {
@@ -69,7 +85,7 @@ app_up() {
 
 case "${1:-up}" in
     up)
-        check_env; db_up; app_up ;;
+        check_env; db_up; db_ensure; app_up ;;
     down)
         pkill -x FinanceERP.Web 2>/dev/null && echo "app stopped" || echo "app not running"
         if db_running; then
@@ -84,20 +100,17 @@ case "${1:-up}" in
         tail -f "$LOG_DIR/app.log" ;;
     db)
         check_env; db_up
-        "$PKG/usr/bin/mariadb" --socket="$SOCK" -u root finance_erp ;;
+        "$PKG/usr/bin/mariadb" --socket="$SOCK" -u root "${2:-finance_erp}" ;;
     reset)
         check_env; db_up
-        read -rp "This destroys all data in finance_erp. Type 'yes' to continue: " confirm
+        read -rp "This destroys all data in ${DATABASES[*]}. Type 'yes' to continue: " confirm
         [ "$confirm" = "yes" ] || die "aborted"
         pkill -x FinanceERP.Web 2>/dev/null || true
-        "$PKG/usr/bin/mariadb" --socket="$SOCK" -u root <<'SQL'
-DROP DATABASE IF EXISTS finance_erp;
-CREATE DATABASE finance_erp CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-GRANT ALL PRIVILEGES ON finance_erp.* TO 'finance'@'localhost';
-GRANT ALL PRIVILEGES ON finance_erp.* TO 'finance'@'127.0.0.1';
-FLUSH PRIVILEGES;
-SQL
-        echo "database reset — migrations and seeding run on next start"
+        for d in "${DATABASES[@]}"; do
+            "$PKG/usr/bin/mariadb" --socket="$SOCK" -u root -e "DROP DATABASE IF EXISTS $d;"
+        done
+        db_ensure
+        echo "databases reset — migrations and seeding run on next start"
         app_up ;;
     *)
         sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;

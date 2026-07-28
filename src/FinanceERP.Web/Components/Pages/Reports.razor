@@ -1,4 +1,4 @@
-@page "/reports"
+@page "/finance/reports"
 @attribute [Authorize(Policy = Permissions.ReportsView)]
 @inject IServiceScopeFactory ScopeFactory
 @inject NavigationManager Nav
@@ -202,7 +202,7 @@
             "balance-sheet" => $"/export/balance-sheet?format={format}&asOf={to}",
             "project-report" => $"/export/project-report?format={format}&from={from}&to={to}",
             "cash-book" => $"/export/cash-book?format={format}&from={from}&to={to}",
-            _ => "/reports"
+            _ => "/finance/reports"
         };
         Nav.NavigateTo(url, forceLoad: true);
     }

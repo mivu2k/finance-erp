@@ -1,4 +1,4 @@
-@page "/vouchers"
+@page "/finance/vouchers"
 @attribute [Authorize(Policy = Permissions.VouchersView)]
 @inject IServiceScopeFactory ScopeFactory
 @inject ISnackbar Snackbar
@@ -11,7 +11,7 @@
     <MudSpacer />
     <AuthorizeView Policy="@Permissions.VouchersCreate">
         <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
-                   Href="/vouchers/new">New Voucher</MudButton>
+                   Href="/finance/vouchers/new">New Voucher</MudButton>
     </AuthorizeView>
 </div>
 

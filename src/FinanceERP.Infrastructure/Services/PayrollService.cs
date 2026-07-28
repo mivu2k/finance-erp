@@ -3,7 +3,6 @@ using FinanceERP.Application.Interfaces;
 using FinanceERP.Domain.Entities;
 using FinanceERP.Domain.Enums;
 using FinanceERP.Domain.Security;
-using FinanceERP.Infrastructure.Identity;
 using FinanceERP.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -94,7 +93,7 @@ public class PayrollService(
         if (structure.BasicSalary <= 0)
             throw new InvalidOperationException("Basic salary must be positive.");
 
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == structure.EmployeeId)
+        var user = await db.EmployeeProfiles.FirstOrDefaultAsync(u => u.UserId == structure.EmployeeId)
                    ?? throw new InvalidOperationException("Employee not found.");
         structure.EmployeeName = user.FullName;
 
@@ -201,7 +200,8 @@ public class PayrollService(
 
         if (run.DepartmentId is null) return structures.OrderBy(s => s.EmployeeName).ToList();
 
-        var inDept = await db.Users.Where(u => u.DepartmentId == run.DepartmentId).Select(u => u.Id).ToListAsync();
+        var inDept = await db.EmployeeProfiles.Where(u => u.DepartmentId == run.DepartmentId)
+            .Select(u => u.UserId).ToListAsync();
         return structures.Where(s => inDept.Contains(s.EmployeeId)).OrderBy(s => s.EmployeeName).ToList();
     }
 
@@ -236,8 +236,8 @@ public class PayrollService(
         db.Payslips.RemoveRange(run.Payslips);
         run.Payslips = [];
 
-        var users = await db.Users.Where(u => targets.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => u);
+        var users = await db.EmployeeProfiles.Where(u => targets.Contains(u.UserId))
+            .ToDictionaryAsync(u => u.UserId, u => u);
 
         foreach (var employeeId in targets)
         {
@@ -272,7 +272,7 @@ public class PayrollService(
     /// − component deductions − manual deductions − due advance instalments = net pay.
     /// </summary>
     private async Task<Payslip> BuildPayslipAsync(SalaryStructure structure, PayslipInputDto input,
-        ApplicationUser? user, DateOnly periodEnd, int salaryExpense, int salariesPayable)
+        EmployeeProfile? user, DateOnly periodEnd, int salaryExpense, int salariesPayable)
     {
         var workingDays = input.WorkingDays > 0 ? input.WorkingDays : 30;
         var absent = Math.Clamp(input.AbsentDays, 0, workingDays);
@@ -488,7 +488,7 @@ public class PayrollService(
             await notifications.NotifyAsync(slip.EmployeeId, $"Salary paid — {period}",
                 $"Net {slip.NetPay:N2}" + (slip.AdvanceDeduction > 0
                     ? $" (after {slip.AdvanceDeduction:N2} advance recovery)" : ""),
-                NotificationType.Info, $"/my-payslips");
+                NotificationType.Info, $"/finance/my-payslips");
 
         return voucher;
     }

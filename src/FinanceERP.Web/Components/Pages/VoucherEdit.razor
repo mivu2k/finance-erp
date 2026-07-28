@@ -1,5 +1,5 @@
-@page "/vouchers/new"
-@page "/vouchers/{Id:int}"
+@page "/finance/vouchers/new"
+@page "/finance/vouchers/{Id:int}"
 @attribute [Authorize(Policy = Permissions.VouchersView)]
 @inject IServiceScopeFactory ScopeFactory
 @inject ISnackbar Snackbar
@@ -168,7 +168,7 @@
         if (Id is not null)
         {
             var voucher = await scope.ServiceProvider.GetRequiredService<IVoucherService>().GetAsync(Id.Value);
-            if (voucher is null) { Nav.NavigateTo("/vouchers"); return; }
+            if (voucher is null) { Nav.NavigateTo("/finance/vouchers"); return; }
             _voucherNo = voucher.VoucherNo;
             _readOnly = voucher.Status != VoucherStatus.Draft;
             _model = new VoucherEditDto
@@ -202,7 +202,7 @@
             using var scope = ScopeFactory.CreateScope();
             var voucher = await scope.ServiceProvider.GetRequiredService<IVoucherService>().SaveAsync(_model, post);
             Snackbar.Add(post ? $"Voucher {voucher.VoucherNo} posted." : $"Voucher {voucher.VoucherNo} saved as draft.", Severity.Success);
-            Nav.NavigateTo("/vouchers");
+            Nav.NavigateTo("/finance/vouchers");
         }
         catch (Exception ex)
         {

@@ -1,9 +1,18 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <!-- BaseEntity/AuditableEntity/ISoftDelete are platform-wide, from the shared kernel. -->
+  <ItemGroup>
+    <Using Include="ErpPlatform.Shared.Kernel" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\shared\ErpPlatform.Shared.Kernel\ErpPlatform.Shared.Kernel.csproj" />
+  </ItemGroup>
 
 </Project>

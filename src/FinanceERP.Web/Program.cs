@@ -1,10 +1,11 @@
+using ErpPlatform.Shared.Identity;
+using ErpPlatform.Shared.Kernel;
+using ErpPlatform.Shared.Web.Security;
 using FinanceERP.Infrastructure;
-using FinanceERP.Infrastructure.Identity;
 using FinanceERP.Infrastructure.Persistence;
 using FinanceERP.Web.Components;
 using FinanceERP.Web.Components.Account;
 using FinanceERP.Web.Endpoints;
-using FinanceERP.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -22,9 +23,11 @@ builder.Host.UseSerilog((ctx, cfg) => cfg
 
 // Persist data-protection keys to a stable folder so login cookies survive
 // restarts and redeploys (also silences the "No XML encryptor" warning path).
+// A single application name across every host in the platform, so one login cookie
+// is valid in all of them if the apps are ever split into separate processes.
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "keys")))
-    .SetApplicationName("FinanceERP");
+    .SetApplicationName("ErpPlatform");
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -43,20 +46,14 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
-builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
-builder.Services.AddIdentityCore<ApplicationUser>(options =>
-    {
-        options.SignIn.RequireConfirmedAccount = false;
-        options.Password.RequiredLength = 8;
-        options.Lockout.MaxFailedAccessAttempts = 5;
-        options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
-    })
-    .AddRoles<IdentityRole>()
-    .AddEntityFrameworkStores<AppDbContext>()
-    .AddSignInManager()
-    .AddDefaultTokenProviders();
+// Shared identity database: users, roles, permission claims and app access.
+builder.Services.AddPlatformIdentity(builder.Configuration);
+
+// Business modules, each on its own database. Adding a module here is what puts
+// its tile on the portal and its roles into the identity seeder.
+builder.Services.AddFinanceModule(builder.Configuration);
 
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
 
@@ -64,22 +61,31 @@ builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSe
 builder.Services.AddAuthorization();
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 builder.Services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
+builder.Services.AddSingleton<IAuthorizationHandler, ModuleAccessHandler>();
 
 builder.Services.AddHostedService<FinanceERP.Web.Services.AlertsBackgroundService>();
 builder.Services.AddSingleton<FinanceERP.Web.Services.ReceiptStorage>();
 
 var app = builder.Build();
 
-// Apply migrations and seed roles/permissions/COA/admin on startup.
+// Migrate and seed each database in turn. Identity goes first: it creates the
+// roles and the admin account that the module seeders then mirror against.
 using (var scope = app.Services.CreateScope())
 {
     var sp = scope.ServiceProvider;
+    var logger = sp.GetRequiredService<ILogger<Program>>();
+
+    await IdentitySeeder.SeedAsync(
+        sp.GetRequiredService<PlatformIdentityDbContext>(),
+        sp.GetRequiredService<UserManager<ApplicationUser>>(),
+        sp.GetRequiredService<RoleManager<ApplicationRole>>(),
+        sp.GetRequiredService<IConfiguration>(),
+        logger);
+
     await DbSeeder.SeedAsync(
         sp.GetRequiredService<AppDbContext>(),
-        sp.GetRequiredService<UserManager<ApplicationUser>>(),
-        sp.GetRequiredService<RoleManager<IdentityRole>>(),
-        sp.GetRequiredService<IConfiguration>(),
-        sp.GetRequiredService<ILogger<Program>>());
+        sp.GetRequiredService<IPlatformUserDirectory>(),
+        logger);
 }
 
 if (app.Environment.IsDevelopment())
@@ -98,7 +104,10 @@ app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+    .AddInteractiveServerRenderMode()
+    // The portal and app switcher live in the shared web library; endpoint routing
+    // needs them listed here as well as on the Router.
+    .AddAdditionalAssemblies(typeof(ErpPlatform.Shared.Web.Portal.Portal).Assembly);
 
 app.MapAdditionalIdentityEndpoints();
 app.MapExportEndpoints();

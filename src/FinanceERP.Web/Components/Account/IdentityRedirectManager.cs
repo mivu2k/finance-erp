@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Identity;
-using FinanceERP.Infrastructure.Identity;
+using ErpPlatform.Shared.Identity;
 
 namespace FinanceERP.Web.Components.Account;
 

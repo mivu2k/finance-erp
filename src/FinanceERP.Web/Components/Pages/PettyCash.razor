@@ -1,4 +1,4 @@
-@page "/petty-cash"
+@page "/finance/petty-cash"
 @attribute [Authorize(Policy = Permissions.PettyCashView)]
 @inject IServiceScopeFactory ScopeFactory
 @inject ISnackbar Snackbar
@@ -33,7 +33,7 @@
                         <MudSelect T="string" @bind-Value="_assignAccountantId" Label="Accountant">
                             @foreach (var u in _accountants)
                             {
-                                <MudSelectItem Value="@u.Id">@u.FullName (@u.Email)</MudSelectItem>
+                                <MudSelectItem Value="@u.UserId">@u.FullName (@u.Email)</MudSelectItem>
                             }
                         </MudSelect>
                     </MudItem>
@@ -80,7 +80,7 @@
     private (decimal Opening, decimal Received, decimal Paid, decimal Closing) _dayBook;
     private List<PettyCashAssignment> _assignments = [];
     private List<Account> _cashAccounts = [];
-    private List<FinanceERP.Infrastructure.Identity.ApplicationUser> _accountants = [];
+    private List<PlatformUser> _accountants = [];
     private int? _pettyCashAccountId;
     private int? _sourceAccountId;
     private string? _assignAccountantId;
@@ -93,11 +93,11 @@
         _pettyCashAccountId = db.Accounts.FirstOrDefault(a => a.Code == "1300")?.Id;
         _cashAccounts = db.Accounts.Where(a => a.Code == "1100" || a.Code == "1201").ToList();
         _sourceAccountId = _cashAccounts.FirstOrDefault()?.Id;
-        _accountants = (from ur in db.UserRoles
-                        join r in db.Roles on ur.RoleId equals r.Id
-                        join u in db.Users on ur.UserId equals u.Id
-                        where r.Name == AppRoles.Accountant || r.Name == AppRoles.SuperAdmin
-                        select u).Distinct().ToList();
+        // Accountants come from the shared identity database, not from this one.
+        var directory = scope.ServiceProvider.GetRequiredService<IPlatformUserDirectory>();
+        _accountants = (await directory.ListByRoleAsync(AppRoles.Accountant))
+            .Concat(await directory.ListByRoleAsync(AppRoles.SuperAdmin))
+            .DistinctBy(u => u.UserId).OrderBy(u => u.FullName).ToList();
         _assignments = await scope.ServiceProvider.GetRequiredService<IPettyCashService>().ListAssignmentsAsync();
         await LoadDayBook();
     }
@@ -116,11 +116,11 @@
         {
             if (_assignAccountantId is null || _sourceAccountId is null || _pettyCashAccountId is null)
                 throw new InvalidOperationException("Select accountant and source account.");
-            var accountant = _accountants.First(a => a.Id == _assignAccountantId);
+            var accountant = _accountants.First(a => a.UserId == _assignAccountantId);
             using var scope = ScopeFactory.CreateScope();
             await scope.ServiceProvider.GetRequiredService<IPettyCashService>().AssignAsync(new PettyCashAssignment
             {
-                AccountantId = accountant.Id,
+                AccountantId = accountant.UserId,
                 AccountantName = accountant.FullName,
                 PettyCashAccountId = _pettyCashAccountId.Value,
                 Amount = _assignAmount,

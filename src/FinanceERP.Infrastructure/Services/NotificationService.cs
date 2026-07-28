@@ -1,3 +1,4 @@
+using ErpPlatform.Shared.Identity;
 using FinanceERP.Application.Interfaces;
 using FinanceERP.Domain.Entities;
 using FinanceERP.Domain.Enums;
@@ -6,7 +7,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FinanceERP.Infrastructure.Services;
 
-public class NotificationService(AppDbContext db, IAppEmailSender email) : INotificationService
+/// <summary>
+/// Notifications live in the accounts database but are addressed to platform
+/// users, so role membership and e-mail addresses are read through the identity
+/// directory rather than joined to.
+/// </summary>
+public class NotificationService(AppDbContext db, IAppEmailSender email, IPlatformUserDirectory directory)
+    : INotificationService
 {
     public async Task NotifyAsync(string userId, string title, string? message, NotificationType type, string? link = null)
     {
@@ -21,11 +28,7 @@ public class NotificationService(AppDbContext db, IAppEmailSender email) : INoti
 
     public async Task NotifyRoleAsync(string roleName, string title, string? message, NotificationType type, string? link = null)
     {
-        var userIds = await (
-            from ur in db.UserRoles
-            join r in db.Roles on ur.RoleId equals r.Id
-            where r.Name == roleName
-            select ur.UserId).ToListAsync();
+        var userIds = (await directory.ListByRoleAsync(roleName)).Select(u => u.UserId).ToList();
         var now = DateTime.UtcNow;
         db.Notifications.AddRange(userIds.Select(id => new Notification
         {
@@ -38,9 +41,8 @@ public class NotificationService(AppDbContext db, IAppEmailSender email) : INoti
     private async Task EmailUsersAsync(IEnumerable<string> userIds, string title, string? message)
     {
         if (!email.Enabled) return;
-        var ids = userIds.ToList();
-        var addresses = await db.Users.Where(u => ids.Contains(u.Id) && u.Email != null)
-            .Select(u => u.Email!).ToListAsync();
+        var addresses = (await directory.ListByIdsAsync(userIds))
+            .Where(u => u.Email is not null).Select(u => u.Email!).ToList();
         foreach (var address in addresses)
             await email.SendAsync(address, title, message ?? title);
     }

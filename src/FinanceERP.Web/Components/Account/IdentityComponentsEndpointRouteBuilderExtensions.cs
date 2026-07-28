@@ -3,7 +3,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using FinanceERP.Infrastructure.Identity;
+using ErpPlatform.Shared.Identity;
 
 namespace Microsoft.AspNetCore.Routing;
 

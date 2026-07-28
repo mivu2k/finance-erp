@@ -9,74 +9,74 @@ public static class Permissions
     public const string ClaimType = "permission";
 
     // Chart of Accounts
-    public const string AccountsView = "Accounts.View";
-    public const string AccountsManage = "Accounts.Manage";
+    public const string AccountsView = "finance.accounts.view";
+    public const string AccountsManage = "finance.accounts.manage";
 
     // Vouchers / Ledger
-    public const string VouchersView = "Vouchers.View";
-    public const string VouchersCreate = "Vouchers.Create";
-    public const string VouchersEdit = "Vouchers.Edit";
-    public const string VouchersDelete = "Vouchers.Delete";
-    public const string VouchersPost = "Vouchers.Post";
-    public const string LedgerView = "Ledger.View";
+    public const string VouchersView = "finance.vouchers.view";
+    public const string VouchersCreate = "finance.vouchers.create";
+    public const string VouchersEdit = "finance.vouchers.edit";
+    public const string VouchersDelete = "finance.vouchers.delete";
+    public const string VouchersPost = "finance.vouchers.post";
+    public const string LedgerView = "finance.ledger.view";
 
     // Petty cash
-    public const string PettyCashView = "PettyCash.View";
-    public const string PettyCashManage = "PettyCash.Manage";
-    public const string PettyCashAssign = "PettyCash.Assign";
+    public const string PettyCashView = "finance.pettycash.view";
+    public const string PettyCashManage = "finance.pettycash.manage";
+    public const string PettyCashAssign = "finance.pettycash.assign";
 
     // Payment requests
-    public const string RequestsCreate = "Requests.Create";
-    public const string RequestsViewOwn = "Requests.ViewOwn";
-    public const string RequestsViewAll = "Requests.ViewAll";
-    public const string RequestsApproveManager = "Requests.ApproveManager";
-    public const string RequestsApproveAdmin = "Requests.ApproveAdmin";
-    public const string RequestsPay = "Requests.Pay";
+    public const string RequestsCreate = "finance.requests.create";
+    public const string RequestsViewOwn = "finance.requests.viewown";
+    public const string RequestsViewAll = "finance.requests.viewall";
+    public const string RequestsApproveManager = "finance.requests.approvemanager";
+    public const string RequestsApproveAdmin = "finance.requests.approveadmin";
+    public const string RequestsPay = "finance.requests.pay";
 
     // Advances
-    public const string AdvancesCreate = "Advances.Create";
-    public const string AdvancesViewOwn = "Advances.ViewOwn";
-    public const string AdvancesViewAll = "Advances.ViewAll";
-    public const string AdvancesApprove = "Advances.Approve";
-    public const string AdvancesManage = "Advances.Manage";
+    public const string AdvancesCreate = "finance.advances.create";
+    public const string AdvancesViewOwn = "finance.advances.viewown";
+    public const string AdvancesViewAll = "finance.advances.viewall";
+    public const string AdvancesApprove = "finance.advances.approve";
+    public const string AdvancesManage = "finance.advances.manage";
 
     // Payroll
-    public const string PayrollView = "Payroll.View";
+    public const string PayrollView = "finance.payroll.view";
     /// <summary>Salary structures, component catalog, creating and generating runs.</summary>
-    public const string PayrollManage = "Payroll.Manage";
-    public const string PayrollApprove = "Payroll.Approve";
-    public const string PayrollPay = "Payroll.Pay";
+    public const string PayrollManage = "finance.payroll.manage";
+    public const string PayrollApprove = "finance.payroll.approve";
+    public const string PayrollPay = "finance.payroll.pay";
     /// <summary>An employee seeing their own payslips.</summary>
-    public const string PayrollViewOwn = "Payroll.ViewOwn";
+    public const string PayrollViewOwn = "finance.payroll.viewown";
 
     // Director funds
-    public const string DirectorFundsRequest = "DirectorFunds.Request";
-    public const string DirectorFundsView = "DirectorFunds.View";
+    public const string DirectorFundsRequest = "finance.directorfunds.request";
+    public const string DirectorFundsView = "finance.directorfunds.view";
 
     // Third parties
-    public const string ThirdPartiesView = "ThirdParties.View";
-    public const string ThirdPartiesManage = "ThirdParties.Manage";
+    public const string ThirdPartiesView = "finance.thirdparties.view";
+    public const string ThirdPartiesManage = "finance.thirdparties.manage";
 
     // Loans & investments
-    public const string LoansView = "Loans.View";
-    public const string LoansManage = "Loans.Manage";
-    public const string InvestmentsView = "Investments.View";
-    public const string InvestmentsManage = "Investments.Manage";
+    public const string LoansView = "finance.loans.view";
+    public const string LoansManage = "finance.loans.manage";
+    public const string InvestmentsView = "finance.investments.view";
+    public const string InvestmentsManage = "finance.investments.manage";
 
     // Utilities
-    public const string UtilitiesView = "Utilities.View";
-    public const string UtilitiesManage = "Utilities.Manage";
-    public const string UtilitiesPay = "Utilities.Pay";
+    public const string UtilitiesView = "finance.utilities.view";
+    public const string UtilitiesManage = "finance.utilities.manage";
+    public const string UtilitiesPay = "finance.utilities.pay";
 
     // Reports
-    public const string ReportsView = "Reports.View";
-    public const string ReportsExport = "Reports.Export";
+    public const string ReportsView = "finance.reports.view";
+    public const string ReportsExport = "finance.reports.export";
 
     // Administration
-    public const string UsersManage = "Users.Manage";
-    public const string RolesManage = "Roles.Manage";
-    public const string AuditView = "Audit.View";
-    public const string SettingsManage = "Settings.Manage";
+    public const string UsersManage = "finance.users.manage";
+    public const string RolesManage = "finance.roles.manage";
+    public const string AuditView = "finance.audit.view";
+    public const string SettingsManage = "finance.settings.manage";
 
     public static IReadOnlyList<string> All { get; } = typeof(Permissions)
         .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
@@ -85,20 +85,32 @@ public static class Permissions
         .ToList();
 }
 
+/// <summary>
+/// Roles that live inside the Finance app. Every one of these is scoped to the
+/// "finance" module in the identity database, so holding one both admits the user
+/// to the Finance tile and decides what they can do once inside.
+/// </summary>
 public static class AppRoles
 {
+    /// <summary>
+    /// The platform-wide administrator role. Not owned by Finance — it lives in
+    /// <c>ErpPlatform.Shared.Identity.PlatformRoles</c> and is named here so
+    /// accounts code can refer to it without taking a dependency on the identity
+    /// layer. Keep the two in step.
+    /// </summary>
     public const string SuperAdmin = "Super Admin";
-    public const string Admin = "Admin";
+
+    public const string Admin = "Finance Admin";
     public const string Director = "Director";
     public const string FinanceManager = "Finance Manager";
     public const string Accountant = "Accountant";
-    public const string Manager = "Manager";
-    public const string Employee = "Employee";
+    public const string Manager = "Finance Approver";
+    public const string Employee = "Finance Employee";
     public const string Auditor = "Auditor";
-    public const string Viewer = "Viewer";
+    public const string Viewer = "Finance Viewer";
 
     public static readonly string[] All =
     [
-        SuperAdmin, Admin, Director, FinanceManager, Accountant, Manager, Employee, Auditor, Viewer
+        Admin, Director, FinanceManager, Accountant, Manager, Employee, Auditor, Viewer
     ];
 }

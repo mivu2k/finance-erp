@@ -1,5 +1,5 @@
-@page "/requests/new"
-@page "/requests/{Id:int}/edit"
+@page "/finance/requests/new"
+@page "/finance/requests/{Id:int}/edit"
 @attribute [Authorize(Policy = Permissions.RequestsCreate)]
 @inject IServiceScopeFactory ScopeFactory
 @inject ISnackbar Snackbar
@@ -163,7 +163,7 @@
         if (Id is not null)
         {
             var existing = await scope.ServiceProvider.GetRequiredService<IPaymentRequestService>().GetAsync(Id.Value);
-            if (existing is null || existing.Status != RequestStatus.Draft) { Nav.NavigateTo("/requests/my"); return; }
+            if (existing is null || existing.Status != RequestStatus.Draft) { Nav.NavigateTo("/finance/requests/my"); return; }
             _model = existing;
             if (_model.Lines.Count == 0) _model.Lines.Add(new PaymentRequestLine());
         }

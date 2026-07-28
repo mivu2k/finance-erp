@@ -1,0 +1,63 @@
+@page "/"
+@attribute [Authorize]
+@inject NavigationManager Nav
+
+<PageTitle>Apps</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-8">
+    <MudText Typo="Typo.h4">Welcome@(_name is null ? "" : $", {_name}")</MudText>
+    <MudText Typo="Typo.body1" Class="mb-8 mud-text-secondary">
+        Choose an app to work in. You can switch at any time from the apps menu in the toolbar.
+    </MudText>
+
+    @if (_modules.Count == 0)
+    {
+        <MudAlert Severity="Severity.Warning">
+            You don't have access to any apps yet. Ask an administrator to grant you a role.
+        </MudAlert>
+    }
+    else
+    {
+        <MudGrid>
+            @foreach (var m in _modules)
+            {
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudLink Href="@m.BasePath" Underline="Underline.None">
+                        <MudPaper Class="pa-8 d-flex flex-column align-center justify-center"
+                                  Elevation="2" Style="height:100%;min-height:210px">
+                            <MudIcon Icon="@ModuleIcons.Resolve(m.Icon)"
+                                     Style="@($"color:{m.Color};font-size:3.5rem")" />
+                            <MudText Typo="Typo.h6" Class="mt-4" Align="Align.Center">@m.Name</MudText>
+                            <MudText Typo="Typo.body2" Align="Align.Center"
+                                     Class="mud-text-secondary mt-2">@m.Description</MudText>
+                        </MudPaper>
+                    </MudLink>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+</MudContainer>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private List<ModuleDefinition> _modules = [];
+    private string? _name;
+
+    /// <remarks>
+    /// Access comes off the principal's module claims, which the claims factory
+    /// stamps at sign-in. Reading them here rather than querying the identity
+    /// database keeps the portal free of a database round-trip on every render.
+    /// </remarks>
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is null) return;
+        var user = (await AuthState).User;
+
+        _name = user.FindFirst("full_name")?.Value;
+
+        var keys = user.AccessibleModules();
+        _modules = AppModules.All.Where(m => keys.Contains(m.Key, StringComparer.OrdinalIgnoreCase))
+            .OrderBy(m => m.SortOrder).ToList();
+    }
+}
