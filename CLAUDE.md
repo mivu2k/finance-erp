@@ -1,4 +1,4 @@
-# Finance ERP — working notes
+# MEI ERP platform — working notes
 
 Read this before exploring the tree; it captures what costs the most to re-derive.
 
@@ -25,19 +25,57 @@ export LD_LIBRARY_PATH="$HOME/.local/finance-erp-dev/pkg/usr/lib/x86_64-linux-gn
 
 ## Architecture
 
-Clean architecture, .NET 10, Blazor Server, MudBlazor, EF Core + Pomelo/MySQL.
+A multi-app platform, not one app. .NET 10, Blazor Server, MudBlazor, EF Core +
+Pomelo/MySQL. **One process** hosts every app; the isolation is at the database
+and project level, not the process level.
 
 ```
-src/FinanceERP.Domain          entities, enums, Security/Permissions.cs (no deps)
-src/FinanceERP.Application     service interfaces (Interfaces/IServices.cs) + DTOs
-src/FinanceERP.Infrastructure  EF Core, Identity, service impls, PDF/Excel, seeding
-src/FinanceERP.Web             Blazor UI, auth pages, export endpoints
+shared/ErpPlatform.Shared.Kernel       BaseEntity, ICurrentUserService (no deps)
+shared/ErpPlatform.Shared.Persistence  ModuleDbContext (audit + soft delete), DocumentSequence
+shared/ErpPlatform.Shared.Identity     the ONE identity database + module/permission registries
+shared/ErpPlatform.Shared.Web          PlatformShell chrome, portal, /admin/users, /admin/roles
+
+modules/Hr/{Domain,Infrastructure,Web}        → erp_hr        → /hr
+modules/GatePass/{Domain,Infrastructure,Web}  → erp_gatepass  → /gatepass
+modules/Repair/{Domain,Infrastructure,Web}    → erp_repair    → /repair
+src/FinanceERP.{Domain,Application,Infrastructure}  → finance_erp → /finance
+
+src/FinanceERP.Web             the host: composes every module, owns auth pages
 ```
 
-`Application/Interfaces/IServices.cs` is the fastest map of what the system does —
-every service contract is there with XML docs on the non-obvious flows.
+Each `*.Web` is a Razor Class Library with its own pages, layout and nav; the host
+lists them in `Program.cs` (`AddAdditionalAssemblies`) **and** `Components/Routes.razor`
+(`AdditionalAssemblies`) — miss either and routes 404.
+
+`Application/Interfaces/IServices.cs` is the fastest map of the Finance app. Each
+other module's contracts live next to their implementation in `*.Infrastructure`.
+
+### The identity model — read this before touching auth
+
+`erp_identity` is the only shared database. It holds users, roles, permission
+claims, the module catalog and per-user app access. **No business module writes to
+it**, and there are no cross-database foreign keys anywhere: a module that needs a
+person stores the Identity user id as a string plus a display-name snapshot, and
+reads the rest through `IPlatformUserDirectory`.
+
+- **A role is scoped to one app** (`ApplicationRole.ModuleKey`). Holding it both
+  admits the user to that app's tile on the portal *and* decides what they can do
+  inside it. A null `ModuleKey` means a platform-wide role (Super Admin).
+- `UserModuleAccess` is a per-user grant/deny override on top. **Deny wins.**
+- Permissions are namespaced by module — `finance.vouchers.post`,
+  `repair.jobs.assign`. Modules register theirs via `ModuleRegistry.Register` in
+  their `AddXxxModule`; `PermissionPolicyProvider` builds policies from that
+  catalog, and also understands `module:{key}` policies.
+- Module access is stamped onto the principal as `module` claims at sign-in, so the
+  portal and nav never hit the database. **Access changes apply at next sign-in.**
+
+Adding an app means: a `ModuleDefinition` in `AppModules.All`, a
+`ModuleRegistration` (permissions + default roles), an `AddXxxModule`, a connection
+string, and the two assembly lists in the host.
 
 ## Rules that matter
+
+These apply to the **Finance** module specifically:
 
 - **Everything posts to the ledger.** No module writes financial state directly;
   they all call `IVoucherService.PostSystemVoucherAsync`. Preserve that — it's the
@@ -45,10 +83,14 @@ every service contract is there with XML docs on the non-obvious flows.
 - **Posted vouchers are immutable.** Correction path is void, or
   `DuplicateAsDraftAsync` to fix and repost. Drafts soft-delete via `DeleteDraftAsync`.
 - **Financial data is soft-deleted**, never hard-deleted.
-- **Permissions are data, not code.** `Domain/Security/Permissions.cs` is the catalog
-  (59 permissions); they live in `AspNetRoleClaims` and policies are generated
-  dynamically by `PermissionPolicyProvider`. Adding a permission means adding the
-  constant *and* granting it in the role matrix at `/admin/roles`.
+- **Permissions are data, not code.** `Domain/Security/Permissions.cs` is Finance's
+  catalog; they live in `AspNetRoleClaims` and policies are generated dynamically.
+  Adding one means adding the constant, describing it in
+  `Infrastructure/FinanceModule.cs`, *and* granting it at `/admin/roles`.
+- **`EmployeeProfile` is the accounts-side mirror** of a platform user, refreshed
+  on startup by `DbSeeder.SyncEmployeeProfilesAsync`. Payroll queries it rather than
+  reaching into the identity database. Department and ledger account are owned here
+  and never overwritten by the sync.
 - Every page, nav item and action is permission-gated — match that when adding UI.
 
 ## Non-obvious flows
@@ -76,8 +118,30 @@ every service contract is there with XML docs on the non-obvious flows.
   credited the advance account. Watch that distinction; double-posting is the easy bug.
 - **Year close**: `CloseFiscalYearAsync` moves income/expense into Retained Earnings
   and locks the books through that date.
+- **Repair pipeline** is a state machine in `JobWorkflow`, not a free-text status:
+  Received → Diagnosing → WaitingApproval → InProgress → Completed → Delivered, with
+  Cancelled available until delivery. Delivered and Cancelled are terminal.
+- **A quotation carries two independent approvals**, the customer's and the
+  manager's. It only reaches Approved when both say yes; either rejection kills it.
+  A sales order copies its amounts off the quotation rather than referencing it, so
+  editing an estimate can never move a bill that's already out.
+- **Gate passes separate issuing from the gate.** Whoever raises the pass can't mark
+  the goods through — that's `gatepass.passes.complete`, held by Gate Security. A
+  pass stops being editable the moment it leaves Issued.
+- **Demo goods support partial returns**: the issuance stays open until the last
+  item is ticked back.
 
 ## State of the project
+
+Four apps behind one login, chosen from the portal at `/`:
+
+| App | Route | Database | State |
+|---|---|---|---|
+| Finance | `/finance` | `finance_erp` | mature — see below |
+| Repair | `/repair` | `erp_repair` | ported from Laravel, end-to-end |
+| Gate Pass & Demo Goods | `/gatepass` | `erp_gatepass` | complete |
+| HR | `/hr` | `erp_hr` | employee master + documents |
+
 
 Implemented and wired end-to-end (service + page + nav): accounts, vouchers, ledger,
 day book, payment requests, advances, director funds, petty cash, third parties,
@@ -91,12 +155,18 @@ Printing: `/export/*` (ExportEndpoints) is table/report downloads; `/print/*`
 `IExportService.DocumentToPdf(PdfDocument)`. Ownership-scoped records (requests,
 advances, payslips) are readable by their owner without the module-wide permission.
 
+Ported from the Laravel `dir-repair` app: customers, intakes, jobs, diagnoses,
+quotations, sales orders, payments, parts, tracking board, and four PDFs (job card,
+intake receipt, quotation, invoice). Job photos are modelled but there's no upload
+UI yet. Not ported: the customer-facing tracking page, Excel report exports.
+
 Known gaps, roughly in priority order:
 
-1. **No tests at all** — no test project in `FinanceERP.slnx`. Highest-value work is
+1. **No tests at all** — no test project in the solution. Highest-value work is
    covering `VoucherService`, `PaymentRequestService.SettleAsync`,
-   `PayrollService.GenerateAsync`/`PayRunAsync` and `CloseFiscalYearAsync`, where the
-   arithmetic is subtle and unverified.
+   `PayrollService.GenerateAsync`/`PayRunAsync`, `CloseFiscalYearAsync`,
+   `JobWorkflow`, `QuotationService.Recalculate` and `SalesOrderService`'s payment
+   arithmetic — all subtle and unverified.
 2. **Receipt endpoint is auth-only** (`Program.cs`, `/files/receipts/{name}`) — any
    logged-in user can fetch any receipt by filename; no ownership or permission check.
 3. `README.md` predates year-close, reconciliation, utilities, projects, the
@@ -105,11 +175,18 @@ Known gaps, roughly in priority order:
 
 ## Gotchas
 
+- **Every module database is created by `./dev.sh up`** (`DATABASES` in that script).
+  `./dev.sh db <name>` opens a shell on one; `./dev.sh reset` drops them all.
+- **`array.Contains(x)` inside an EF predicate binds to the `ReadOnlySpan` overload**
+  and throws at query time. Use a `List<T>` — that's why `JobWorkflow.Open` is one.
+- **Existing installs upgrading past the identity split** must run
+  `deploy/migrate-identity-out-of-accounts.sql` before the accounts migration drops
+  the old `AspNet*` tables. A fresh database needs nothing.
 - Port is **5080** (`appsettings.Development.json` `"urls"` wins over
   `launchSettings.json`'s stale 5188 and over `ASPNETCORE_URLS`).
-- `[ERR] The model for context 'AppDbContext' has pending changes` on startup is
-  **benign** — EF logs it without throwing. Scaffolding a migration yields an empty
-  `Up()`/`Down()`; there is no schema drift. Don't chase it.
+- `[ERR] The model for context '...' has pending changes` on startup is **benign**
+  and now appears once per context. EF logs it without throwing; scaffolding a
+  migration yields an empty `Up()`/`Down()`. Verified, not drift. Don't chase it.
 - Don't `pkill -f "dotnet run"` — the pattern matches the agent's own shell and kills
   the session. Use `pkill -x FinanceERP.Web`.
 - Build emits ~67 warnings, all cosmetic (NuGet locale metadata, one unused ctor
