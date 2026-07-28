@@ -1,0 +1,16 @@
+[Unit]
+Description=Finance ERP — pull latest main and redeploy
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/src/finance-erp/deploy/self-update.sh
+# The script builds before touching the running app and rolls back on a failed
+# health check, but a redeploy still restarts the service — schedule it outside
+# working hours (see finance-erp-update.timer).
+TimeoutStartSec=1800
+SyslogIdentifier=finance-erp-update
+
+[Install]
+WantedBy=multi-user.target

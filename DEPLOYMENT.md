@@ -124,11 +124,74 @@ If the container is reachable from the internet, use certbot (`apt install certb
 
 ## 9. Updates
 
+Two scripted paths, both of which back up the database, snapshot the current
+binaries, restart the service (migrations apply on boot), wait for a health
+check, and roll the code back automatically if the app doesn't come back.
+
+### A. Push from your dev machine — `deploy/update.sh`
+
+Nothing extra is needed on the container: it publishes locally and rsyncs the
+output. Requires SSH key auth (`ssh-copy-id root@<container-ip>`).
+
+```bash
+./deploy/update.sh <container-ip>
+# or: FINANCE_ERP_HOST=<container-ip> ./deploy/update.sh
+```
+
+### B. Pull on the container — `deploy/self-update.sh`
+
+The container builds from GitHub itself. This needs the .NET **SDK** and a
+checkout, which section 3 doesn't install — one-time setup:
+
+```bash
+apt install -y git dotnet-sdk-10.0
+mkdir -p /opt/src && cd /opt/src
+git clone https://github.com/mivu2k/finance-erp.git
+chmod +x /opt/src/finance-erp/deploy/self-update.sh
+```
+
+Then, whenever you want to update:
+
+```bash
+/opt/src/finance-erp/deploy/self-update.sh
+```
+
+It exits immediately if `origin/main` hasn't moved (`FINANCE_ERP_FORCE=1` to
+rebuild anyway).
+
+### Fully unattended (optional)
+
+A timer can run path B nightly. Weigh this up first: it deploys whatever is on
+`main` to your live books without anyone watching, and while the script rolls
+back a failed *start*, it cannot undo a migration that applied successfully but
+was wrong. Tagged releases or a manual trigger are safer for financial data.
+
+```bash
+cp /opt/src/finance-erp/deploy/finance-erp-update.{service,timer} /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now finance-erp-update.timer
+systemctl list-timers finance-erp-update    # confirm next run
+journalctl -u finance-erp-update -f         # watch an update happen
+```
+
+Trigger one by hand with `systemctl start finance-erp-update`.
+
+### Rollback
+
+Both scripts print the exact commands afterwards. In short:
+
 ```bash
 systemctl stop finance-erp
-# copy new publish output over /opt/finance-erp (keep appsettings.Production.json)
-systemctl start finance-erp    # migrations apply automatically
+rm -rf /opt/finance-erp && mv /opt/finance-erp.prev /opt/finance-erp
+systemctl start finance-erp
+# and, only if a migration needs undoing:
+zcat /var/backups/finance-erp/db-<stamp>.sql.gz | mysql finance_erp
 ```
+
+Settings the scripts honour, if your install differs from this guide:
+`FINANCE_ERP_APP_DIR`, `FINANCE_ERP_SRC`, `FINANCE_ERP_SERVICE`,
+`FINANCE_ERP_DB`, `FINANCE_ERP_APP_USER`, `FINANCE_ERP_BRANCH`,
+`FINANCE_ERP_HEALTH_URL`, `FINANCE_ERP_KEEP_BACKUPS`.
 
 ## 10. Backups
 

@@ -24,7 +24,7 @@
       "Bash(git add *)",
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Complete remaining modules: approvals queue, notifications center, settings, background alerts *)",
       "Bash(git push *)",
-      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Add Day Book — combined ledger with PDF/Excel export *)",
+      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Add Day Book \u2014 combined ledger with PDF/Excel export *)",
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Move dev-only urls setting to appsettings.Development.json *)",
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Rework employee request flow, profile UI, and action-button stability *)",
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Fix Add-button alignment in Settings dimension editor and Roles header *)",
@@ -76,7 +76,19 @@
       "Bash(./dev.sh logs *)",
       "Bash(./dev.sh status *)",
       "Read(//home/pc/.local/finance-erp-dev/logs/**)",
-      "Bash(curl -s -o /dev/null -w \"home: %{http_code}\\\\n\" http://localhost:5080/)"
+      "Bash(curl -s -o /dev/null -w \"home: %{http_code}\\\\n\" http://localhost:5080/)",
+      "Bash(git commit *)",
+      "Bash(git checkout *)",
+      "Bash(git merge *)",
+      "Bash(git stash *)",
+      "Bash(chmod +x deploy/update.sh deploy/self-update.sh)",
+      "Bash(bash -n deploy/update.sh)",
+      "Bash(bash -n deploy/self-update.sh)",
+      "Bash(command -v shellcheck)",
+      "Bash(shellcheck -S warning deploy/update.sh deploy/self-update.sh)",
+      "Bash(./deploy/update.sh)",
+      "Bash(echo \"--- exit $? ---\")",
+      "Bash(FINANCE_ERP_HOST=192.0.2.1 timeout 30 ./deploy/update.sh)"
     ]
   }
 }

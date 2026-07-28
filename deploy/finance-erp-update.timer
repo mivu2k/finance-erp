@@ -1,0 +1,11 @@
+[Unit]
+Description=Check GitHub for Finance ERP updates nightly
+
+[Timer]
+# 03:15 local time; the randomised delay avoids hammering GitHub on the dot.
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
