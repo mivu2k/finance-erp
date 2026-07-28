@@ -15,6 +15,11 @@
     <Project Path="modules/Hr/Hr.Infrastructure/Hr.Infrastructure.csproj" />
     <Project Path="modules/Hr/Hr.Web/Hr.Web.csproj" />
   </Folder>
+  <Folder Name="/modules/gatepass/">
+    <Project Path="modules/GatePass/GatePass.Domain/GatePass.Domain.csproj" />
+    <Project Path="modules/GatePass/GatePass.Infrastructure/GatePass.Infrastructure.csproj" />
+    <Project Path="modules/GatePass/GatePass.Web/GatePass.Web.csproj" />
+  </Folder>
   <Folder Name="/apps/">
     <Project Path="src/FinanceERP.Web/FinanceERP.Web.csproj" />
   </Folder>

@@ -1,0 +1,291 @@
+@page "/gatepass/demos/new"
+@page "/gatepass/demos/{Id:int}"
+@attribute [Authorize(Policy = GatePassPermissions.DemosView)]
+@layout GatePassLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>@(_isNew ? "New Demo Issuance" : _demo.IssuanceNumber)</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/gatepass/demos" />
+    <MudText Typo="Typo.h5">@(_isNew ? "New Demo Issuance" : _demo.IssuanceNumber)</MudText>
+    @if (!_isNew)
+    {
+        <MudChip T="string" Size="Size.Small" Color="@Colour(_demo.Status)">@_demo.Status</MudChip>
+        @if (_demo.IsOverdue(DateOnly.FromDateTime(DateTime.UtcNow)))
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Error">Overdue</MudChip>
+        }
+    }
+    <MudSpacer />
+
+    @if (!_isNew)
+    {
+        <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+            <MudButton StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                       Href="@($"/gatepass/print/demo/{_demo.Id}/a4")" Target="_blank">A4</MudButton>
+            <MudButton StartIcon="@Icons.Material.Filled.Receipt"
+                       Href="@($"/gatepass/print/demo/{_demo.Id}/pos")" Target="_blank">Slip</MudButton>
+        </MudButtonGroup>
+
+        @if (_demo.Status is DemoStatus.Issued or DemoStatus.PartiallyReturned)
+        {
+            <AuthorizeView Policy="@GatePassPermissions.DemosReturn" Context="dr">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="ml-2"
+                           StartIcon="@Icons.Material.Filled.AssignmentReturn"
+                           OnClick="OpenReturn">Record Return</MudButton>
+            </AuthorizeView>
+        }
+    }
+
+    @if (_editable)
+    {
+        <AuthorizeView Policy="@GatePassPermissions.DemosManage" Context="dm">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="ml-2"
+                       OnClick="Save">@(_isNew ? "Issue" : "Save")</MudButton>
+        </AuthorizeView>
+    }
+</div>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Customer</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_demo.CustomerName" Label="Customer name *" Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudTextField @bind-Value="_demo.CustomerPhone" Label="Phone" Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudTextField @bind-Value="_demo.CustomerReference" Label="Customer ref"
+                                  Disabled="@(!_editable)"
+                                  HelperText="Their code in the Repair app, if any." />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudTextField @bind-Value="_demo.Department" Label="Department" Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudTextField @bind-Value="_demo.ReferenceLetter" Label="Reference letter" Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudDatePicker Label="Expected return"
+                                   Date="@(_demo.ExpectedReturnOn?.ToDateTime(TimeOnly.MinValue))"
+                                   DateChanged="@(d => _demo.ExpectedReturnOn = d is null ? null : DateOnly.FromDateTime(d.Value))"
+                                   Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_demo.Notes" Label="Notes" Lines="2" Disabled="@(!_editable)" />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Audit</MudText>
+            <MudSimpleTable Dense="true">
+                <tbody>
+                    <tr><td>Issued</td><td>@(_isNew ? "-" : _demo.IssuedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</td></tr>
+                    <tr><td>Issued by</td><td>@_demo.IssuedByName</td></tr>
+                    <tr>
+                        <td>Returned</td>
+                        <td>
+                            @if (_demo.ReturnedAtUtc is { } r)
+                            {
+                                @($"{r.ToLocalTime():yyyy-MM-dd HH:mm} — {_demo.ReceivedByName}")
+                            }
+                            else { <span class="mud-text-secondary">outstanding</span> }
+                        </td>
+                    </tr>
+                    @if (_demo.ReturnCondition is { Length: > 0 })
+                    {
+                        <tr><td>Condition</td><td>@_demo.ReturnCondition</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <div class="d-flex align-center mb-3">
+                <MudText Typo="Typo.subtitle1">Items</MudText>
+                <MudSpacer />
+                @if (_editable)
+                {
+                    <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="AddItem">Add item</MudButton>
+                }
+            </div>
+            <MudSimpleTable Dense="true">
+                <thead>
+                    <tr><th style="width:32%">Description</th><th>Serial</th><th style="width:100px">Qty</th>
+                        <th>Accessories</th><th>Returned</th><th style="width:48px"></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in _demo.Items)
+                    {
+                        <tr>
+                            <td><MudTextField @bind-Value="item.Description" Margin="Margin.Dense" Disabled="@(!_editable)" /></td>
+                            <td><MudTextField @bind-Value="item.SerialNumber" Margin="Margin.Dense" Disabled="@(!_editable)" /></td>
+                            <td><MudNumericField T="decimal" @bind-Value="item.Quantity" Margin="Margin.Dense" Min="0" Disabled="@(!_editable)" /></td>
+                            <td><MudTextField @bind-Value="item.Accessories" Margin="Margin.Dense" Disabled="@(!_editable)" /></td>
+                            <td>
+                                @if (item.ReturnedAtUtc is { } ret)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Success">
+                                        @ret.ToLocalTime().ToString("yyyy-MM-dd")
+                                    </MudChip>
+                                }
+                                else if (!_isNew)
+                                {
+                                    <span class="mud-text-secondary">out</span>
+                                }
+                            </td>
+                            <td>
+                                @if (_editable)
+                                {
+                                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                                   Color="Color.Error" OnClick="@(() => _demo.Items.Remove(item))" />
+                                }
+                            </td>
+                        </tr>
+                    }
+                    @if (_demo.Items.Count == 0)
+                    {
+                        <tr><td colspan="6" class="mud-text-secondary">No items yet.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@if (_returnOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:520px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">Record Return</MudText>
+            <MudText Typo="Typo.body2" Class="mb-2 mud-text-secondary">
+                Tick what has come back. The issuance stays open until every item is returned.
+            </MudText>
+            @foreach (var item in _demo.Items.Where(i => i.ReturnedAtUtc is null))
+            {
+                var id = item.Id;
+                <MudCheckBox T="bool" Dense="true"
+                             Label="@($"{item.Description} {(item.SerialNumber is null ? "" : $"({item.SerialNumber})")}")"
+                             Value="@_returning.Contains(id)"
+                             ValueChanged="@(v => ToggleReturn(id, v))" />
+            }
+            <MudTextField @bind-Value="_returnCondition" Label="Condition on return" Lines="2" Class="mt-3" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _returnOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="RecordReturn"
+                           Disabled="@(_returning.Count == 0)">Confirm</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private DemoIssuance _demo = new();
+    private bool _returnOpen;
+    private HashSet<int> _returning = [];
+    private string? _returnCondition;
+
+    private bool _isNew => Id is null;
+    private bool _editable => _isNew || _demo.Status == DemoStatus.Issued;
+
+    private static Color Colour(DemoStatus s) => s switch
+    {
+        DemoStatus.Issued => Color.Info,
+        DemoStatus.PartiallyReturned => Color.Warning,
+        DemoStatus.Returned => Color.Success,
+        DemoStatus.Cancelled => Color.Error,
+        _ => Color.Default
+    };
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        if (Id is { } id)
+        {
+            using var scope = ScopeFactory.CreateScope();
+            _demo = await scope.ServiceProvider.GetRequiredService<IDemoIssuanceService>().GetAsync(id)
+                    ?? throw new InvalidOperationException("Demo issuance not found.");
+        }
+        else
+        {
+            _demo = new DemoIssuance();
+            AddItem();
+        }
+    }
+
+    private void AddItem() => _demo.Items.Add(new DemoIssuanceItem { Quantity = 1 });
+
+    private void OpenReturn()
+    {
+        // Default to returning everything still out — the common case.
+        _returning = _demo.Items.Where(i => i.ReturnedAtUtc is null).Select(i => i.Id).ToHashSet();
+        _returnCondition = null;
+        _returnOpen = true;
+    }
+
+    private void ToggleReturn(int itemId, bool on)
+    {
+        if (on) _returning.Add(itemId); else _returning.Remove(itemId);
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<IDemoIssuanceService>();
+
+            if (_isNew)
+            {
+                var user = (await AuthState.GetAuthenticationStateAsync()).User;
+                var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+                var name = user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown";
+
+                var issued = await service.IssueAsync(_demo, userId, name);
+                Snackbar.Add($"Demo issuance {issued.IssuanceNumber} created.", Severity.Success);
+                Nav.NavigateTo($"/gatepass/demos/{issued.Id}");
+            }
+            else
+            {
+                await service.UpdateAsync(_demo);
+                Snackbar.Add("Saved.", Severity.Success);
+                await LoadAsync();
+            }
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task RecordReturn()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var user = (await AuthState.GetAuthenticationStateAsync()).User;
+            var name = user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown";
+
+            await scope.ServiceProvider.GetRequiredService<IDemoIssuanceService>()
+                .RecordReturnAsync(_demo.Id, _returning, name, _returnCondition);
+
+            _returnOpen = false;
+            Snackbar.Add("Return recorded.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

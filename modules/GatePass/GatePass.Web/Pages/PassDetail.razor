@@ -1,0 +1,326 @@
+@page "/gatepass/passes/new"
+@page "/gatepass/passes/{Id:int}"
+@attribute [Authorize(Policy = GatePassPermissions.PassesView)]
+@layout GatePassLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>@(_isNew ? "New Gate Pass" : _pass.PassNumber)</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/gatepass/passes" />
+    <MudText Typo="Typo.h5">@(_isNew ? "New Gate Pass" : _pass.PassNumber)</MudText>
+    @if (!_isNew)
+    {
+        <StatusChip Status="@_pass.Status" />
+        @if (_pass.IsOverdue(DateOnly.FromDateTime(DateTime.UtcNow)))
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Error">Overdue</MudChip>
+        }
+    }
+    <MudSpacer />
+
+    @if (!_isNew)
+    {
+        <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+            <MudButton StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                       Href="@($"/gatepass/print/pass/{_pass.Id}/a4")" Target="_blank">A4</MudButton>
+            <MudButton StartIcon="@Icons.Material.Filled.Receipt"
+                       Href="@($"/gatepass/print/pass/{_pass.Id}/pos")" Target="_blank">Slip</MudButton>
+        </MudButtonGroup>
+
+        @if (_pass.Status == GatePassStatus.Issued)
+        {
+            <AuthorizeView Policy="@GatePassPermissions.PassesComplete" Context="gc">
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Class="ml-2"
+                           StartIcon="@Icons.Material.Filled.DoneAll"
+                           OnClick="Complete">Passed the Gate</MudButton>
+            </AuthorizeView>
+        }
+
+        @if (_pass is { IsReturnable: true, ReturnedAtUtc: null, Status: not GatePassStatus.Cancelled })
+        {
+            <AuthorizeView Policy="@GatePassPermissions.PassesComplete" Context="gr">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="ml-2"
+                           StartIcon="@Icons.Material.Filled.AssignmentReturn"
+                           OnClick="RecordReturn">Record Return</MudButton>
+            </AuthorizeView>
+        }
+
+        @if (_pass.Status == GatePassStatus.Issued)
+        {
+            <AuthorizeView Policy="@GatePassPermissions.PassesCancel" Context="gx">
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" Class="ml-2"
+                           OnClick="@(() => _cancelOpen = true)">Cancel</MudButton>
+            </AuthorizeView>
+        }
+    }
+
+    @if (_editable)
+    {
+        <AuthorizeView Policy="@(_isNew ? GatePassPermissions.PassesCreate : GatePassPermissions.PassesAuthorize)"
+                       Context="ge">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="ml-2"
+                       OnClick="Save">@(_isNew ? "Issue Pass" : "Save")</MudButton>
+        </AuthorizeView>
+    }
+</div>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Movement</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" md="6">
+                    <MudSelect T="GatePassDirection" @bind-Value="_pass.Direction" Label="Direction"
+                               Disabled="@(!_isNew)">
+                        <MudSelectItem Value="@GatePassDirection.Inward">Inward — goods coming in</MudSelectItem>
+                        <MudSelectItem Value="@GatePassDirection.Outward">Outward — goods going out</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_pass.Purpose" Label="Purpose *" Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_pass.PersonName" Label="Person carrying *" Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudTextField @bind-Value="_pass.PersonPhone" Label="Phone" Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudTextField @bind-Value="_pass.PersonCnic" Label="CNIC" Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_pass.CompanyName" Label="Company" Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudTextField @bind-Value="_pass.VehicleNumber" Label="Vehicle number" Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudTextField @bind-Value="_pass.Department" Label="Department" Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="6" md="4">
+                    <MudSelect T="string" @bind-Value="_pass.ReferenceType" Label="Related to"
+                               Clearable="true" Disabled="@(!_editable)"
+                               HelperText="Optional link to a record in another app.">
+                        <MudSelectItem Value="@("RepairJob")">Repair job</MudSelectItem>
+                        <MudSelectItem Value="@("Intake")">Intake</MudSelectItem>
+                        <MudSelectItem Value="@("SalesOrder")">Sales order</MudSelectItem>
+                        <MudSelectItem Value="@("Demo")">Demo issuance</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="4">
+                    <MudTextField @bind-Value="_pass.ReferenceNumber" Label="Reference number"
+                                  Disabled="@(!_editable)" />
+                </MudItem>
+                <MudItem xs="12" md="4" Class="d-flex align-center">
+                    <MudSwitch T="bool" @bind-Value="_pass.IsReturnable" Label="Returnable goods"
+                               Color="Color.Primary" Disabled="@(!_editable)" />
+                </MudItem>
+                @if (_pass.IsReturnable)
+                {
+                    <MudItem xs="12" md="4">
+                        <MudDatePicker Label="Expected return *"
+                                       Date="@(_pass.ExpectedReturnOn?.ToDateTime(TimeOnly.MinValue))"
+                                       DateChanged="@(d => _pass.ExpectedReturnOn = d is null ? null : DateOnly.FromDateTime(d.Value))"
+                                       Disabled="@(!_editable)" />
+                    </MudItem>
+                }
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_pass.Notes" Label="Notes" Lines="2" Disabled="@(!_editable)" />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Audit</MudText>
+            <MudSimpleTable Dense="true">
+                <tbody>
+                    <tr><td>Issued</td><td>@(_isNew ? "-" : _pass.IssuedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</td></tr>
+                    <tr><td>Authorised by</td><td>@_pass.AuthorizedByName</td></tr>
+                    <tr>
+                        <td>Through the gate</td>
+                        <td>
+                            @if (_pass.CompletedAtUtc is { } c)
+                            {
+                                @($"{c.ToLocalTime():yyyy-MM-dd HH:mm} — {_pass.CompletedByName}")
+                            }
+                            else { <span class="mud-text-secondary">not yet</span> }
+                        </td>
+                    </tr>
+                    @if (_pass.IsReturnable)
+                    {
+                        <tr>
+                            <td>Returned</td>
+                            <td>
+                                @if (_pass.ReturnedAtUtc is { } r)
+                                {
+                                    @($"{r.ToLocalTime():yyyy-MM-dd HH:mm} — {_pass.ReturnReceivedByName}")
+                                }
+                                else { <span class="mud-text-secondary">outstanding</span> }
+                            </td>
+                        </tr>
+                    }
+                    @if (_pass.CancelledAtUtc is { } x)
+                    {
+                        <tr><td>Cancelled</td><td>@x.ToLocalTime().ToString("yyyy-MM-dd HH:mm") — @_pass.CancellationReason</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <div class="d-flex align-center mb-3">
+                <MudText Typo="Typo.subtitle1">Items</MudText>
+                <MudSpacer />
+                @if (_editable)
+                {
+                    <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="AddItem">Add item</MudButton>
+                }
+            </div>
+            <MudSimpleTable Dense="true">
+                <thead>
+                    <tr><th style="width:40%">Description</th><th>Serial</th><th style="width:110px">Qty</th>
+                        <th style="width:90px">Unit</th><th>Remarks</th><th style="width:48px"></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in _pass.Items)
+                    {
+                        <tr>
+                            <td><MudTextField @bind-Value="item.Description" Margin="Margin.Dense" Disabled="@(!_editable)" /></td>
+                            <td><MudTextField @bind-Value="item.SerialNumber" Margin="Margin.Dense" Disabled="@(!_editable)" /></td>
+                            <td><MudNumericField T="decimal" @bind-Value="item.Quantity" Margin="Margin.Dense" Min="0" Disabled="@(!_editable)" /></td>
+                            <td><MudTextField @bind-Value="item.Unit" Margin="Margin.Dense" Disabled="@(!_editable)" /></td>
+                            <td><MudTextField @bind-Value="item.Remarks" Margin="Margin.Dense" Disabled="@(!_editable)" /></td>
+                            <td>
+                                @if (_editable)
+                                {
+                                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                                   Color="Color.Error" OnClick="@(() => _pass.Items.Remove(item))" />
+                                }
+                            </td>
+                        </tr>
+                    }
+                    @if (_pass.Items.Count == 0)
+                    {
+                        <tr><td colspan="6" class="mud-text-secondary">No items yet.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@if (_cancelOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:420px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">Cancel this pass?</MudText>
+            <MudTextField @bind-Value="_cancelReason" Label="Reason" Lines="2" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _cancelOpen = false)">Back</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="Cancel">Cancel Pass</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private GatePassRecord _pass = new();
+    private bool _cancelOpen;
+    private string _cancelReason = "";
+
+    private bool _isNew => Id is null;
+    /// <summary>A pass stops being editable the moment the goods move.</summary>
+    private bool _editable => _isNew || _pass.Status == GatePassStatus.Issued;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        if (Id is { } id)
+        {
+            using var scope = ScopeFactory.CreateScope();
+            _pass = await scope.ServiceProvider.GetRequiredService<IGatePassService>().GetAsync(id)
+                    ?? throw new InvalidOperationException("Gate pass not found.");
+        }
+        else
+        {
+            _pass = new GatePassRecord { Direction = GatePassDirection.Outward };
+            AddItem();
+        }
+    }
+
+    private void AddItem() => _pass.Items.Add(new GatePassItem { Quantity = 1 });
+
+    private async Task<(string Id, string Name)> CurrentUserAsync()
+    {
+        var user = (await AuthState.GetAuthenticationStateAsync()).User;
+        return (user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+                user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown");
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<IGatePassService>();
+
+            if (_isNew)
+            {
+                var (userId, name) = await CurrentUserAsync();
+                var issued = await service.IssueAsync(_pass, userId, name);
+                Snackbar.Add($"Gate pass {issued.PassNumber} issued.", Severity.Success);
+                Nav.NavigateTo($"/gatepass/passes/{issued.Id}");
+            }
+            else
+            {
+                await service.UpdateAsync(_pass);
+                Snackbar.Add("Gate pass saved.", Severity.Success);
+                await LoadAsync();
+            }
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Complete() => await Act(async (s, name) =>
+    {
+        await s.CompleteAsync(_pass.Id, name);
+        Snackbar.Add("Recorded at the gate.", Severity.Success);
+    });
+
+    private async Task RecordReturn() => await Act(async (s, name) =>
+    {
+        await s.RecordReturnAsync(_pass.Id, name);
+        Snackbar.Add("Return recorded.", Severity.Success);
+    });
+
+    private async Task Cancel() => await Act(async (s, _) =>
+    {
+        await s.CancelAsync(_pass.Id, _cancelReason);
+        _cancelOpen = false;
+        Snackbar.Add("Gate pass cancelled.", Severity.Info);
+    });
+
+    private async Task Act(Func<IGatePassService, string, Task> action)
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var (_, name) = await CurrentUserAsync();
+            await action(scope.ServiceProvider.GetRequiredService<IGatePassService>(), name);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

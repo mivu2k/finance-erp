@@ -1,0 +1,118 @@
+@page "/gatepass/demos"
+@page "/gatepass/demos/outstanding"
+@attribute [Authorize(Policy = GatePassPermissions.DemosView)]
+@layout GatePassLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>Demo Goods</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">@(_outstandingOnly ? "Outstanding Demo Goods" : "Demo Goods")</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@GatePassPermissions.DemosManage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.AddBox"
+                   Href="/gatepass/demos/new">New Issuance</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="6">
+            <MudTextField @bind-Value="_search" Label="Search number, customer, phone or reference letter"
+                          Margin="Margin.Dense" Immediate="true" DebounceInterval="300"
+                          OnDebounceIntervalElapsed="LoadAsync"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudSelect T="DemoStatus?" Value="_status" ValueChanged="OnStatusChanged"
+                       Label="Status" Margin="Margin.Dense" Clearable="true">
+                @foreach (var s in Enum.GetValues<DemoStatus>())
+                {
+                    <MudSelectItem T="DemoStatus?" Value="@s">@s</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" md="3" Class="d-flex align-center">
+            <MudSwitch T="bool" Value="_overdueOnly" ValueChanged="OnOverdueChanged"
+                       Label="Overdue only" Color="Color.Error" />
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr>
+                <th>Number</th><th>Customer</th><th>Phone</th><th>Items</th>
+                <th>Issued</th><th>Due Back</th><th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var d in _issuances)
+            {
+                var overdue = d.IsOverdue(_today);
+                var back = d.Items.Count(i => i.ReturnedAtUtc is not null);
+                <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/gatepass/demos/{d.Id}"))">
+                    <td>@d.IssuanceNumber</td>
+                    <td>@d.CustomerName</td>
+                    <td>@d.CustomerPhone</td>
+                    <td>@back / @d.Items.Count back</td>
+                    <td>@d.IssuedAtUtc.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                    <td>
+                        @if (d.ExpectedReturnOn is { } due)
+                        {
+                            <span style="@(overdue ? "color:var(--mud-palette-error);font-weight:600" : "")">
+                                @due.ToString("yyyy-MM-dd")
+                            </span>
+                        }
+                    </td>
+                    <td>
+                        <MudChip T="string" Size="Size.Small" Color="@Colour(d.Status)">@d.Status</MudChip>
+                    </td>
+                </tr>
+            }
+            @if (_issuances.Count == 0)
+            {
+                <tr><td colspan="7" class="mud-text-secondary pa-4">Nothing matches this filter.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private List<DemoIssuance> _issuances = [];
+    private string? _search;
+    private DemoStatus? _status;
+    private bool _overdueOnly;
+    private bool _outstandingOnly;
+    private readonly DateOnly _today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+    private static Color Colour(DemoStatus s) => s switch
+    {
+        DemoStatus.Issued => Color.Info,
+        DemoStatus.PartiallyReturned => Color.Warning,
+        DemoStatus.Returned => Color.Success,
+        DemoStatus.Cancelled => Color.Error,
+        _ => Color.Default
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _outstandingOnly = Nav.Uri.Contains("/outstanding", StringComparison.OrdinalIgnoreCase);
+        await LoadAsync();
+    }
+
+    private async Task OnStatusChanged(DemoStatus? v) { _status = v; await LoadAsync(); }
+    private async Task OnOverdueChanged(bool v) { _overdueOnly = v; await LoadAsync(); }
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _issuances = await scope.ServiceProvider.GetRequiredService<IDemoIssuanceService>()
+            .ListAsync(new DemoFilter(_search, _status, _outstandingOnly, _overdueOnly));
+        StateHasChanged();
+    }
+}

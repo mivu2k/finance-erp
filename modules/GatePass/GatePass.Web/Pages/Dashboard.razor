@@ -1,0 +1,105 @@
+@page "/gatepass"
+@attribute [Authorize(Policy = "module:gatepass")]
+@layout GatePassLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Gate Pass</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Gate Pass &amp; Demo Goods</MudText>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Passes today</MudText>
+            <MudText Typo="Typo.h4">@_today</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Awaiting gate</MudText>
+            <MudText Typo="Typo.h4">@_awaitingGate</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Awaiting return</MudText>
+            <MudText Typo="Typo.h4" Color="@(_overduePasses > 0 ? Color.Warning : Color.Default)">
+                @_awaitingReturn
+            </MudText>
+            @if (_overduePasses > 0)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Error">@_overduePasses overdue</MudText>
+            }
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Demos out</MudText>
+            <MudText Typo="Typo.h4" Color="@(_overdueDemos > 0 ? Color.Warning : Color.Default)">
+                @_demosOut
+            </MudText>
+            @if (_overdueDemos > 0)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Error">@_overdueDemos overdue</MudText>
+            }
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Recent movements</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead>
+                    <tr><th>Pass</th><th>Direction</th><th>Person</th><th>Vehicle</th><th>Issued</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in _recent)
+                    {
+                        <tr>
+                            <td><MudLink Href="@($"/gatepass/passes/{p.Id}")">@p.PassNumber</MudLink></td>
+                            <td>@p.Direction</td>
+                            <td>@p.PersonName</td>
+                            <td>@p.VehicleNumber</td>
+                            <td>@p.IssuedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                            <td><StatusChip Status="@p.Status" /></td>
+                        </tr>
+                    }
+                    @if (_recent.Count == 0)
+                    {
+                        <tr><td colspan="6" class="mud-text-secondary pa-4">No gate passes yet.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private int _today, _awaitingGate, _awaitingReturn, _overduePasses, _demosOut, _overdueDemos;
+    private List<GatePassRecord> _recent = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var passes = scope.ServiceProvider.GetRequiredService<IGatePassService>();
+        var demos = scope.ServiceProvider.GetRequiredService<IDemoIssuanceService>();
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var all = await passes.ListAsync(new GatePassFilter());
+
+        _today = all.Count(p => DateOnly.FromDateTime(p.IssuedAtUtc) == today);
+        _awaitingGate = all.Count(p => p.Status == GatePassStatus.Issued);
+
+        var outstanding = all.Where(p => p.IsReturnable && p.ReturnedAtUtc is null
+                                      && p.Status != GatePassStatus.Cancelled).ToList();
+        _awaitingReturn = outstanding.Count;
+        _overduePasses = outstanding.Count(p => p.IsOverdue(today));
+
+        var demoList = await demos.ListAsync(new DemoFilter(OutstandingOnly: true));
+        _demosOut = demoList.Count;
+        _overdueDemos = demoList.Count(d => d.IsOverdue(today));
+
+        _recent = all.Take(10).ToList();
+    }
+}

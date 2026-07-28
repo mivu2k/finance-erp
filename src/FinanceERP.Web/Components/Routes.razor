@@ -3,7 +3,8 @@
 <Router AppAssembly="typeof(Program).Assembly"
         AdditionalAssemblies="new[] {
             typeof(ErpPlatform.Shared.Web.Portal.Portal).Assembly,
-            typeof(Hr.Web.Layout.HrLayout).Assembly }" NotFoundPage="typeof(Pages.NotFound)">
+            typeof(Hr.Web.Layout.HrLayout).Assembly,
+            typeof(GatePass.Web.Layout.GatePassLayout).Assembly }" NotFoundPage="typeof(Pages.NotFound)">
     <Found Context="routeData">
         <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
             <NotAuthorized>

@@ -1,0 +1,15 @@
+@* Consistent colouring for a gate pass status wherever it's shown. *@
+<MudChip T="string" Size="Size.Small" Color="@Colour">@Status</MudChip>
+
+@code {
+    [Parameter, EditorRequired] public GatePassStatus Status { get; set; }
+
+    private Color Colour => Status switch
+    {
+        GatePassStatus.Issued => Color.Info,
+        GatePassStatus.Completed => Color.Success,
+        GatePassStatus.Returned => Color.Primary,
+        GatePassStatus.Cancelled => Color.Error,
+        _ => Color.Default
+    };
+}

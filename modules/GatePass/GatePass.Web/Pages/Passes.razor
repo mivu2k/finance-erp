@@ -1,0 +1,117 @@
+@page "/gatepass/passes"
+@page "/gatepass/passes/outstanding"
+@attribute [Authorize(Policy = GatePassPermissions.PassesView)]
+@layout GatePassLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>Gate Passes</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">@(_outstandingOnly ? "Awaiting Return" : "Gate Passes")</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@GatePassPermissions.PassesCreate">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.AddBox"
+                   Href="/gatepass/passes/new">New Pass</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="5">
+            <MudTextField @bind-Value="_search" Label="Search pass no, person, company or vehicle"
+                          Margin="Margin.Dense" Immediate="true" DebounceInterval="300"
+                          OnDebounceIntervalElapsed="LoadAsync"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudSelect T="GatePassDirection?" Value="_direction" ValueChanged="OnDirectionChanged"
+                       Label="Direction" Margin="Margin.Dense" Clearable="true">
+                <MudSelectItem T="GatePassDirection?" Value="@GatePassDirection.Inward">Inward</MudSelectItem>
+                <MudSelectItem T="GatePassDirection?" Value="@GatePassDirection.Outward">Outward</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" md="4">
+            <MudSelect T="GatePassStatus?" Value="_status" ValueChanged="OnStatusChanged"
+                       Label="Status" Margin="Margin.Dense" Clearable="true">
+                @foreach (var s in Enum.GetValues<GatePassStatus>())
+                {
+                    <MudSelectItem T="GatePassStatus?" Value="@s">@s</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr>
+                <th>Pass No</th><th>Dir</th><th>Person</th><th>Company</th><th>Vehicle</th>
+                <th>Items</th><th>Issued</th><th>Due Back</th><th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in _passes)
+            {
+                var overdue = p.IsOverdue(_today);
+                <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/gatepass/passes/{p.Id}"))">
+                    <td>@p.PassNumber</td>
+                    <td>
+                        <MudIcon Size="Size.Small"
+                                 Icon="@(p.Direction == GatePassDirection.Inward
+                                         ? Icons.Material.Filled.ArrowDownward
+                                         : Icons.Material.Filled.ArrowUpward)" />
+                    </td>
+                    <td>@p.PersonName</td>
+                    <td>@p.CompanyName</td>
+                    <td>@p.VehicleNumber</td>
+                    <td>@p.Items.Count</td>
+                    <td>@p.IssuedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                    <td>
+                        @if (p.ExpectedReturnOn is { } due)
+                        {
+                            <span style="@(overdue ? "color:var(--mud-palette-error);font-weight:600" : "")">
+                                @due.ToString("yyyy-MM-dd")
+                            </span>
+                        }
+                    </td>
+                    <td><StatusChip Status="@p.Status" /></td>
+                </tr>
+            }
+            @if (_passes.Count == 0)
+            {
+                <tr><td colspan="9" class="mud-text-secondary pa-4">No passes match this filter.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private List<GatePassRecord> _passes = [];
+    private string? _search;
+    private GatePassDirection? _direction;
+    private GatePassStatus? _status;
+    private readonly DateOnly _today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+    private bool _outstandingOnly;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _outstandingOnly = Nav.Uri.Contains("/outstanding", StringComparison.OrdinalIgnoreCase);
+        await LoadAsync();
+    }
+
+    private async Task OnDirectionChanged(GatePassDirection? v) { _direction = v; await LoadAsync(); }
+    private async Task OnStatusChanged(GatePassStatus? v) { _status = v; await LoadAsync(); }
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _passes = await scope.ServiceProvider.GetRequiredService<IGatePassService>()
+            .ListAsync(new GatePassFilter(_search, _direction, _status, _outstandingOnly));
+        StateHasChanged();
+    }
+}

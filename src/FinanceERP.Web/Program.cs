@@ -2,11 +2,13 @@ using ErpPlatform.Shared.Identity;
 using ErpPlatform.Shared.Kernel;
 using ErpPlatform.Shared.Web.Security;
 using FinanceERP.Infrastructure;
+using GatePass.Infrastructure;
 using Hr.Infrastructure;
 using FinanceERP.Infrastructure.Persistence;
 using FinanceERP.Web.Components;
 using FinanceERP.Web.Components.Account;
 using FinanceERP.Web.Endpoints;
+using GatePass.Web;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -56,6 +58,7 @@ builder.Services.AddPlatformIdentity(builder.Configuration);
 // its tile on the portal and its roles into the identity seeder.
 builder.Services.AddFinanceModule(builder.Configuration);
 builder.Services.AddHrModule(builder.Configuration);
+builder.Services.AddGatePassModule(builder.Configuration);
 
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
 
@@ -90,6 +93,7 @@ using (var scope = app.Services.CreateScope())
         logger);
 
     await HrModule.SeedAsync(sp.GetRequiredService<HrDbContext>(), logger);
+    await GatePassModule.SeedAsync(sp.GetRequiredService<GatePassDbContext>(), logger);
 }
 
 if (app.Environment.IsDevelopment())
@@ -113,11 +117,13 @@ app.MapRazorComponents<App>()
     // needs them listed here as well as on the Router.
     .AddAdditionalAssemblies(
         typeof(ErpPlatform.Shared.Web.Portal.Portal).Assembly,
-        typeof(Hr.Web.Layout.HrLayout).Assembly);
+        typeof(Hr.Web.Layout.HrLayout).Assembly,
+        typeof(GatePass.Web.Layout.GatePassLayout).Assembly);
 
 app.MapAdditionalIdentityEndpoints();
 app.MapExportEndpoints();
 app.MapPrintEndpoints();
+app.MapGatePassPrintEndpoints();
 
 // Authenticated receipt downloads (files live outside wwwroot).
 app.MapGet("/files/receipts/{name}", (string name, FinanceERP.Web.Services.ReceiptStorage storage) =>

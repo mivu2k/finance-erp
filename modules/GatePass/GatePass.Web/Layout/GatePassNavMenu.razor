@@ -1,0 +1,29 @@
+<MudNavMenu>
+    <MudNavLink Href="/gatepass" Icon="@Icons.Material.Filled.Dashboard" Match="NavLinkMatch.All">
+        Dashboard
+    </MudNavLink>
+
+    <AuthorizeView Policy="@GatePassPermissions.PassesView">
+        <MudNavGroup Title="Gate Passes" Icon="@Icons.Material.Filled.LocalShipping" Expanded="true">
+            <MudNavLink Href="/gatepass/passes" Icon="@Icons.Material.Filled.List">All Passes</MudNavLink>
+            <MudNavLink Href="/gatepass/passes/outstanding" Icon="@Icons.Material.Filled.AssignmentReturn">
+                Awaiting Return
+            </MudNavLink>
+            <AuthorizeView Policy="@GatePassPermissions.PassesCreate" Context="c">
+                <MudNavLink Href="/gatepass/passes/new" Icon="@Icons.Material.Filled.AddBox">New Pass</MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@GatePassPermissions.DemosView" Context="d">
+        <MudNavGroup Title="Demo Goods" Icon="@Icons.Material.Filled.Inventory" Expanded="true">
+            <MudNavLink Href="/gatepass/demos" Icon="@Icons.Material.Filled.List">All Issuances</MudNavLink>
+            <MudNavLink Href="/gatepass/demos/outstanding" Icon="@Icons.Material.Filled.Schedule">
+                Outstanding
+            </MudNavLink>
+            <AuthorizeView Policy="@GatePassPermissions.DemosManage" Context="dm">
+                <MudNavLink Href="/gatepass/demos/new" Icon="@Icons.Material.Filled.AddBox">New Issuance</MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
+    </AuthorizeView>
+</MudNavMenu>
