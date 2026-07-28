@@ -88,7 +88,8 @@
       "Bash(shellcheck -S warning deploy/update.sh deploy/self-update.sh)",
       "Bash(./deploy/update.sh)",
       "Bash(echo \"--- exit $? ---\")",
-      "Bash(FINANCE_ERP_HOST=192.0.2.1 timeout 30 ./deploy/update.sh)"
+      "Bash(FINANCE_ERP_HOST=192.0.2.1 timeout 30 ./deploy/update.sh)",
+      "Bash(grep -n 'rm -rf \"\\\\$APP_DIR\"$\\\\|rm -rf \"\\\\${APP_DIR' deploy/self-update.sh deploy/update.sh)"
     ]
   }
 }

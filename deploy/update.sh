@@ -98,13 +98,20 @@ if [ "$healthy" -ne 1 ]; then
   "${SSH[@]}" bash -euo pipefail -s -- "$SERVICE" "$APP_DIR" "$APP_USER" <<'REMOTE'
 SERVICE="$1"; APP_DIR="$2"; APP_USER="$3"
 systemctl stop "$SERVICE" || true
-if [ -d "$APP_DIR.prev" ]; then
-  # Keep the live production settings; only the code goes back.
-  cp -a "$APP_DIR/appsettings.Production.json" /tmp/appsettings.Production.json 2>/dev/null || true
-  rm -rf "$APP_DIR"
-  mv "$APP_DIR.prev" "$APP_DIR"
-  cp -a /tmp/appsettings.Production.json "$APP_DIR/" 2>/dev/null || true
+# Roll back only against a snapshot that actually holds a build. Never delete
+# APP_DIR outright: uploads/ and keys/ live there and have no other copy.
+if [ -f "$APP_DIR.prev/FinanceERP.Web.dll" ]; then
+  rsync -a --delete \
+    --exclude 'appsettings.Production.json' \
+    --exclude 'uploads/' \
+    --exclude 'keys/' \
+    --exclude 'logs/' \
+    --exclude '.deployed-revision' \
+    "$APP_DIR.prev"/ "$APP_DIR"/
   chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+  echo "previous build restored"
+else
+  echo "no usable snapshot at $APP_DIR.prev — leaving the new build in place; nothing deleted" >&2
 fi
 systemctl start "$SERVICE" || true
 REMOTE

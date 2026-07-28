@@ -70,9 +70,19 @@ step "Backing up"
 mkdir -p /var/backups/finance-erp
 mysqldump --single-transaction --routines "$DB_NAME" | gzip > "/var/backups/finance-erp/db-$STAMP.sql.gz"
 echo "database -> /var/backups/finance-erp/db-$STAMP.sql.gz"
-rm -rf "$APP_DIR.prev"
-cp -a "$APP_DIR" "$APP_DIR.prev"
-echo "binaries -> $APP_DIR.prev"
+
+have_snapshot=0
+if [ -d "$APP_DIR" ]; then
+    rm -rf "$APP_DIR.prev"
+    cp -a "$APP_DIR" "$APP_DIR.prev"
+    have_snapshot=1
+    echo "binaries -> $APP_DIR.prev"
+else
+    # First deploy onto an empty box: there is nothing to roll back to, so the
+    # rollback path below must not try (and must never delete anything).
+    mkdir -p "$APP_DIR"
+    echo "no existing install at $APP_DIR — first deploy, no rollback snapshot"
+fi
 ls -1t /var/backups/finance-erp/db-*.sql.gz 2>/dev/null | tail -n +$((KEEP_BACKUPS + 1)) | xargs -r rm --
 
 step "Installing"
@@ -106,18 +116,34 @@ done
 
 if [ "$healthy" -ne 1 ]; then
     echo
-    echo "!! app did not come back — rolling the binaries back" >&2
+    echo "!! app did not come back" >&2
     systemctl stop "$SERVICE" || true
-    cp -a "$APP_DIR/appsettings.Production.json" /tmp/ 2>/dev/null || true
-    rm -rf "$APP_DIR"
-    mv "$APP_DIR.prev" "$APP_DIR"
-    cp -a /tmp/appsettings.Production.json "$APP_DIR/" 2>/dev/null || true
-    chown -R "$APP_USER:$APP_USER" "$APP_DIR"
-    systemctl start "$SERVICE" || true
-    git reset --hard --quiet "$local_rev"
+
+    # Roll back only when a verified snapshot exists. Deleting APP_DIR without
+    # one destroys uploads/ and keys/ outright — a failed start must never cost
+    # data, so in that case the new build is simply left in place to debug.
+    if [ "$have_snapshot" -eq 1 ] && [ -f "$APP_DIR.prev/FinanceERP.Web.dll" ]; then
+        echo "restoring the previous build from $APP_DIR.prev" >&2
+        # Roll back binaries while keeping live runtime state and settings.
+        rsync -a --delete \
+            --exclude 'appsettings.Production.json' \
+            --exclude 'uploads/' \
+            --exclude 'keys/' \
+            --exclude 'logs/' \
+            --exclude '.deployed-revision' \
+            "$APP_DIR.prev"/ "$APP_DIR"/
+        chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+        git reset --hard --quiet "$local_rev"
+        systemctl start "$SERVICE" || true
+        echo "previous build restored." >&2
+    else
+        echo "no usable snapshot at $APP_DIR.prev — leaving the new build in place." >&2
+        echo "Nothing was deleted; fix forward from the log below." >&2
+    fi
+
     journalctl -u "$SERVICE" -n 40 --no-pager >&2
     echo >&2
-    echo "code rolled back. The database was NOT — if a migration broke it:" >&2
+    echo "the database was NOT rolled back — if a migration broke it:" >&2
     echo "  zcat /var/backups/finance-erp/db-$STAMP.sql.gz | mysql $DB_NAME" >&2
     exit 1
 fi
