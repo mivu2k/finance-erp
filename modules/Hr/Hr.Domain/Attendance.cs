@@ -9,9 +9,27 @@ public class BiometricDevice : AuditableEntity
     public string Name { get; set; } = string.Empty;
     public string Host { get; set; } = string.Empty;
     public int Port { get; set; } = 4370;
-    /// <summary>Comm key set on the device (0 when left at default).</summary>
+    /// <summary>Comm key set on the device (0 when left at default). Pull mode only.</summary>
     public int CommKey { get; set; }
+    /// <summary>
+    /// Reported by the terminal itself. In push mode this is the only thing that
+    /// identifies it — the device connects to us, so its address is irrelevant and
+    /// may change.
+    /// </summary>
     public string? SerialNumber { get; set; }
+
+    /// <summary>How punches get here: we fetch them, or the terminal sends them.</summary>
+    public DeviceMode Mode { get; set; } = DeviceMode.Pull;
+    /// <summary>Push mode: last time the terminal contacted us, for a liveness view.</summary>
+    public DateTime? LastContactAtUtc { get; set; }
+    /// <summary>Push mode: address the terminal last called from, purely diagnostic.</summary>
+    public string? LastContactAddress { get; set; }
+    /// <summary>
+    /// A terminal that announced itself but that nobody has approved yet. Its
+    /// punches are stored — losing attendance is worse than storing some noise —
+    /// but it stays visible as pending until an admin accepts it.
+    /// </summary>
+    public bool IsPendingApproval { get; set; }
     public string? Location { get; set; }
     public bool IsEnabled { get; set; } = true;
 
@@ -28,6 +46,18 @@ public class BiometricDevice : AuditableEntity
     public int LastSyncPunchCount { get; set; }
     /// <summary>Newest punch seen from this device — the watermark for the next pull.</summary>
     public DateTime? LastPunchAtUtc { get; set; }
+}
+
+/// <summary>How a terminal delivers its punches.</summary>
+public enum DeviceMode
+{
+    /// <summary>We connect out to the terminal on TCP 4370 and read its log.</summary>
+    Pull = 0,
+    /// <summary>
+    /// ADMS: the terminal posts to us over HTTP. Needed when the firmware refuses
+    /// SDK access, and the only option when the device cannot be reached inbound.
+    /// </summary>
+    Push = 1
 }
 
 /// <summary>

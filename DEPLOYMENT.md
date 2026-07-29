@@ -612,9 +612,22 @@ in-process.
 - `Attendance:IntervalMinutes` sets the interval (default 15). Sync is idempotent:
   devices keep their whole log and are re-read in full, deduped.
 
-> This has never been run against real hardware. The wire format is covered by unit
-> tests reproducing the device's own encoding, but first contact with a live terminal
-> is unproven. *Test connection* is the first thing to try.
+### If the terminal refuses the SDK
+
+Some firmware answers `ACK_UNAUTH` to every authentication attempt whatever the
+comm key — including the key shown on its own screen. When that happens, switch
+the device to **push**:
+
+1. On the terminal: **Comm → Cloud Server / ADMS**, server address = this host,
+   port = 80, path `/iclock`. Restart it.
+2. In HR → Devices, either wait for it to appear by itself (it registers on first
+   contact and shows as *pending*, with its punches already being stored) or add it
+   with **Mode = Push** and its serial number, then approve it.
+
+**Keep `/iclock/*` on the LAN.** Those endpoints cannot require a login — a door
+terminal has none, and the protocol offers no authentication beyond a serial number
+in the query string. If this app is published to the internet, block that path at
+the reverse proxy.
 
 ---
 

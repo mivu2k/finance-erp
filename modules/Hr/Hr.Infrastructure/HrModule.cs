@@ -84,6 +84,7 @@ public static class HrModule
         services.AddScoped<IEmployeeService, EmployeeService>();
         services.AddScoped<IAttendanceService, AttendanceService>();
         services.AddScoped<IAttendanceSyncService, AttendanceSyncService>();
+        services.AddScoped<IAdmsService, AdmsService>();
         services.AddScoped<ILeaveService, LeaveService>();
         services.AddSingleton<IZkDeviceClient, ZkDeviceClient>();
         services.AddSingleton<IHrExportService, HrExportService>();

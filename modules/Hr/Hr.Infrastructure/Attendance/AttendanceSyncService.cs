@@ -24,6 +24,14 @@ public interface IAttendanceSyncService
     Task<IReadOnlyList<ZkUser>> ReadDeviceUsersAsync(int deviceId, CancellationToken ct = default);
 
     /// <summary>
+    /// Stores records that arrived by any route and rebuilds the days they touch.
+    /// Shared with ADMS push, so a punch is matched, deduped and derived
+    /// identically no matter how it reached us.
+    /// </summary>
+    Task<SyncResult> IngestAsync(BiometricDevice device, IReadOnlyList<ZkAttendanceRecord> records,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Recomputes the derived day records for a date range from stored punches.
     /// Manually corrected days are left alone.
     /// </summary>
@@ -90,8 +98,8 @@ public class AttendanceSyncService(
     /// log is the normal case — the device keeps everything — so this is written to
     /// be safely repeatable rather than to assume a clean watermark.
     /// </summary>
-    private async Task<SyncResult> IngestAsync(
-        BiometricDevice device, IReadOnlyList<ZkAttendanceRecord> records, CancellationToken ct)
+    public async Task<SyncResult> IngestAsync(
+        BiometricDevice device, IReadOnlyList<ZkAttendanceRecord> records, CancellationToken ct = default)
     {
         if (records.Count == 0)
             return new SyncResult(device.Name, true, 0, 0, 0, 0, "Nothing new on the terminal.");

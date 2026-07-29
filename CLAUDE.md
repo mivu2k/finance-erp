@@ -314,8 +314,24 @@ key — which matches exactly what we see. **This platform pulls**, so ADMS must
 off. Confirm before assuming a comm key is wrong: a key that is correct on screen
 and still rejected is the signature.
 
-If push is ever wanted instead, it is a different protocol — the device POSTs to
-`/iclock/*` over HTTP — and none of it is implemented here.
+**ADMS push is implemented** as the way round this. `BiometricDevice.Mode` picks
+between `Pull` (we poll 4370) and `Push` (the terminal POSTs to `/iclock/*`).
+`AdmsEndpoints` in Hr.Web speaks the device's side of the conversation and
+`AdmsService` parses it; both routes end in the same
+`AttendanceSyncService.IngestAsync`, so matching, dedupe and day-rebuilding are
+identical however a punch arrived.
+
+- **The `/iclock/*` endpoints are necessarily anonymous** — a door terminal cannot
+  hold a login and the protocol has no auth. The serial number in the query string
+  is the only identity and is trivially forged. Keep it LAN-only; block the path at
+  the reverse proxy if the app is ever published.
+- **The firmware is fussy about replies.** It wants bare `text/plain`, and it counts
+  what it sent: answer `OK: n` with the wrong `n`, or return an unexpected status,
+  and it discards the batch and retries the same records forever.
+- An unrecognised serial is **stored, not rejected**, and the device is flagged
+  `IsPendingApproval` on `/hr/devices`. Losing attendance while somebody gets round
+  to approving a terminal is worse than holding records from one that turns out to
+  be unwanted.
 
 ## Gotchas
 
