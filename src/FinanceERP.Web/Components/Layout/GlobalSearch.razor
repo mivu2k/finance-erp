@@ -36,7 +36,7 @@
             .Where(v => v.VoucherNo.Contains(term) || (v.Narration != null && v.Narration.Contains(term)))
             .OrderByDescending(v => v.Id).Take(5)
             .Select(v => new SearchHit($"{v.VoucherNo} — {v.Narration}", "Voucher",
-                Icons.Material.Filled.ReceiptLong, $"/vouchers/{v.Id}"))
+                Icons.Material.Filled.ReceiptLong, $"/finance/vouchers/{v.Id}"))
             .ToListAsync(ct));
 
         hits.AddRange(await db.PaymentRequests.AsNoTracking()
@@ -44,7 +44,7 @@
                 || (r.Purpose != null && r.Purpose.Contains(term)))
             .OrderByDescending(r => r.Id).Take(5)
             .Select(r => new SearchHit($"{r.RequestNo} — {r.Purpose}", "Request",
-                Icons.Material.Filled.RequestQuote, $"/requests/{r.Id}"))
+                Icons.Material.Filled.RequestQuote, $"/finance/requests/{r.Id}"))
             .ToListAsync(ct));
 
         hits.AddRange(await db.ThirdParties.AsNoTracking()
@@ -58,7 +58,7 @@
             .Where(a => a.Name.Contains(term) || a.Code.Contains(term))
             .OrderBy(a => a.Code).Take(4)
             .Select(a => new SearchHit($"{a.Code} — {a.Name}", "Account",
-                Icons.Material.Filled.AccountTree, $"/ledger?accountId={a.Id}"))
+                Icons.Material.Filled.AccountTree, $"/finance/ledger?accountId={a.Id}"))
             .ToListAsync(ct));
 
         return hits;

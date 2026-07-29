@@ -37,7 +37,7 @@
             {
                 <MudTooltip Text="View statement">
                     <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.MenuBook"
-                                   Href="@($"/ledger?accountId={context.AccountId}")" />
+                                   Href="@($"/finance/ledger?accountId={context.AccountId}")" />
                 </MudTooltip>
                 <AuthorizeView Policy="@Permissions.ReportsExport" Context="x">
                     <MudTooltip Text="Statement PDF (last 12 months)">

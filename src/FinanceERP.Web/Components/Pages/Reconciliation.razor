@@ -61,7 +61,7 @@
                                          ValueChanged="@(v => { if (v) _selected.Add(l.Id); else _selected.Remove(l.Id); })" />
                         </td>
                         <td>@l.Voucher.Date.ToString("yyyy-MM-dd")</td>
-                        <td><MudLink Href="@($"/vouchers/{l.VoucherId}")">@l.Voucher.VoucherNo</MudLink></td>
+                        <td><MudLink Href="@($"/finance/vouchers/{l.VoucherId}")">@l.Voucher.VoucherNo</MudLink></td>
                         <td>@(l.Description ?? l.Voucher.Narration)</td>
                         <td style="text-align:right">@(l.Debit == 0 ? "" : l.Debit.ToString("N2"))</td>
                         <td style="text-align:right">@(l.Credit == 0 ? "" : l.Credit.ToString("N2"))</td>

@@ -72,7 +72,7 @@
             {
                 <tr>
                     <td>@r.Date.ToString("yyyy-MM-dd")</td>
-                    <td><MudLink Href="@($"/vouchers/{r.VoucherId}")">@r.VoucherNo</MudLink></td>
+                    <td><MudLink Href="@($"/finance/vouchers/{r.VoucherId}")">@r.VoucherNo</MudLink></td>
                     <td>@r.AccountCode @r.AccountName</td>
                     <td>@r.Description</td>
                     <td style="text-align:right">@(r.Debit == 0 ? "" : r.Debit.ToString("N2"))</td>

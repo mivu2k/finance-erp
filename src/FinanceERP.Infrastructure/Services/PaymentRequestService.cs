@@ -114,7 +114,7 @@ public class PaymentRequestService(
         var targetRole = r.IsDirectorRequest ? AppRoles.Admin : AppRoles.Manager;
         await notifications.NotifyRoleAsync(targetRole, $"Approval needed: {r.RequestNo}",
             $"{r.RequesterName} requested {r.TotalAmount:N2} — {r.Purpose}",
-            NotificationType.ApprovalRequest, $"/requests/{r.Id}");
+            NotificationType.ApprovalRequest, $"/finance/requests/{r.Id}");
     }
 
     public async Task ApproveAsync(int id, string level, string? comment)
@@ -127,20 +127,20 @@ public class PaymentRequestService(
                 AddTrail(r, level, ApprovalAction.Approved, comment);
                 await db.SaveChangesAsync();
                 await notifications.NotifyRoleAsync(AppRoles.Admin, $"Approval needed: {r.RequestNo}",
-                    $"{r.RequesterName} — {r.TotalAmount:N2}", NotificationType.ApprovalRequest, $"/requests/{r.Id}");
+                    $"{r.RequesterName} — {r.TotalAmount:N2}", NotificationType.ApprovalRequest, $"/finance/requests/{r.Id}");
                 break;
             case "Admin" when r.Status == RequestStatus.PendingAdmin:
                 r.Status = RequestStatus.PendingAccountant;
                 AddTrail(r, level, ApprovalAction.Approved, comment);
                 await db.SaveChangesAsync();
                 await notifications.NotifyRoleAsync(AppRoles.Accountant, $"Payment due: {r.RequestNo}",
-                    $"{r.RequesterName} — {r.TotalAmount:N2}", NotificationType.ApprovalRequest, $"/requests/{r.Id}");
+                    $"{r.RequesterName} — {r.TotalAmount:N2}", NotificationType.ApprovalRequest, $"/finance/requests/{r.Id}");
                 break;
             default:
                 throw new InvalidOperationException($"Request is not pending {level} approval.");
         }
         await notifications.NotifyAsync(r.RequesterId, $"{r.RequestNo} approved by {level}",
-            comment, NotificationType.Approved, $"/requests/{r.Id}");
+            comment, NotificationType.Approved, $"/finance/requests/{r.Id}");
     }
 
     public async Task RejectAsync(int id, string level, string? comment)
@@ -152,7 +152,7 @@ public class PaymentRequestService(
         AddTrail(r, level, ApprovalAction.Rejected, comment);
         await db.SaveChangesAsync();
         await notifications.NotifyAsync(r.RequesterId, $"{r.RequestNo} rejected",
-            comment, NotificationType.Rejected, $"/requests/{r.Id}");
+            comment, NotificationType.Rejected, $"/finance/requests/{r.Id}");
     }
 
     /// <summary>
@@ -203,7 +203,7 @@ public class PaymentRequestService(
         await db.SaveChangesAsync();
 
         await notifications.NotifyAsync(r.RequesterId, $"{r.RequestNo} paid",
-            $"Voucher {voucher.VoucherNo}", NotificationType.Approved, $"/requests/{r.Id}");
+            $"Voucher {voucher.VoucherNo}", NotificationType.Approved, $"/finance/requests/{r.Id}");
         return voucher;
     }
 
@@ -235,7 +235,7 @@ public class PaymentRequestService(
 
         await notifications.NotifyAsync(r.RequesterId, $"{r.RequestNo} disbursed",
             $"You received {r.TotalAmount:N2}. Submit your expense justification when you're back.",
-            NotificationType.Approved, $"/requests/{r.Id}");
+            NotificationType.Approved, $"/finance/requests/{r.Id}");
         return voucher;
     }
 
@@ -261,7 +261,7 @@ public class PaymentRequestService(
 
         await notifications.NotifyRoleAsync(AppRoles.Admin, $"Justification review: {r.RequestNo}",
             $"{r.RequesterName} justified {r.Lines.Sum(l => l.Amount):N2} against an advance of {r.TotalAmount:N2}",
-            NotificationType.ApprovalRequest, $"/requests/{r.Id}");
+            NotificationType.ApprovalRequest, $"/finance/requests/{r.Id}");
     }
 
     public async Task ApproveJustificationAsync(int id, string? comment)
@@ -272,9 +272,9 @@ public class PaymentRequestService(
         AddTrail(r, "Admin", ApprovalAction.Approved, comment);
         await db.SaveChangesAsync();
         await notifications.NotifyRoleAsync(AppRoles.Accountant, $"Settle advance: {r.RequestNo}",
-            $"{r.RequesterName} — justification approved", NotificationType.ApprovalRequest, $"/requests/{r.Id}");
+            $"{r.RequesterName} — justification approved", NotificationType.ApprovalRequest, $"/finance/requests/{r.Id}");
         await notifications.NotifyAsync(r.RequesterId, $"{r.RequestNo} justification approved", comment,
-            NotificationType.Approved, $"/requests/{r.Id}");
+            NotificationType.Approved, $"/finance/requests/{r.Id}");
     }
 
     /// <summary>Sends the justification back to the requester for rework (stays Disbursed).</summary>
@@ -287,7 +287,7 @@ public class PaymentRequestService(
         await db.SaveChangesAsync();
         await notifications.NotifyAsync(r.RequesterId, $"{r.RequestNo} justification returned",
             comment ?? "Please revise and resubmit your expense justification.",
-            NotificationType.Rejected, $"/requests/{r.Id}");
+            NotificationType.Rejected, $"/finance/requests/{r.Id}");
     }
 
     /// <summary>
@@ -401,7 +401,7 @@ public class PaymentRequestService(
                 ( < 0, _) => $"You are owed {-difference:N2}; it will be paid separately.",
                 _ => "Advance fully utilised."
             },
-            NotificationType.Approved, $"/requests/{r.Id}");
+            NotificationType.Approved, $"/finance/requests/{r.Id}");
         return voucher;
     }
 
@@ -459,7 +459,7 @@ public class PaymentRequestService(
         await db.SaveChangesAsync();
 
         await notifications.NotifyAsync(r.RequesterId, $"{r.RequestNo} balance cleared",
-            $"{amount:N2} recorded — voucher {voucher.VoucherNo}", NotificationType.Info, $"/requests/{r.Id}");
+            $"{amount:N2} recorded — voucher {voucher.VoucherNo}", NotificationType.Info, $"/finance/requests/{r.Id}");
         return voucher;
     }
 
@@ -476,7 +476,7 @@ public class PaymentRequestService(
         await db.SaveChangesAsync();
         if (isAdmin && r.RequesterId != currentUser.UserId)
             await notifications.NotifyAsync(r.RequesterId, $"{r.RequestNo} cancelled by admin", null,
-                NotificationType.Rejected, $"/requests/{r.Id}");
+                NotificationType.Rejected, $"/finance/requests/{r.Id}");
     }
 
     /// <summary>Admin cleanup for wrong entries: only requests that never touched the ledger.</summary>

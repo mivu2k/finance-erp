@@ -382,7 +382,7 @@ public class PayrollService(
         await db.SaveChangesAsync();
         await notifications.NotifyRoleAsync(AppRoles.Admin, $"Payroll approval: {run.RunNo}",
             $"{run.Payslips.Count} employees — net {run.TotalNet:N2}",
-            NotificationType.ApprovalRequest, $"/payroll/{run.Id}");
+            NotificationType.ApprovalRequest, $"/finance/payroll/{run.Id}");
     }
 
     public async Task ApproveRunAsync(int runId, string? comment)
@@ -397,7 +397,7 @@ public class PayrollService(
         await db.SaveChangesAsync();
 
         await notifications.NotifyRoleAsync(AppRoles.Accountant, $"Pay payroll: {run.RunNo}",
-            $"Approved — net {run.TotalNet:N2} to disburse", NotificationType.ApprovalRequest, $"/payroll/{run.Id}");
+            $"Approved — net {run.TotalNet:N2} to disburse", NotificationType.ApprovalRequest, $"/finance/payroll/{run.Id}");
     }
 
     public async Task RejectRunAsync(int runId, string? comment)

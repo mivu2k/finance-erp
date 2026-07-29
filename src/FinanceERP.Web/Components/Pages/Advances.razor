@@ -18,7 +18,7 @@
 </div>
 
 <MudTable @ref="_table" T="EmployeeAdvance" ServerData="LoadData" Dense="true" Hover="true" Striped="true"
-          OnRowClick="@(args => Nav.NavigateTo($"/advances/{args.Item!.Id}"))" RowStyle="cursor:pointer">
+          OnRowClick="@(args => Nav.NavigateTo($"/finance/advances/{args.Item!.Id}"))" RowStyle="cursor:pointer">
     <HeaderContent>
         <MudTh>No</MudTh><MudTh>Employee</MudTh><MudTh Style="text-align:right">Amount</MudTh>
         <MudTh Style="text-align:right">Repaid</MudTh><MudTh Style="text-align:right">Outstanding</MudTh>
@@ -68,7 +68,7 @@
     private EmployeeAdvance _new = new() { InstallmentCount = 1 };
     private string? _userId;
 
-    private bool IsMy => Nav.Uri.Contains("/advances/my");
+    private bool IsMy => Nav.Uri.Contains("/finance/advances/my");
 
     protected override async Task OnInitializedAsync()
     {

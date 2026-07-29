@@ -55,7 +55,7 @@
                         <td>
                             @if (_projectIds.TryGetValue(p.Category, out var pid))
                             {
-                                <MudLink Href="@($"/ledger?projectId={pid}")" Typo="Typo.caption">View entries</MudLink>
+                                <MudLink Href="@($"/finance/ledger?projectId={pid}")" Typo="Typo.caption">View entries</MudLink>
                             }
                         </td>
                     </tr>

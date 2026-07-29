@@ -173,7 +173,7 @@
         }
     }
 
-    private void Cancel() => Nav.NavigateTo(_model.IsDirectorRequest ? "/director-funds" : "/requests/my");
+    private void Cancel() => Nav.NavigateTo(_model.IsDirectorRequest ? "/finance/director-funds" : "/finance/requests/my");
 
     private async Task Save(bool submit)
     {

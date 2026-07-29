@@ -62,9 +62,9 @@ public class AlertsBackgroundService(IServiceScopeFactory scopeFactory, ILogger<
             {
                 var msg = $"Due {inst.DueDate:yyyy-MM-dd}, {inst.Amount - inst.PaidAmount:N2} outstanding";
                 await notifications.NotifyAsync(inst.EmployeeAdvance.EmployeeId, title, msg,
-                    NotificationType.AdvanceDue, $"/advances/{inst.EmployeeAdvanceId}");
+                    NotificationType.AdvanceDue, $"/finance/advances/{inst.EmployeeAdvanceId}");
                 await notifications.NotifyRoleAsync(AppRoles.Accountant, title, msg,
-                    NotificationType.AdvanceDue, $"/advances/{inst.EmployeeAdvanceId}");
+                    NotificationType.AdvanceDue, $"/finance/advances/{inst.EmployeeAdvanceId}");
             }
         }
 

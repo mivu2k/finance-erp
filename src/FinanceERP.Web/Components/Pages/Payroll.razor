@@ -16,7 +16,7 @@
 </div>
 
 <MudTable @ref="_table" T="PayrollRun" ServerData="LoadData" Dense="true" Hover="true" Striped="true"
-          OnRowClick="@(args => Nav.NavigateTo($"/payroll/{args.Item!.Id}"))" RowStyle="cursor:pointer">
+          OnRowClick="@(args => Nav.NavigateTo($"/finance/payroll/{args.Item!.Id}"))" RowStyle="cursor:pointer">
     <HeaderContent>
         <MudTh>Run</MudTh><MudTh>Period</MudTh><MudTh>Pay date</MudTh>
         <MudTh Style="text-align:right">Gross</MudTh>
@@ -124,7 +124,7 @@
             await svc.GenerateAsync(run.Id);
             Snackbar.Add($"{run.RunNo} created.", Severity.Success);
             _newOpen = false;
-            Nav.NavigateTo($"/payroll/{run.Id}");
+            Nav.NavigateTo($"/finance/payroll/{run.Id}");
         }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
         finally { _busy = false; }

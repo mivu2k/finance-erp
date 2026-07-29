@@ -49,7 +49,7 @@
                 <tr style="background:var(--mud-palette-background-gray)">
                     <td>@first.Date.ToString("yyyy-MM-dd")</td>
                     <td colspan="5">
-                        <MudLink Href="@($"/vouchers/{first.VoucherId}")"><b>@group.Key</b></MudLink>
+                        <MudLink Href="@($"/finance/vouchers/{first.VoucherId}")"><b>@group.Key</b></MudLink>
                     </td>
                 </tr>
                 @foreach (var r in group)

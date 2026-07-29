@@ -68,7 +68,7 @@ public class AdvanceService(
         a.Status = AdvanceStatus.PendingApproval;
         await db.SaveChangesAsync();
         await notifications.NotifyRoleAsync(AppRoles.FinanceManager, $"Advance approval: {a.AdvanceNo}",
-            $"{a.EmployeeName} requested advance of {a.Amount:N2}", NotificationType.ApprovalRequest, $"/advances/{a.Id}");
+            $"{a.EmployeeName} requested advance of {a.Amount:N2}", NotificationType.ApprovalRequest, $"/finance/advances/{a.Id}");
     }
 
     public async Task ApproveAsync(int id)
@@ -80,9 +80,9 @@ public class AdvanceService(
         a.ApprovedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync();
         await notifications.NotifyAsync(a.EmployeeId, $"Advance {a.AdvanceNo} approved", null,
-            NotificationType.Approved, $"/advances/{a.Id}");
+            NotificationType.Approved, $"/finance/advances/{a.Id}");
         await notifications.NotifyRoleAsync(AppRoles.Accountant, $"Disburse advance {a.AdvanceNo}",
-            $"{a.EmployeeName} — {a.Amount:N2}", NotificationType.ApprovalRequest, $"/advances/{a.Id}");
+            $"{a.EmployeeName} — {a.Amount:N2}", NotificationType.ApprovalRequest, $"/finance/advances/{a.Id}");
     }
 
     public async Task RejectAsync(int id, string? reason)
@@ -92,7 +92,7 @@ public class AdvanceService(
         a.Status = AdvanceStatus.Rejected;
         await db.SaveChangesAsync();
         await notifications.NotifyAsync(a.EmployeeId, $"Advance {a.AdvanceNo} rejected", reason,
-            NotificationType.Rejected, $"/advances/{a.Id}");
+            NotificationType.Rejected, $"/finance/advances/{a.Id}");
     }
 
     /// <summary>
@@ -129,7 +129,7 @@ public class AdvanceService(
         }
         await db.SaveChangesAsync();
         await notifications.NotifyAsync(a.EmployeeId, $"Advance {a.AdvanceNo} disbursed",
-            $"Voucher {voucher.VoucherNo}; repayment starts {start:yyyy-MM-dd}", NotificationType.Info, $"/advances/{a.Id}");
+            $"Voucher {voucher.VoucherNo}; repayment starts {start:yyyy-MM-dd}", NotificationType.Info, $"/finance/advances/{a.Id}");
         return voucher;
     }
 
@@ -147,7 +147,7 @@ public class AdvanceService(
         await db.SaveChangesAsync();
         await notifications.NotifyRoleAsync(AppRoles.Accountant, $"Confirm repayment: {a.AdvanceNo} #{inst.Number}",
             $"{a.EmployeeName} claims installment of {inst.Amount - inst.PaidAmount:N2} is paid.",
-            NotificationType.ApprovalRequest, $"/advances/{a.Id}");
+            NotificationType.ApprovalRequest, $"/finance/advances/{a.Id}");
     }
 
     /// <summary>Accountant confirms the employee's claim — posts the repayment voucher.</summary>
@@ -162,7 +162,7 @@ public class AdvanceService(
             receiveIntoAccountId, DateOnly.FromDateTime(DateTime.Today));
         await notifications.NotifyAsync(inst.EmployeeAdvance.EmployeeId,
             $"Repayment confirmed: {inst.EmployeeAdvance.AdvanceNo} #{inst.Number}",
-            $"Voucher {voucher.VoucherNo}", NotificationType.Approved, $"/advances/{inst.EmployeeAdvanceId}");
+            $"Voucher {voucher.VoucherNo}", NotificationType.Approved, $"/finance/advances/{inst.EmployeeAdvanceId}");
         return voucher;
     }
 
@@ -178,7 +178,7 @@ public class AdvanceService(
         await notifications.NotifyAsync(inst.EmployeeAdvance.EmployeeId,
             $"Repayment claim rejected: {inst.EmployeeAdvance.AdvanceNo} #{inst.Number}",
             reason ?? "The accountant could not confirm this payment.",
-            NotificationType.Rejected, $"/advances/{inst.EmployeeAdvanceId}");
+            NotificationType.Rejected, $"/finance/advances/{inst.EmployeeAdvanceId}");
     }
 
     public Task<Account> GetAdvanceAccountAsync(string employeeName) =>
@@ -258,7 +258,7 @@ public class AdvanceService(
 
         await notifications.NotifyAsync(employeeId, $"Advance {a.AdvanceNo} created for salary recovery",
             $"{amount:N2} — {reason}. This will be deducted from your salary starting {start:yyyy-MM}.",
-            NotificationType.AdvanceDue, $"/advances/{a.Id}");
+            NotificationType.AdvanceDue, $"/finance/advances/{a.Id}");
         return a;
     }
 

@@ -83,7 +83,7 @@ else
                             @foreach (var r in _myRequests)
                             {
                                 <tr>
-                                    <td><MudLink Href="@($"/requests/{r.Id}")">@r.RequestNo</MudLink></td>
+                                    <td><MudLink Href="@($"/finance/requests/{r.Id}")">@r.RequestNo</MudLink></td>
                                     <td>@r.Purpose</td>
                                     <td style="text-align:right">@r.TotalAmount.ToString("N2")</td>
                                     <td><StatusChip Status="@r.Status" /></td>

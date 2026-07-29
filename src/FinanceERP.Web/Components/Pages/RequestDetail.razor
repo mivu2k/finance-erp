@@ -29,7 +29,7 @@ else
         <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack" OnClick="@(() => Nav.NavigateTo("/finance/requests/my"))">Back</MudButton>
         @if (_request.Status == RequestStatus.Draft)
         {
-            <MudButton Variant="Variant.Outlined" Href="@($"/requests/{_request.Id}/edit")">Edit</MudButton>
+            <MudButton Variant="Variant.Outlined" Href="@($"/finance/requests/{_request.Id}/edit")">Edit</MudButton>
         }
         @if (_request.Status is RequestStatus.Draft or RequestStatus.PendingManager or RequestStatus.PendingAdmin or RequestStatus.PendingAccountant
              && (_isOwner || _isAdmin))
@@ -115,13 +115,13 @@ else
                 {
                     <MudAlert Severity="Severity.Success" Class="mt-3">
                         @(_request.Kind == RequestKind.Advance ? "Disbursed" : "Paid") via voucher
-                        <MudLink Href="@($"/vouchers/{_request.VoucherId}")">@_request.Voucher.VoucherNo</MudLink>
+                        <MudLink Href="@($"/finance/vouchers/{_request.VoucherId}")">@_request.Voucher.VoucherNo</MudLink>
                     </MudAlert>
                 }
                 @if (_request.SettlementVoucher is not null)
                 {
                     <MudAlert Severity="Severity.Success" Class="mt-2">
-                        Settled via voucher <MudLink Href="@($"/vouchers/{_request.SettlementVoucherId}")">@_request.SettlementVoucher.VoucherNo</MudLink>
+                        Settled via voucher <MudLink Href="@($"/finance/vouchers/{_request.SettlementVoucherId}")">@_request.SettlementVoucher.VoucherNo</MudLink>
                     </MudAlert>
                 }
             </MudPaper>

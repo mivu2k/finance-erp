@@ -48,7 +48,7 @@
         <MudTh>Narration</MudTh><MudTh Style="text-align:right">Amount</MudTh><MudTh>Source</MudTh><MudTh></MudTh>
     </HeaderContent>
     <RowTemplate>
-        <MudTd><MudLink Href="@($"/vouchers/{context.Id}")">@context.VoucherNo</MudLink></MudTd>
+        <MudTd><MudLink Href="@($"/finance/vouchers/{context.Id}")">@context.VoucherNo</MudLink></MudTd>
         <MudTd>@context.Date.ToString("yyyy-MM-dd")</MudTd>
         <MudTd>@context.Type</MudTd>
         <MudTd>
@@ -178,7 +178,7 @@
             using var scope = ScopeFactory.CreateScope();
             var copy = await scope.ServiceProvider.GetRequiredService<IVoucherService>().DuplicateAsDraftAsync(id);
             Snackbar.Add($"Draft {copy.VoucherNo} created — edit and post it.", Severity.Success);
-            Nav.NavigateTo($"/vouchers/{copy.Id}");
+            Nav.NavigateTo($"/finance/vouchers/{copy.Id}");
         }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); _busy = false; }
     }

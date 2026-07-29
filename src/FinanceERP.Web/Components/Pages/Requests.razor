@@ -15,7 +15,7 @@
     @if (Mode is "my" or "director")
     {
         <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
-                   Href="@(Mode == "director" ? "/requests/new?director=true" : "/requests/new")">New Request</MudButton>
+                   Href="@(Mode == "director" ? "/finance/requests/new?director=true" : "/finance/requests/new")">New Request</MudButton>
     }
 </div>
 
@@ -29,7 +29,7 @@
 </MudPaper>
 
 <MudTable @ref="_table" T="PaymentRequest" ServerData="LoadData" Dense="true" Hover="true" Striped="true"
-          OnRowClick="@(args => Nav.NavigateTo($"/requests/{args.Item!.Id}"))" RowStyle="cursor:pointer">
+          OnRowClick="@(args => Nav.NavigateTo($"/finance/requests/{args.Item!.Id}"))" RowStyle="cursor:pointer">
     <HeaderContent>
         <MudTh>Request No</MudTh><MudTh>Requester</MudTh><MudTh>Purpose</MudTh>
         <MudTh Style="text-align:right">Amount</MudTh><MudTh>Status</MudTh><MudTh>Created</MudTh>
@@ -56,7 +56,7 @@
             <tbody>
                 @foreach (var a in _pendingAdvances)
                 {
-                    <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/advances/{a.Id}"))">
+                    <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/finance/advances/{a.Id}"))">
                         <td>@a.AdvanceNo</td>
                         <td>@a.EmployeeName</td>
                         <td style="text-align:right">@a.Amount.ToString("N2")</td>
@@ -82,8 +82,8 @@
     private List<EmployeeAdvance> _pendingAdvances = [];
 
     private string Mode => Nav.Uri.Contains("/approvals") ? "approvals"
-        : Nav.Uri.Contains("/requests/my") ? "my"
-        : Nav.Uri.Contains("/director-funds") ? "director"
+        : Nav.Uri.Contains("/finance/requests/my") ? "my"
+        : Nav.Uri.Contains("/finance/director-funds") ? "director"
         : "all";
 
     private string Title => Mode switch

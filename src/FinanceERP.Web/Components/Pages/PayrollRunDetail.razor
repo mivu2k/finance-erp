@@ -35,7 +35,7 @@ else
     {
         <MudAlert Severity="Severity.Success" Class="mb-4">
             Paid via voucher
-            <MudLink Href="@($"/vouchers/{_run.VoucherId}")">@_run.Voucher.VoucherNo</MudLink>
+            <MudLink Href="@($"/finance/vouchers/{_run.VoucherId}")">@_run.Voucher.VoucherNo</MudLink>
         </MudAlert>
     }
 
