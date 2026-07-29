@@ -318,19 +318,55 @@ systemctl enable --now finance-erp
 
 The service binds `http://127.0.0.1:5000` — loopback only, nginx in front.
 
-**Check** — first boot runs every migration and the seeder, so give it a minute:
+**First boot takes about three minutes.** It migrates five databases and seeds the
+module catalog, 25 roles, the admin account, the company profile and every module's
+reference data. Watch it rather than guessing:
 
 ```bash
-systemctl status finance-erp --no-pager
-journalctl -u finance-erp -n 50 --no-pager
+journalctl -u finance-erp -f
+```
+
+A healthy run walks through roughly this, then stops:
+
+```
+INF] Seeded module finance / repair / gatepass / hr
+INF] Seeded role Super Admin for module platform
+INF] Seeded role ... (25 of them)
+INF] Seeded platform administrator you@yourcompany.com
+INF] Seeded the company profile (name: My Company (Pvt) Ltd).
+INF] Seeded HR departments / designations / the default shift / leave types
+INF] Gate Pass database is up to date
+INF] Seeded repair symptoms / accessories / device types
+INF] Attendance polling every 15 minute(s)
+```
+
+`Attendance polling every N minute(s)` is the last startup line — once you see it,
+boot is complete. Ctrl-C out of the follow.
+
+**Check:**
+
+```bash
+systemctl status finance-erp --no-pager        # expect: active (running)
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:5000/
 ```
 
 `302` is success — the redirect to the login page. `000` means it isn't listening;
 read the journal.
 
-> `[ERR] The model for context '...' has pending changes` appears once per database
-> context at startup. It is **benign** — EF logs it without throwing. Don't chase it.
+Three log lines are **benign** and appear on every healthy install. Don't chase them:
+
+| Line | Why |
+|---|---|
+| `[ERR] The model for context '...' has pending changes` | Once per database context. EF logs it without throwing; scaffolding a migration yields an empty one |
+| `[WRN] Failed to determine the https port for redirect` | TLS terminates at nginx, so the app sees no HTTPS port. Goes away behind a certificate |
+| `[WRN] No XML encryptor configured. Key ... may be persisted ... unencrypted` | DataProtection keys are plaintext XML — normal on Linux without a certificate store. See the `chmod 700` below |
+
+Keys in `/opt/finance-erp/keys` are unencrypted, and anyone who can read them can
+forge auth cookies. Lock the directory down:
+
+```bash
+chmod 700 /opt/finance-erp/keys
+```
 
 **Confirm the schema built and the admin seeded:**
 
@@ -347,15 +383,28 @@ Expect `1`.
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mivu2k/finance-erp/main/deploy/nginx-finance-erp.conf \
   -o /etc/nginx/sites-available/finance-erp
-sed -i "s/erp.example.com/$(hostname -I | awk '{print $1}')/" /etc/nginx/sites-available/finance-erp
+sed -i 's/^\( *server_name\).*/\1 _;/' /etc/nginx/sites-available/finance-erp
 ln -sf /etc/nginx/sites-available/finance-erp /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 ```
 
-Blazor Server needs WebSockets; the supplied config carries the `Upgrade`/`Connection`
-headers and a 100s read timeout to keep circuits alive. Without them the UI
-disconnects every few seconds in a way that looks like an application bug.
+`server_name _;` is a catch-all: it answers to the IP, to a hostname, and to
+whatever `Host` an upstream proxy passes. Pinning the container's IP instead buys
+nothing with a single server block, and breaks the day its DHCP lease changes.
+
+The supplied config carries two things that are not optional:
+
+- **WebSocket headers** (`Upgrade`/`Connection`) plus a 100s read timeout. Blazor
+  Server runs over a websocket; without these the UI disconnects every few seconds
+  in a way that looks like an application bug.
+- **32k proxy buffers.** The auth cookie holds every permission the user has — a
+  Super Admin has 124 — which ASP.NET encrypts and chunks across several
+  `Set-Cookie` headers. nginx's 4–8k default cannot hold that header block and
+  answers **502 immediately after a login the application logged as successful**.
+
+**If you put another reverse proxy in front of this container** (NPM, Traefik,
+Caddy), it needs *both* of those too, or you get the same two failures one hop out.
 
 **Check** — in the container, then from your desktop browser:
 
@@ -384,6 +433,14 @@ Browse to `http://<container-ip>/` and sign in with the `Seed` credentials.
    the portal and decides what they can do inside it.
 4. **Administration → Roles & Permissions** — review the matrix.
 5. **Finance → Settings** — currency and the low-cash alert threshold.
+
+Then harden, once:
+
+```bash
+chmod 700 /opt/finance-erp/keys
+chmod 600 /opt/finance-erp/appsettings.Production.json
+ls -ld /opt/finance-erp/keys /opt/finance-erp/appsettings.Production.json
+```
 
 > **App access is a sign-in claim.** It is stamped onto the login cookie so the portal
 > and nav never hit the database. A user you just granted access to must sign out and
@@ -568,6 +625,9 @@ in-process.
 | `Assets file project.assets.json not found` | `dotnet restore` in the checkout first (path B) |
 | Login works but an app tile is missing | App access applies at **next sign-in** — sign out and back in (§9) |
 | `mysql -u root -p` fails on a fresh box | MariaDB root uses socket auth on Ubuntu — run `mysql` as root, no `-u root -p` |
+| `Failed to determine the https port for redirect` | Benign. TLS terminates at nginx so the app sees no HTTPS port |
+| `No XML encryptor configured` | Benign. DataProtection keys are plaintext on Linux — `chmod 700` the `keys/` directory |
+| First boot seems hung | It isn't — five databases and ~25 roles take about three minutes. `journalctl -u finance-erp -f` and wait for `Attendance polling every N minute(s)` |
 | `chown: invalid spec: 'finance-erp:'` | The service account was never created — the `useradd` at the end of §5 |
 
 ---
