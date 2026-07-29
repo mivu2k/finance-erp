@@ -17,10 +17,23 @@
 
 @if (_employee is null)
 {
-    <MudAlert Severity="Severity.Warning">
-        Your login isn't linked to an employee record yet. Ask HR to connect them —
-        until then this code can't identify you.
+    <MudAlert Severity="Severity.Warning" Class="mb-3">
+        Your login isn't linked to an employee record, so a code here couldn't say
+        who you are.
     </MudAlert>
+    <MudPaper Class="pa-4">
+        <MudText Typo="Typo.subtitle1" Class="mb-2">Linking it</MudText>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            Someone with HR access does this once: <b>HR → Employees</b>, open the
+            person's record, and on the <b>Employment</b> tab set <b>Platform login</b>
+            to their account, then save. The code appears here immediately afterwards.
+        </MudText>
+        <AuthorizeView Policy="@HrPermissions.EmployeesManage" Context="hr">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.People"
+                       Href="/hr/employees">Open Employees</MudButton>
+        </AuthorizeView>
+    </MudPaper>
 }
 else
 {
