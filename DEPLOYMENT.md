@@ -434,38 +434,14 @@ chmod 600 /etc/ssl/private/mei-erp.key
 The `subjectAltName` is not optional — a certificate issued to an IP address with
 no IP SAN is rejected outright by every current browser, warning or not.
 
-Add a TLS server block alongside the existing one. Port 80 keeps working, so
-nothing that already runs over it breaks:
+Add the TLS front end. It is a **separate file**, so the plain-HTTP block stays
+untouched and port 80 keeps serving stations that only use an NFC reader or a USB
+scanner:
 
 ```bash
-cat >> /etc/nginx/sites-available/finance-erp <<'EOF'
-
-server {
-    listen 443 ssl;
-    http2 on;
-    server_name _;
-
-    ssl_certificate     /etc/ssl/certs/mei-erp.crt;
-    ssl_certificate_key /etc/ssl/private/mei-erp.key;
-
-    location / {
-        proxy_pass         http://127.0.0.1:5000;
-        proxy_http_version 1.1;
-        proxy_set_header   Upgrade $http_upgrade;
-        proxy_set_header   Connection "upgrade";
-        proxy_set_header   Host $host;
-        proxy_set_header   X-Real-IP $remote_addr;
-        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-        proxy_read_timeout 100s;
-
-        proxy_buffer_size       32k;
-        proxy_buffers           8 32k;
-        proxy_busy_buffers_size 64k;
-    }
-}
-EOF
+curl -fsSL https://raw.githubusercontent.com/mivu2k/finance-erp/main/deploy/nginx-finance-erp-ssl.conf \
+  -o /etc/nginx/sites-available/finance-erp-ssl
+ln -sf /etc/nginx/sites-available/finance-erp-ssl /etc/nginx/sites-enabled/
 nginx -t && systemctl reload nginx
 ```
 
