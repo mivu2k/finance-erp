@@ -82,24 +82,53 @@
 
     @* Users and roles are platform-wide, so they are gated by the platform's own
        permissions rather than by anything Finance owns. *@
-    <MudNavGroup Title="Administration" Icon="@Icons.Material.Filled.AdminPanelSettings">
-        <AuthorizeView Policy="@PlatformPermissions.UsersManage" Context="pu">
-            <MudNavLink Href="/admin/users" Icon="@Icons.Material.Filled.ManageAccounts">Users &amp; App Access</MudNavLink>
-        </AuthorizeView>
-        <AuthorizeView Policy="@PlatformPermissions.RolesManage" Context="r">
-            <MudNavLink Href="/admin/roles" Icon="@Icons.Material.Filled.Security">Roles &amp; Permissions</MudNavLink>
-        </AuthorizeView>
-        <AuthorizeView Policy="@PlatformPermissions.CompanyManage" Context="co">
-            <MudNavLink Href="/admin/company" Icon="@Icons.Material.Filled.Business">Company Profile</MudNavLink>
-        </AuthorizeView>
-            <AuthorizeView Policy="@Permissions.AuditView" Context="au">
-                <MudNavLink Href="/finance/admin/audit" Icon="@Icons.Material.Filled.History">Audit Trail</MudNavLink>
-            </AuthorizeView>
-            <AuthorizeView Policy="@Permissions.SettingsManage" Context="st">
-                <MudNavLink Href="/finance/admin/settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
-            </AuthorizeView>
-    </MudNavGroup>
+    @* The group itself is gated, not just its links: an employee with none of
+       these permissions would otherwise see an "Administration" heading that
+       expands to nothing. *@
+    <AuthorizeView Context="adm">
+        <Authorized>
+            @if (CanSeeAdministration(adm.User))
+            {
+                <MudNavGroup Title="Administration" Icon="@Icons.Material.Filled.AdminPanelSettings">
+                    <AuthorizeView Policy="@PlatformPermissions.UsersManage" Context="pu">
+                        <MudNavLink Href="/admin/users" Icon="@Icons.Material.Filled.ManageAccounts">Users &amp; App Access</MudNavLink>
+                    </AuthorizeView>
+                    <AuthorizeView Policy="@PlatformPermissions.RolesManage" Context="r">
+                        <MudNavLink Href="/admin/roles" Icon="@Icons.Material.Filled.Security">Roles &amp; Permissions</MudNavLink>
+                    </AuthorizeView>
+                    <AuthorizeView Policy="@PlatformPermissions.CompanyManage" Context="co">
+                        <MudNavLink Href="/admin/company" Icon="@Icons.Material.Filled.Business">Company Profile</MudNavLink>
+                    </AuthorizeView>
+                    <AuthorizeView Policy="@Permissions.AuditView" Context="au">
+                        <MudNavLink Href="/finance/admin/audit" Icon="@Icons.Material.Filled.History">Audit Trail</MudNavLink>
+                    </AuthorizeView>
+                    <AuthorizeView Policy="@Permissions.SettingsManage" Context="st">
+                        <MudNavLink Href="/finance/admin/settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
+                    </AuthorizeView>
+                </MudNavGroup>
+            }
+        </Authorized>
+    </AuthorizeView>
 </MudNavMenu>
+
+@code {
+    /// <summary>
+    /// Every permission that puts something inside the Administration group. Both
+    /// catalogs issue the same "permission" claim type, so platform and Finance
+    /// entries can be checked together.
+    /// </summary>
+    private static readonly string[] AdministrationPermissions =
+    [
+        PlatformPermissions.UsersManage,
+        PlatformPermissions.RolesManage,
+        PlatformPermissions.CompanyManage,
+        Permissions.AuditView,
+        Permissions.SettingsManage
+    ];
+
+    private static bool CanSeeAdministration(System.Security.Claims.ClaimsPrincipal user) =>
+        AdministrationPermissions.Any(p => user.HasClaim(Permissions.ClaimType, p));
+}
 
 @code {
     [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
