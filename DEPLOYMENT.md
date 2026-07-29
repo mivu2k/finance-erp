@@ -411,9 +411,71 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost/       # expect 302
 
 ### HTTPS
 
-Internet-facing: `apt install -y certbot python3-certbot-nginx && certbot --nginx -d erp.example.com`.
-LAN-only: terminate TLS on your existing reverse proxy and point it at this
-container's port 80 — **enable WebSocket support there too**.
+**Internet-facing:** `apt install -y certbot python3-certbot-nginx && certbot --nginx -d erp.example.com`.
+
+**Already have a reverse proxy?** Terminate TLS there and point it at this
+container's port 80 — but give it the WebSocket headers *and* the 32k proxy
+buffers, or you get the same two failures one hop out.
+
+**LAN-only, on a bare IP.** You can serve HTTPS straight from this container with a
+self-signed certificate. Worth doing: the kiosk's camera scanning only works on a
+trusted origin (§12), and a browser counts an `https://` origin as secure once the
+warning has been accepted.
+
+```bash
+openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+  -keyout /etc/ssl/private/mei-erp.key \
+  -out    /etc/ssl/certs/mei-erp.crt \
+  -subj   "/CN=$(hostname -I | awk '{print $1}')" \
+  -addext "subjectAltName=IP:$(hostname -I | awk '{print $1}')"
+chmod 600 /etc/ssl/private/mei-erp.key
+```
+
+The `subjectAltName` is not optional — a certificate issued to an IP address with
+no IP SAN is rejected outright by every current browser, warning or not.
+
+Add a TLS server block alongside the existing one. Port 80 keeps working, so
+nothing that already runs over it breaks:
+
+```bash
+cat >> /etc/nginx/sites-available/finance-erp <<'EOF'
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name _;
+
+    ssl_certificate     /etc/ssl/certs/mei-erp.crt;
+    ssl_certificate_key /etc/ssl/private/mei-erp.key;
+
+    location / {
+        proxy_pass         http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade $http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 100s;
+
+        proxy_buffer_size       32k;
+        proxy_buffers           8 32k;
+        proxy_busy_buffers_size 64k;
+    }
+}
+EOF
+nginx -t && systemctl reload nginx
+```
+
+**Check:** `curl -sk -o /dev/null -w "%{http_code}\n" https://localhost/` → `302`.
+
+Browsers will warn on first visit because nobody issued that certificate. On a
+kiosk PC, click through once and the camera works from then on. To lose the
+warning entirely, either import `/etc/ssl/certs/mei-erp.crt` into the machines'
+trust stores, or issue the certificate from an internal CA (`mkcert` does this in
+one command and installs its root for you).
 
 ---
 
@@ -619,8 +681,8 @@ network path to any device.
 >    `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, add
 >    `http://<container-ip>`, and restart the browser. Fine for a kiosk on a private
 >    LAN, and it takes a minute.
-> 2. **Put a certificate in front of it** — §8's certbot if it is reachable
->    externally, or your existing reverse proxy if it already terminates TLS.
+> 2. **Serve HTTPS from the container** — §8 has a self-signed certificate for a
+>    bare IP, which is enough: an accepted `https://` origin counts as secure.
 > 3. **Run the browser on the app's own machine** and open `http://localhost/...`,
 >    which browsers treat as secure. Only applicable if the station PC *is* the
 >    server.
