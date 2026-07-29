@@ -47,6 +47,9 @@ public class LeaveService(HrDbContext db, IAttendanceSyncService sync) : ILeaveS
             throw new InvalidOperationException("Annual quota can't be negative.");
 
         if (type.Id == 0) db.LeaveTypes.Add(type);
+            // Detached: the page loaded it in a different scope, so without this
+            // SaveChanges finds nothing to do and the edit is silently lost.
+        else db.Entry(type).State = EntityState.Modified;
         await db.SaveChangesAsync(ct);
     }
 

@@ -73,6 +73,9 @@ public class PurchaseService(RepairDbContext db) : IPurchaseService
             throw new InvalidOperationException("Supplier name is required.");
 
         if (supplier.Id == 0) db.Suppliers.Add(supplier);
+        // Detached: the page loaded it in a different scope, so without this
+        // SaveChanges finds nothing to do and the edit is silently lost.
+        else db.Entry(supplier).State = EntityState.Modified;
         await db.SaveChangesAsync(ct);
         return supplier;
     }

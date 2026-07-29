@@ -65,6 +65,9 @@ public class CatalogService(RepairDbContext db) : ICatalogService
             throw new InvalidOperationException($"SKU {part.Sku} is already in use.");
 
         if (part.Id == 0) db.Parts.Add(part);
+        // Detached: the page loaded it in a different scope, so without this
+        // SaveChanges finds nothing to do and the edit is silently lost.
+        else db.Entry(part).State = EntityState.Modified;
         await db.SaveChangesAsync(ct);
         return part;
     }

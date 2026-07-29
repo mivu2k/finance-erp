@@ -124,7 +124,21 @@ public class EmployeeService(HrDbContext db, IPlatformUserDirectory directory) :
             employee.UserId = null;
         }
 
-        if (employee.Id == 0) db.Employees.Add(employee);
+        if (employee.Id == 0)
+        {
+            db.Employees.Add(employee);
+        }
+        else
+        {
+            // The page loaded this in a different scope, so it arrives detached and
+            // SaveChanges would find nothing to do — every edit silently discarded,
+            // then apparently reverted when the page reloads. Marking the root
+            // Modified saves its own columns and leaves the Included navigations
+            // (department, designation, documents) alone; attaching the graph would
+            // try to re-insert them.
+            db.Entry(employee).State = EntityState.Modified;
+        }
+
         await db.SaveChangesAsync(ct);
         return employee;
     }
@@ -167,6 +181,9 @@ public class EmployeeService(HrDbContext db, IPlatformUserDirectory directory) :
         if (string.IsNullOrWhiteSpace(department.Name))
             throw new InvalidOperationException("Department name is required.");
         if (department.Id == 0) db.Departments.Add(department);
+            // Detached: the page loaded it in a different scope, so without this
+            // SaveChanges finds nothing to do and the edit is silently lost.
+        else db.Entry(department).State = EntityState.Modified;
         await db.SaveChangesAsync(ct);
     }
 
@@ -175,6 +192,9 @@ public class EmployeeService(HrDbContext db, IPlatformUserDirectory directory) :
         if (string.IsNullOrWhiteSpace(designation.Title))
             throw new InvalidOperationException("Designation title is required.");
         if (designation.Id == 0) db.Designations.Add(designation);
+            // Detached: the page loaded it in a different scope, so without this
+            // SaveChanges finds nothing to do and the edit is silently lost.
+        else db.Entry(designation).State = EntityState.Modified;
         await db.SaveChangesAsync(ct);
     }
 

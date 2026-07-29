@@ -42,6 +42,9 @@ public class CustomerService(RepairDbContext db) : ICustomerService
             throw new InvalidOperationException("Phone number is required.");
 
         if (customer.Id == 0) db.Customers.Add(customer);
+            // Detached: the page loaded it in a different scope, so without this
+            // SaveChanges finds nothing to do and the edit is silently lost.
+        else db.Entry(customer).State = EntityState.Modified;
         await db.SaveChangesAsync(ct);
         return customer;
     }
