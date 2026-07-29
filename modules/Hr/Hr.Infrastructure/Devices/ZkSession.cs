@@ -63,9 +63,13 @@ internal sealed class ZkSession : IDisposable
                 var key = MakeCommKey(commKey, session._sessionId);
                 var auth = await session.ExchangeAsync(ZkCommand.Auth, key, ct);
                 if (auth.Command != ZkCommand.AckOk)
-                    throw new ZkDeviceException(
-                        "The terminal rejected the comm key. Check the device's " +
-                        "Comm Key setting matches the one configured here.");
+                    throw new ZkDeviceException(commKey == 0
+                        ? "This terminal is configured to require a comm key, but none is " +
+                          "set here. Read it from the device (Menu > Comm > Security > " +
+                          "COMM Key) and enter it below, or set the device's key to 0."
+                        : $"The terminal rejected comm key {commKey}. Check it matches the " +
+                          "device's own Comm Key setting (Menu > Comm > Security), and note " +
+                          "that some firmware only applies a changed key after a restart.");
             }
             else if (reply.Command != ZkCommand.AckOk)
             {
