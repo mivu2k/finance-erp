@@ -276,6 +276,17 @@ in full screen.
   focused off-screen input; lose focus and scans go nowhere.
 - **What arrived is decided by looking at it**, not by which reader sent it: a
   payload that parses as a rotating token is a QR, anything else is a card UID.
+- **A webcam works as well as a USB scanner.** The kiosk can capture frames and
+  post them to `/hr/kiosk/{token}/frame`, which decodes server-side with ZXing and
+  returns the payload; the page then feeds it through the same scan path as the
+  hardware reader. Decoding is server-side because the browser API for it is absent
+  on several platforms a kiosk PC might run, and the alternative is shipping a
+  third-party decoder into the page. **That endpoint answers 204 for everything
+  except a successful decode** — an unreadable frame and an empty doorway are the
+  ordinary case at three frames a second, and a status the error-page middleware
+  wants to re-execute would turn each one into wasted work.
+- SkiaSharp needs `SkiaSharp.NativeAssets.Linux.NoDependencies` to decode a frame on
+  the container; without it the first camera scan throws `DllNotFoundException`.
 - **The kiosk is unauthenticated** — nobody logs into a machine by a door. The
   token in the URL is the station's credential, so it is re-issuable from
   `/hr/stations` when a link leaks or a PC walks.

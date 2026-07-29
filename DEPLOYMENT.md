@@ -603,6 +603,15 @@ network path to any device.
    the number itself.
 4. **Rotating QR**: employees open **HR → My Attendance Code** on their phone and
    hold it to the scanner. The code changes every 30 seconds.
+5. **No QR scanner?** The kiosk has a *Scan with camera* button that uses the PC's
+   webcam instead. The browser will ask for camera permission once — grant it for
+   the site so it survives a restart. Frames are decoded on the server, so this
+   works in any browser.
+
+> Camera capture needs the page on **HTTPS or localhost** — browsers refuse
+> `getUserMedia` on a plain-HTTP origin that isn't local. Either put a certificate
+> in front of the kiosk, or open it on the station PC as `http://localhost/...` if
+> the app runs on that same machine. The USB scanner path has no such restriction.
 
 > **The kiosk link is the station's credential.** That page cannot require a login —
 > nobody signs in to a machine by a door — so anyone holding the URL can record

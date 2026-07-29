@@ -24,7 +24,7 @@
       "Bash(git add *)",
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Complete remaining modules: approvals queue, notifications center, settings, background alerts *)",
       "Bash(git push *)",
-      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Add Day Book \u2014 combined ledger with PDF/Excel export *)",
+      "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Add Day Book — combined ledger with PDF/Excel export *)",
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Move dev-only urls setting to appsettings.Development.json *)",
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Rework employee request flow, profile UI, and action-button stability *)",
       "Bash(git -c user.email=mivu2k@gmail.com -c user.name=mivu2k commit -q -m 'Fix Add-button alignment in Settings dimension editor and Roles header *)",
@@ -110,7 +110,12 @@
       "Bash(git -C /home/pc/vb/acc commit -q -m ' *)",
       "Bash(git -C /home/pc/vb/acc push origin main)",
       "Bash(curl -s -o /dev/null -w \"portal:%{http_code}\\\\n\" http://localhost:5080/)",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "Bash(curl -s -X POST http://localhost:5080/hr/kiosk/__TRACKED_VAR__/frame -H 'Content-Type: image/jpeg' --data-binary @/tmp/frame.jpg -w '\\\\n[HTTP %{http_code}]\\\\n')",
+      "Read(//dev/**)",
+      "Bash(curl -s -X POST http://localhost:5080/hr/kiosk/__TRACKED_VAR__/frame -H 'Content-Type: image/jpeg' --data-binary @/tmp/noise.bin -w '\\\\n[HTTP %{http_code}]\\\\n')",
+      "Bash(curl -s -X POST http://localhost:5080/hr/kiosk/nope/frame -H 'Content-Type: image/jpeg' --data-binary @/tmp/frame.jpg -w '\\\\n[HTTP %{http_code}]\\\\n')",
+      "Bash(curl -s -o /dev/null -w \"[HTTP %{http_code}]\\\\n\" http://localhost:5080/_content/Hr.Web/kiosk-camera.js)"
     ]
   }
 }

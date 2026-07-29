@@ -86,6 +86,7 @@ public static class HrModule
         services.AddScoped<ILeaveService, LeaveService>();
         services.AddScoped<IKioskService, KioskService>();
         services.AddSingleton<IAttendanceTokenService, AttendanceTokenService>();
+        services.AddSingleton<IQrFrameDecoder, QrFrameDecoder>();
         services.AddSingleton<IHrExportService, HrExportService>();
 
         ModuleRegistry.Register(Registration);

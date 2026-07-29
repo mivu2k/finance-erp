@@ -5,6 +5,7 @@
 @using Hr.Infrastructure.Attendance
 @inject IServiceScopeFactory ScopeFactory
 @inject IJSRuntime JS
+@implements IAsyncDisposable
 
 @* Deliberately unauthenticated: this runs on a PC by the door that nobody logs
    into. The token in the URL is what proves it is a real station. *@
@@ -50,6 +51,27 @@
             }
         </div>
 
+        <div class="kiosk-foot">
+            @if (_cameraOn)
+            {
+                <video @ref="_video" class="kiosk-cam" muted playsinline></video>
+                <MudButton Variant="Variant.Outlined" Size="Size.Large" Style="color:#fff;border-color:#666"
+                           StartIcon="@Icons.Material.Filled.VideocamOff"
+                           OnClick="StopCamera">Turn camera off</MudButton>
+            }
+            else
+            {
+                <MudButton Variant="Variant.Outlined" Size="Size.Large" Style="color:#fff;border-color:#666"
+                           StartIcon="@Icons.Material.Filled.Videocam"
+                           OnClick="StartCamera">Scan with camera</MudButton>
+            }
+            @if (_cameraError is not null)
+            {
+                <span class="kiosk-camerr">@_cameraError</span>
+            }
+        </div>
+        <canvas @ref="_canvas" style="display:none"></canvas>
+
         @* The readers behave as keyboards. This input holds focus permanently and
            receives whatever they type; it is off-screen because the kiosk is
            unattended and nobody should be typing into it by hand. *@
@@ -70,6 +92,10 @@
     .kiosk-ok  { background:#0f3d24; }
     .kiosk-bad { background:#4a1420; }
     .kiosk-capture { position:absolute; opacity:0; pointer-events:none; height:0; width:0; }
+    .kiosk-foot { display:flex; align-items:center; justify-content:center; gap:1.5rem;
+                  padding:1.25rem; }
+    .kiosk-cam { width:220px; border-radius:8px; transform:scaleX(-1); background:#000; }
+    .kiosk-camerr { color:#ffb4a2; font-size:1rem; }
 </style>
 
 @code {
@@ -78,7 +104,14 @@
     private AttendanceStation? _station;
     private KioskResult? _result;
     private ElementReference _input;
+    private ElementReference _video;
+    private ElementReference _canvas;
     private string? _scan;
+
+    private bool _cameraOn;
+    private string? _cameraError;
+    private IJSObjectReference? _js;
+    private DotNetObjectReference<Kiosk>? _self;
     private DateTime _clock = DateTime.Now;
 
     /// <summary>How long a result stays up before the screen returns to idle.</summary>
@@ -98,8 +131,61 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        // Focus is the whole mechanism: lose it and scans go nowhere.
-        if (_station is not null) await _input.FocusAsync();
+        // Focus is the whole mechanism for the hardware readers: lose it and their
+        // keystrokes go nowhere.
+        if (_station is not null && !_cameraOn) await _input.FocusAsync();
+    }
+
+    private async Task StartCamera()
+    {
+        _cameraError = null;
+        _js ??= await JS.InvokeAsync<IJSObjectReference>(
+            "import", "./_content/Hr.Web/kiosk-camera.js");
+        _self ??= DotNetObjectReference.Create(this);
+
+        _cameraOn = true;
+        StateHasChanged();      // the <video> must exist before JS is handed it
+
+        var started = await JS.InvokeAsync<bool>(
+            "kioskCamera.start", _video, _canvas, Token, _self);
+
+        if (!started)
+        {
+            _cameraOn = false;
+            _cameraError = "No camera available, or permission was refused.";
+        }
+    }
+
+    private async Task StopCamera()
+    {
+        if (_js is not null) await JS.InvokeVoidAsync("kioskCamera.stop", _video);
+        _cameraOn = false;
+    }
+
+    /// <summary>
+    /// Called from the browser when a frame decoded. Goes through exactly the same
+    /// path as a hardware scan, so the two cannot drift apart.
+    /// </summary>
+    [JSInvokable]
+    public async Task OnCameraScan(string text)
+    {
+        await HandleScanAsync(text);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_js is not null)
+            {
+                await JS.InvokeVoidAsync("kioskCamera.stop", _video);
+                await _js.DisposeAsync();
+            }
+        }
+        catch (JSDisconnectedException) { /* circuit already gone; nothing to release */ }
+
+        _self?.Dispose();
     }
 
     /// <summary>
@@ -130,6 +216,11 @@
 
         var scanned = _scan ?? "";
         _scan = "";
+        await HandleScanAsync(scanned);
+    }
+
+    private async Task HandleScanAsync(string scanned)
+    {
         if (string.IsNullOrWhiteSpace(scanned)) return;
 
         using var scope = ScopeFactory.CreateScope();
