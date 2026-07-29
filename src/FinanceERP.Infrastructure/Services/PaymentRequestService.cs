@@ -105,8 +105,6 @@ public class PaymentRequestService(
         if (r.Status != RequestStatus.Draft) throw new InvalidOperationException("Request already submitted.");
         if (r.TotalAmount <= 0 || (r.Kind != RequestKind.Advance && r.Lines.Count == 0))
             throw new InvalidOperationException("Add at least one line with an amount.");
-        if (r.ProjectId is null && await db.Projects.AnyAsync(p => p.IsActive && !p.IsDeleted))
-            throw new InvalidOperationException("Select a project — every request must be tracked under one.");
 
         // Director fund requests skip manager approval and go straight to Admin.
         r.Status = r.IsDirectorRequest ? RequestStatus.PendingAdmin : RequestStatus.PendingManager;
@@ -188,7 +186,8 @@ public class PaymentRequestService(
         var voucher = await voucherService.PostSystemVoucherAsync(
             VoucherType.CashPayment, DateOnly.FromDateTime(DateTime.Today),
             $"Payment request {r.RequestNo} — {r.RequesterName}: {r.Purpose}",
-            r.IsDirectorRequest ? "DirectorFund" : "PaymentRequest", r.Id, lines);
+            r.IsDirectorRequest ? "DirectorFund" : "PaymentRequest", r.Id, lines,
+            r.RequesterId, r.RequesterName);
 
         // Stamp the request's project/department onto the ledger lines so
         // project- and department-filtered reports include this payment.
@@ -226,7 +225,7 @@ public class PaymentRequestService(
             [
                 (advAccount.Id, r.TotalAmount, 0m, $"{r.RequestNo} advance to {r.RequesterName}"),
                 (payFromAccountId, 0m, r.TotalAmount, $"{r.RequestNo} advance")
-            ]);
+            ], r.RequesterId, r.RequesterName);
 
         r.Status = RequestStatus.Disbursed;
         r.VoucherId = voucher.Id;
@@ -373,7 +372,7 @@ public class PaymentRequestService(
         var voucher = await voucherService.PostSystemVoucherAsync(
             VoucherType.Journal, DateOnly.FromDateTime(DateTime.Today),
             $"Settlement {r.RequestNo} — {r.RequesterName}: actual {actual:N2} vs advance {r.TotalAmount:N2}",
-            "PaymentRequest", r.Id, lines);
+            "PaymentRequest", r.Id, lines, r.RequesterId, r.RequesterName);
 
         foreach (var vl in voucher.Lines)
         {
@@ -440,7 +439,7 @@ public class PaymentRequestService(
                 [
                     (cashAccountId, amount, 0m, $"{r.RequestNo} unspent advance returned"),
                     (r.AdvanceAccountId.Value, 0m, amount, $"{r.RequestNo} advance cleared")
-                ]);
+                ], r.RequesterId, r.RequesterName);
         }
         else
         {
@@ -451,7 +450,7 @@ public class PaymentRequestService(
                 [
                     (payable.Id, amount, 0m, $"{r.RequestNo} overspend settled"),
                     (cashAccountId, 0m, amount, $"{r.RequestNo} overspend reimbursed")
-                ]);
+                ], r.RequesterId, r.RequesterName);
         }
 
         r.ClearedDifference += amount;

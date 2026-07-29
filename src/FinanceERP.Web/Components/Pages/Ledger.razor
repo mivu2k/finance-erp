@@ -44,6 +44,14 @@
                 }
             </MudSelect>
         </MudItem>
+        <MudItem xs="6" md="2">
+            <MudSelect T="string" @bind-Value="_personId" Label="Person" Clearable="true">
+                @foreach (var p in _people)
+                {
+                    <MudSelectItem T="string" Value="@p.Id">@p.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
         <MudItem xs="6" md="2" Class="d-flex align-end">
             <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAsync">Run</MudButton>
         </MudItem>
@@ -56,7 +64,7 @@
             <tr>
                 <th>Date</th><th>Voucher</th><th>Account</th><th>Description</th>
                 <th style="text-align:right">Debit</th><th style="text-align:right">Credit</th>
-                <th style="text-align:right">Balance</th><th>Dept</th><th>CC</th>
+                <th style="text-align:right">Balance</th><th>Person</th><th>Dept</th><th>CC</th>
             </tr>
         </thead>
         <tbody>
@@ -70,13 +78,14 @@
                     <td style="text-align:right">@(r.Debit == 0 ? "" : r.Debit.ToString("N2"))</td>
                     <td style="text-align:right">@(r.Credit == 0 ? "" : r.Credit.ToString("N2"))</td>
                     <td style="text-align:right">@r.RunningBalance.ToString("N2")</td>
+                    <td>@r.Person</td>
                     <td>@r.Department</td>
                     <td>@r.CostCenter</td>
                 </tr>
             }
             @if (_rows.Count == 0)
             {
-                <tr><td colspan="9">No entries for the selected filters.</td></tr>
+                <tr><td colspan="10">No entries for the selected filters.</td></tr>
             }
         </tbody>
     </MudSimpleTable>
@@ -90,9 +99,12 @@
     private int? _accountId;
     private int? _departmentId;
     private int? _projectId;
+    private string? _personId;
     private List<Account> _accounts = [];
     private List<Department> _departments = [];
     private List<Project> _projects = [];
+    // Whoever has spend on the books already — no cross-database call into identity needed.
+    private List<(string Id, string Name)> _people = [];
     private List<LedgerRowDto> _rows = [];
 
     protected override async Task OnInitializedAsync()
@@ -102,6 +114,10 @@
         var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
         _departments = db.Departments.OrderBy(d => d.Name).ToList();
         _projects = db.Projects.OrderBy(p => p.Name).ToList();
+        _people = db.VoucherLines.Where(l => l.PersonId != null && l.PersonName != null)
+            .Select(l => new { l.PersonId, l.PersonName }).Distinct()
+            .OrderBy(x => x.PersonName).AsEnumerable()
+            .Select(x => (x.PersonId!, x.PersonName!)).ToList();
         if (QueryAccountId is not null)
         {
             _accountId = QueryAccountId;
@@ -124,7 +140,8 @@
             To = _to is null ? null : DateOnly.FromDateTime(_to.Value),
             AccountId = _accountId,
             DepartmentId = _departmentId,
-            ProjectId = _projectId
+            ProjectId = _projectId,
+            PersonId = _personId
         });
     }
 
@@ -136,7 +153,8 @@
                   + (_to is null ? "" : $"&to={DateOnly.FromDateTime(_to.Value):yyyy-MM-dd}")
                   + (_accountId is null ? "" : $"&accountId={_accountId}")
                   + (_departmentId is null ? "" : $"&departmentId={_departmentId}")
-                  + (_projectId is null ? "" : $"&projectId={_projectId}");
+                  + (_projectId is null ? "" : $"&projectId={_projectId}")
+                  + (string.IsNullOrEmpty(_personId) ? "" : $"&personId={Uri.EscapeDataString(_personId)}");
         Nav.NavigateTo(url, forceLoad: true);
     }
 }

@@ -92,7 +92,14 @@
       "Bash(grep -n 'rm -rf \"\\\\$APP_DIR\"$\\\\|rm -rf \"\\\\${APP_DIR' deploy/self-update.sh deploy/update.sh)",
       "Bash(xargs sed -i 's/FinanceERP\\\\.Infrastructure\\\\.Identity/ErpPlatform.Shared.Identity/g')",
       "Bash(bash -n dev.sh)",
-      "Bash(pkill -x FinanceERP.Web)"
+      "Bash(pkill -x FinanceERP.Web)",
+      "Bash(./dev.sh restart *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5080/finance/ledger)",
+      "Bash(curl -s -o /dev/null -w \"ledger:%{http_code}\\\\n\" http://localhost:5080/finance/ledger)",
+      "Bash(curl -s -o /dev/null -w \"root:%{http_code}\\\\n\" http://localhost:5080/)",
+      "Bash(python3 -c \"import qrcode; print\\(qrcode.__version__\\)\")",
+      "Bash(pip install *)",
+      "Bash(:)"
     ]
   }
 }

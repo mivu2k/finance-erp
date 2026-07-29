@@ -18,6 +18,7 @@ public class RepairDbContext(DbContextOptions<RepairDbContext> options, ICurrent
     public DbSet<JobAccessory> JobAccessories => Set<JobAccessory>();
     public DbSet<Diagnosis> Diagnoses => Set<Diagnosis>();
     public DbSet<JobPhoto> JobPhotos => Set<JobPhoto>();
+    public DbSet<JobWorkItem> JobWorkItems => Set<JobWorkItem>();
     public DbSet<Part> Parts => Set<Part>();
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<PartPurchase> PartPurchases => Set<PartPurchase>();
@@ -146,6 +147,20 @@ public class RepairDbContext(DbContextOptions<RepairDbContext> options, ICurrent
             e.Property(x => x.InternalNotes).HasMaxLength(2000);
             e.Property(x => x.EstimatedHours).HasPrecision(8, 2);
             e.HasOne(x => x.RepairJob).WithMany(x => x.Diagnoses)
+                .HasForeignKey(x => x.RepairJobId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Part).WithMany()
+                .HasForeignKey(x => x.PartId).OnDelete(DeleteBehavior.SetNull);
+            e.HasQueryFilter(x => !x.IsDeleted && !x.RepairJob.IsDeleted);
+        });
+
+        b.Entity<JobWorkItem>(e =>
+        {
+            e.Property(x => x.Description).HasMaxLength(400);
+            e.Property(x => x.Notes).HasMaxLength(1000);
+            e.Property(x => x.Quantity).HasPrecision(12, 2);
+            e.Property(x => x.UnitPrice).HasPrecision(18, 2);
+            e.Property(x => x.LineTotal).HasPrecision(18, 2);
+            e.HasOne(x => x.RepairJob).WithMany(x => x.WorkItems)
                 .HasForeignKey(x => x.RepairJobId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Part).WithMany()
                 .HasForeignKey(x => x.PartId).OnDelete(DeleteBehavior.SetNull);

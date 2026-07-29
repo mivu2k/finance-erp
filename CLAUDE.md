@@ -33,6 +33,7 @@ and project level, not the process level.
 shared/ErpPlatform.Shared.Kernel       BaseEntity, ICurrentUserService (no deps)
 shared/ErpPlatform.Shared.Persistence  ModuleDbContext (audit + soft delete), DocumentSequence
 shared/ErpPlatform.Shared.Identity     the ONE identity database + module/permission registries
+shared/ErpPlatform.Shared.Printing       the company letterhead, drawn into QuestPDF
 shared/ErpPlatform.Shared.Web          PlatformShell chrome, portal, /admin/users, /admin/roles
 
 modules/Hr/{Domain,Infrastructure,Web}        → erp_hr        → /hr
@@ -83,6 +84,16 @@ These apply to the **Finance** module specifically:
 - **Posted vouchers are immutable.** Correction path is void, or
   `DuplicateAsDraftAsync` to fix and repost. Drafts soft-delete via `DeleteDraftAsync`.
 - **Financial data is soft-deleted**, never hard-deleted.
+- **Employee and director spend have separate expense heads** — `5200 Employee
+  Expenses` and `5400 Director Expenses` sub-trees. The accountant's classification
+  picker on a request only offers the side that request belongs to, so the trial
+  balance and income statement separate the two with no filtering. `SeedChartOfAccounts`
+  now adds only missing codes, so existing installs pick up new heads on startup.
+- **Voucher lines carry `PersonId`/`PersonName`** wherever the money is traceable to
+  one person (payment requests, advances). That's what the ledger's Person filter and
+  `ReportFilter.PersonId` read; the aggregated payroll voucher deliberately has none.
+- **A project is optional on a payment request.** It used to be mandatory whenever any
+  project existed; that check is gone from both `RequestEdit` and `SubmitAsync`.
 - **Permissions are data, not code.** `Domain/Security/Permissions.cs` is Finance's
   catalog; they live in `AspNetRoleClaims` and policies are generated dynamically.
   Adding one means adding the constant, describing it in
@@ -121,6 +132,16 @@ These apply to the **Finance** module specifically:
 - **Repair pipeline** is a state machine in `JobWorkflow`, not a free-text status:
   Received → Diagnosing → WaitingApproval → InProgress → Completed → Delivered, with
   Cancelled available until delivery. Delivered and Cancelled are terminal.
+- **A job's parts and labour are a priced list, not free text.** `JobWorkItem`
+  (Part/Labor/Service/Misc, qty, unit price, `Billable`) is what the workshop records
+  per device, and it is the only thing a quotation is built from. `Diagnosis` stays
+  as the technician's narrative; it does not price anything.
+- **A quotation is built from job work items, one job or the whole intake.**
+  `BuildForJobAsync` covers one device; `BuildForIntakeAsync` is the collective case
+  and folds the device name into each line while keeping `QuotationItem.RepairJobId`,
+  so per-device reporting still works. Both return an *unsaved* quotation — the
+  editor opens on it (`/repair/quotations/new?jobId=` / `?intakeId=`) so prices can be
+  adjusted before anything becomes a document. Non-billable lines never reach a price.
 - **A quotation carries two independent approvals**, the customer's and the
   manager's. It only reaches Approved when both say yes; either rejection kills it.
   A sales order copies its amounts off the quotation rather than referencing it, so
@@ -134,9 +155,25 @@ These apply to the **Finance** module specifically:
   tracked is cost, not count. `PartPurchase` is the only thing that sets a part's
   cost; last cost, weighted-average cost and margin are derived from it. An older
   invoice entered late updates the average but never overwrites a newer last cost.
-- **Every document carries a Code 128 barcode of its own number**, and `/repair/scan`
-  resolves any of them — or a device serial — back to its record. `Barcode` lives in
-  Shared.Kernel; `BarcodeRenderer` draws it into QuestPDF.
+- **One company profile heads every document in every app.** `CompanyProfile` is a
+  single row in `erp_identity` (name, logo bytes, address, contact, tax number,
+  footer note), edited at `/admin/company` under `platform.company.manage`. Print
+  code never sees the entity: `ToBranding()` flattens it to `CompanyBranding` in
+  Shared.Kernel, which is dependency-free so Finance's `PdfDocument` DTO can carry
+  it without pulling in EF Core. `Letterhead` (Shared.Printing) draws the A4 header,
+  the A4 footer and the thermal-roll variants; Finance keeps its own blue-ruled
+  header but reads the same profile. `ICompanyProfileService` caches the row
+  process-wide and drops the cache on save, so a logo change is live immediately.
+  The old Finance-only `Company.Name` setting is gone from `/finance/admin/settings`
+  and is backfilled into the profile once, on startup.
+- **Every document carries a Code 128 barcode *and* a QR code of its own number**,
+  and `/repair/scan` resolves any of them — or a device serial — back to its record.
+  Both payloads are the bare document number, so the bench scanner and a phone land
+  on the same place. `Barcode` and `QrCode` live in Shared.Kernel; `BarcodeRenderer`
+  draws both into QuestPDF. `QrCode` is byte mode, EC level M, versions 1-10 —
+  written out rather than taken from a package, for the same reason Code 128 was.
+  A collective intake prints both symbologies for the intake itself and again for
+  every device on it.
 - **Delivery captures who collected the device**, not just a status change: the
   delivery note is signed against that name.
 - **Attendance is derived, never raw.** `AttendancePunch` is exactly what the
@@ -183,10 +220,12 @@ UI yet. Not ported: the customer-facing tracking page, Excel report exports.
 
 Known gaps, roughly in priority order:
 
-1. **Finance is the untested module.** 77 tests exist —
-   `tests/ErpPlatform.Shared.Tests` (15, barcode round-trip through a decoder),
+1. **Finance is the untested module.** 97 tests exist —
+   `tests/ErpPlatform.Shared.Tests` (27, Code 128 and QR round-trip through decoders —
+   QR against ZXing, a test-only dependency),
    `tests/Hr.Tests` (32, ZK wire format and attendance arithmetic) and
-   `tests/Repair.Tests` (30, job workflow, quotation and purchase pricing). The
+   `tests/Repair.Tests` (38, job workflow, quotation and purchase pricing, plus
+   PDF render smoke tests). The
    integration tests create and drop their own throwaway databases and skip when no
    server is reachable. Nothing covers Finance: `VoucherService`,
    `PaymentRequestService.SettleAsync`, `PayrollService.GenerateAsync`/`PayRunAsync`
@@ -214,6 +253,11 @@ Eleven printable documents, at `/repair/print/*`:
 fixed-width container.** `BarcodeFixed()` sets its own width and will overflow — an
 11-character number at 1.2 modules/pt busts a 170pt header and QuestPDF throws a
 layout exception. Only use `BarcodeFixed` where the container is known to be wider.
+The 62mm device label is *not* wide enough once a QR sits beside the bars: ~159pt of
+usable width against ~133pt of fixed bars plus a 44pt QR. `tests/Repair.Tests`
+`PrintRenderTests` generates every document precisely because QuestPDF only throws
+at render time — run it after touching any print layout. It covers the logo path and
+the unconfigured (`CompanyBranding.Empty`) case too.
 
 Fifteen reports at `/repair/reports`, each exportable to Excel and PDF, plus an
 "all" pack. `ReportCatalog` lists them; `ReportTableBuilder` shapes every report

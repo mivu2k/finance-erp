@@ -36,6 +36,12 @@ public interface IRepairJobService
     Task DeleteDiagnosisAsync(int diagnosisId, CancellationToken ct = default);
 
     Task SetSymptomsAsync(int jobId, IEnumerable<int> symptomIds, CancellationToken ct = default);
+
+    /// <summary>
+    /// Replaces the job's parts-and-labour list wholesale. The workshop edits it as
+    /// one table, and a quotation built later reads exactly what is stored here.
+    /// </summary>
+    Task SetWorkItemsAsync(int jobId, IEnumerable<JobWorkItem> items, CancellationToken ct = default);
     Task SetAccessoriesAsync(int jobId, IEnumerable<int> accessoryIds, CancellationToken ct = default);
 }
 
@@ -90,6 +96,7 @@ public class RepairJobService(RepairDbContext db) : IRepairJobService
             .Include(j => j.Accessories).ThenInclude(a => a.Accessory)
             .Include(j => j.Diagnoses).ThenInclude(d => d.Part)
             .Include(j => j.Photos)
+            .Include(j => j.WorkItems).ThenInclude(w => w.Part)
             .Include(j => j.StatusHistory);
 
     public async Task<RepairJob> UpdateAsync(RepairJob job, CancellationToken ct = default)
@@ -263,6 +270,37 @@ public class RepairJobService(RepairDbContext db) : IRepairJobService
         db.JobSymptoms.RemoveRange(job.Symptoms.Where(s => !wanted.Contains(s.SymptomId)));
         foreach (var id in wanted.Where(id => job.Symptoms.All(s => s.SymptomId != id)))
             job.Symptoms.Add(new JobSymptom { SymptomId = id });
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task SetWorkItemsAsync(
+        int jobId, IEnumerable<JobWorkItem> items, CancellationToken ct = default)
+    {
+        var job = await db.RepairJobs.Include(j => j.WorkItems)
+                      .FirstOrDefaultAsync(j => j.Id == jobId, ct)
+                  ?? throw new InvalidOperationException("Job not found.");
+        if (job.Status is JobStatus.Delivered or JobStatus.Cancelled)
+            throw new InvalidOperationException("A delivered or cancelled job can't be re-costed.");
+
+        var wanted = items.ToList();
+        if (wanted.Any(i => string.IsNullOrWhiteSpace(i.Description)))
+            throw new InvalidOperationException("Every parts/labour line needs a description.");
+        if (wanted.Any(i => i.Quantity <= 0))
+            throw new InvalidOperationException("Line quantities must be positive.");
+
+        db.JobWorkItems.RemoveRange(job.WorkItems);
+        job.WorkItems = wanted.Select(i => new JobWorkItem
+        {
+            Kind = i.Kind,
+            PartId = i.PartId,
+            Description = i.Description.Trim(),
+            Quantity = i.Quantity,
+            UnitPrice = i.UnitPrice,
+            LineTotal = Math.Round(i.Quantity * i.UnitPrice, 2),
+            Billable = i.Billable,
+            Notes = i.Notes
+        }).ToList();
 
         await db.SaveChangesAsync(ct);
     }

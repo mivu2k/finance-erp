@@ -13,6 +13,8 @@ public class PlatformIdentityDbContext(DbContextOptions<PlatformIdentityDbContex
 {
     public DbSet<ModuleRecord> Modules => Set<ModuleRecord>();
     public DbSet<UserModuleAccess> UserModuleAccess => Set<UserModuleAccess>();
+    /// <summary>Platform-wide letterhead — one row, read by every module's print stack.</summary>
+    public DbSet<CompanyProfile> CompanyProfiles => Set<CompanyProfile>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -31,6 +33,25 @@ public class PlatformIdentityDbContext(DbContextOptions<PlatformIdentityDbContex
             e.Property(x => x.ModuleKey).HasMaxLength(50);
             e.Property(x => x.Description).HasMaxLength(300);
             e.HasIndex(x => x.ModuleKey);
+        });
+
+        b.Entity<CompanyProfile>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Tagline).HasMaxLength(300);
+            e.Property(x => x.AddressLine1).HasMaxLength(200);
+            e.Property(x => x.AddressLine2).HasMaxLength(200);
+            e.Property(x => x.City).HasMaxLength(100);
+            e.Property(x => x.Country).HasMaxLength(100);
+            e.Property(x => x.Phone).HasMaxLength(60);
+            e.Property(x => x.Email).HasMaxLength(200);
+            e.Property(x => x.Website).HasMaxLength(200);
+            e.Property(x => x.TaxNumber).HasMaxLength(60);
+            e.Property(x => x.FooterNote).HasMaxLength(600);
+            e.Property(x => x.LogoContentType).HasMaxLength(100);
+            e.Property(x => x.LogoFileName).HasMaxLength(260);
+            e.Property(x => x.ModifiedBy).HasMaxLength(200);
+            e.Ignore(x => x.HasLogo);
         });
 
         b.Entity<ModuleRecord>(e =>

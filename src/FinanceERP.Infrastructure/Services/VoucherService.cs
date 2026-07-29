@@ -158,7 +158,8 @@ public class VoucherService(AppDbContext db, ICurrentUserService currentUser) : 
                 AccountId = l.AccountId, Description = l.Description,
                 Debit = l.Debit, Credit = l.Credit,
                 CostCenterId = l.CostCenterId, DepartmentId = l.DepartmentId,
-                ProjectId = l.ProjectId, ThirdPartyId = l.ThirdPartyId, LineNo = l.LineNo
+                ProjectId = l.ProjectId, ThirdPartyId = l.ThirdPartyId, LineNo = l.LineNo,
+                PersonId = l.PersonId, PersonName = l.PersonName
             }).ToList()
         };
         db.Vouchers.Add(copy);
@@ -168,7 +169,8 @@ public class VoucherService(AppDbContext db, ICurrentUserService currentUser) : 
 
     public async Task<Voucher> PostSystemVoucherAsync(VoucherType type, DateOnly date, string narration,
         string source, int? sourceId,
-        IEnumerable<(int AccountId, decimal Debit, decimal Credit, string? Description)> lines)
+        IEnumerable<(int AccountId, decimal Debit, decimal Credit, string? Description)> lines,
+        string? personId = null, string? personName = null)
     {
         await EnsureNotLockedAsync(date);
         var lineList = lines.ToList();
@@ -193,7 +195,8 @@ public class VoucherService(AppDbContext db, ICurrentUserService currentUser) : 
             Lines = lineList.Select((l, i) => new VoucherLine
             {
                 AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit,
-                Description = l.Description, LineNo = i + 1
+                Description = l.Description, LineNo = i + 1,
+                PersonId = personId, PersonName = personName
             }).ToList()
         };
         db.Vouchers.Add(voucher);

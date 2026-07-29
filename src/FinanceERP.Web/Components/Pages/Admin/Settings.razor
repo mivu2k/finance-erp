@@ -13,7 +13,11 @@
     <MudItem xs="12" md="5">
         <MudPaper Class="pa-4">
             <MudText Typo="Typo.subtitle1" Class="mb-2">Company</MudText>
-            <MudTextField @bind-Value="_companyName" Label="Company name" Class="mb-2" />
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                The company name, logo, address and footer are platform-wide and now live at
+                <MudLink Href="/admin/company">Administration &rsaquo; Company Profile</MudLink>.
+                Everything printed by all four apps uses that one profile.
+            </MudAlert>
             <MudTextField @bind-Value="_currency" Label="Currency code (e.g. PKR, USD)" Class="mb-2" />
             <MudNumericField T="decimal" @bind-Value="_lowCashThreshold" Label="Low cash alert threshold" Format="N2" Min="0" Class="mb-2"
                              HelperText="Accountants and directors are notified when cash in hand falls below this." />
@@ -59,7 +63,6 @@
 </MudGrid>
 
 @code {
-    private string _companyName = "";
     private string _currency = "";
     private decimal _lowCashThreshold;
     private DateOnly? _lockDate;
@@ -76,7 +79,6 @@
         using var scope = ScopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var settings = await db.AppSettings.AsNoTracking().ToDictionaryAsync(s => s.Key, s => s.Value);
-        _companyName = settings.GetValueOrDefault(SettingKeys.CompanyName, "");
         _currency = settings.GetValueOrDefault(SettingKeys.Currency, "");
         decimal.TryParse(settings.GetValueOrDefault(SettingKeys.LowCashThreshold, "0"), out _lowCashThreshold);
         _lockDate = DateOnly.TryParse(settings.GetValueOrDefault(SettingKeys.BooksLockDate, ""), out var ld) ? ld : null;
@@ -96,7 +98,6 @@
             if (s is null) db.AppSettings.Add(new AppSetting { Key = key, Value = value });
             else s.Value = value;
         }
-        await Set(SettingKeys.CompanyName, _companyName);
         await Set(SettingKeys.Currency, _currency);
         await Set(SettingKeys.LowCashThreshold, _lowCashThreshold.ToString("0.##"));
         await db.SaveChangesAsync();

@@ -1,3 +1,5 @@
+using ErpPlatform.Shared.Identity;
+using ErpPlatform.Shared.Kernel;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -9,14 +11,12 @@ namespace Repair.Web;
 
 /// <summary>
 /// Every printable document, at every step of the flow. Each carries a Code 128
-/// barcode of its own number, so a scanner in the workshop can get from a piece of
-/// paper back to the record.
+/// barcode and a QR code of its own number, so a scanner in the workshop can get
+/// from a piece of paper back to the record, and each is headed with the platform
+/// company profile from <see cref="ICompanyProfileService"/>.
 /// </summary>
 public static class PrintEndpoints
 {
-    // TODO: read this from the platform settings once they're shared across apps.
-    private const string CompanyName = "MEI";
-
     private const string ExcelContentType =
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -27,86 +27,86 @@ public static class PrintEndpoints
         // --- receiving ---
 
         print.MapGet("/intake/{id:int}/{size?}", async (
-            int id, string? size, IIntakeService intakes, IRepairPrintService printer) =>
+            int id, string? size, IIntakeService intakes, IRepairPrintService printer, ICompanyProfileService companies) =>
         {
             var intake = await intakes.GetAsync(id);
             if (intake is null) return Results.NotFound();
 
-            return Pdf(printer.IntakeReceipt(intake, Size(size), CompanyName),
+            return Pdf(printer.IntakeReceipt(intake, Size(size), await companies.GetBrandingAsync()),
                 $"{intake.IntakeNumber}-receipt");
         }).RequireAuthorization(RepairPermissions.IntakesView);
 
         print.MapGet("/intake/{id:int}/labels", async (
-            int id, IIntakeService intakes, IRepairPrintService printer) =>
+            int id, IIntakeService intakes, IRepairPrintService printer, ICompanyProfileService companies) =>
         {
             var intake = await intakes.GetAsync(id);
             if (intake is null) return Results.NotFound();
 
-            return Pdf(printer.DeviceLabels(intake, CompanyName), $"{intake.IntakeNumber}-labels");
+            return Pdf(printer.DeviceLabels(intake, await companies.GetBrandingAsync()), $"{intake.IntakeNumber}-labels");
         }).RequireAuthorization(RepairPermissions.IntakesView);
 
         // --- workshop ---
 
         print.MapGet("/job/{id:int}", async (
-            int id, IRepairJobService jobs, IRepairPrintService printer) =>
+            int id, IRepairJobService jobs, IRepairPrintService printer, ICompanyProfileService companies) =>
         {
             var job = await jobs.GetAsync(id);
             if (job is null) return Results.NotFound();
 
-            return Pdf(printer.JobCard(job, CompanyName), $"{job.JobNumber}-job-card");
+            return Pdf(printer.JobCard(job, await companies.GetBrandingAsync()), $"{job.JobNumber}-job-card");
         }).RequireAuthorization(RepairPermissions.JobsView);
 
         print.MapGet("/job/{id:int}/label", async (
-            int id, IRepairJobService jobs, IRepairPrintService printer) =>
+            int id, IRepairJobService jobs, IRepairPrintService printer, ICompanyProfileService companies) =>
         {
             var job = await jobs.GetAsync(id);
             if (job is null) return Results.NotFound();
 
-            return Pdf(printer.JobLabel(job, CompanyName), $"{job.JobNumber}-label");
+            return Pdf(printer.JobLabel(job, await companies.GetBrandingAsync()), $"{job.JobNumber}-label");
         }).RequireAuthorization(RepairPermissions.JobsView);
 
         // --- delivering ---
 
         print.MapGet("/delivery/{id:int}/{size?}", async (
-            int id, string? size, IRepairJobService jobs, IRepairPrintService printer) =>
+            int id, string? size, IRepairJobService jobs, IRepairPrintService printer, ICompanyProfileService companies) =>
         {
             var job = await jobs.GetAsync(id);
             if (job is null) return Results.NotFound();
 
-            return Pdf(printer.DeliveryNote(job, Size(size), CompanyName),
+            return Pdf(printer.DeliveryNote(job, Size(size), await companies.GetBrandingAsync()),
                 $"{job.JobNumber}-delivery");
         }).RequireAuthorization(RepairPermissions.JobsView);
 
         // --- commercial ---
 
         print.MapGet("/quotation/{id:int}", async (
-            int id, IQuotationService quotations, IRepairPrintService printer) =>
+            int id, IQuotationService quotations, IRepairPrintService printer, ICompanyProfileService companies) =>
         {
             var quotation = await quotations.GetAsync(id);
             if (quotation is null) return Results.NotFound();
 
-            return Pdf(printer.Quotation(quotation, CompanyName), quotation.QuotationNumber);
+            return Pdf(printer.Quotation(quotation, await companies.GetBrandingAsync()), quotation.QuotationNumber);
         }).RequireAuthorization(RepairPermissions.QuotationsView);
 
         print.MapGet("/invoice/{id:int}/{size?}", async (
-            int id, string? size, ISalesOrderService orders, IRepairPrintService printer) =>
+            int id, string? size, ISalesOrderService orders, IRepairPrintService printer, ICompanyProfileService companies) =>
         {
             var order = await orders.GetAsync(id);
             if (order is null) return Results.NotFound();
 
-            return Pdf(printer.Invoice(order, Size(size), CompanyName),
+            return Pdf(printer.Invoice(order, Size(size), await companies.GetBrandingAsync()),
                 $"{order.OrderNumber}-invoice");
         }).RequireAuthorization(RepairPermissions.OrdersView);
 
         // --- purchasing ---
 
         print.MapGet("/purchase/{id:int}", async (
-            int id, IPurchaseService purchases, IRepairPrintService printer) =>
+            int id, IPurchaseService purchases, IRepairPrintService printer, ICompanyProfileService companies) =>
         {
             var purchase = await purchases.GetAsync(id);
             if (purchase is null) return Results.NotFound();
 
-            return Pdf(printer.PurchaseNote(purchase, CompanyName), purchase.PurchaseNumber);
+            return Pdf(printer.PurchaseNote(purchase, await companies.GetBrandingAsync()), purchase.PurchaseNumber);
         }).RequireAuthorization(RepairPermissions.PurchasesView);
 
         MapReportEndpoints(app);
@@ -119,7 +119,7 @@ public static class PrintEndpoints
 
         reports.MapGet("/{kind}/{format}", async (
             string kind, string format, DateOnly? from, DateOnly? to,
-            ReportTableBuilder builder, IReportExportService export) =>
+            ReportTableBuilder builder, IReportExportService export, ICompanyProfileService companies) =>
         {
             if (!Enum.TryParse<ReportKind>(kind, ignoreCase: true, out var reportKind))
                 return Results.BadRequest($"Unknown report '{kind}'.");
@@ -129,33 +129,34 @@ public static class PrintEndpoints
             var tables = await builder.BuildAsync(reportKind, range);
             var subtitle = Subtitle(definition, range);
 
-            return Render(format, export, definition.Title, subtitle, tables,
+            return Render(format, export, await companies.GetBrandingAsync(),
+                definition.Title, subtitle, tables,
                 $"{reportKind}-{range.From:yyyyMMdd}-{range.To:yyyyMMdd}");
         }).RequireAuthorization(RepairPermissions.ReportsView);
 
         // The whole pack in one file, for a management review.
         reports.MapGet("/all/{format}", async (
             string format, DateOnly? from, DateOnly? to,
-            ReportTableBuilder builder, IReportExportService export) =>
+            ReportTableBuilder builder, IReportExportService export, ICompanyProfileService companies) =>
         {
             var range = Range(from, to);
             var tables = await builder.BuildAllAsync(range);
 
-            return Render(format, export, "Repair Reports",
+            return Render(format, export, await companies.GetBrandingAsync(), "Repair Reports",
                 $"{range.From:yyyy-MM-dd} to {range.To:yyyy-MM-dd}", tables,
                 $"repair-reports-{range.From:yyyyMMdd}-{range.To:yyyyMMdd}");
         }).RequireAuthorization(RepairPermissions.ReportsView);
     }
 
     private static IResult Render(
-        string format, IReportExportService export, string title, string subtitle,
-        IReadOnlyList<ReportTable> tables, string fileName) =>
+        string format, IReportExportService export, CompanyBranding company,
+        string title, string subtitle, IReadOnlyList<ReportTable> tables, string fileName) =>
         format.ToLowerInvariant() switch
         {
             "xlsx" or "excel" => Results.File(
                 export.ToExcel(title, tables), ExcelContentType, $"{fileName}.xlsx"),
             "pdf" => Results.File(
-                export.ToPdf(title, subtitle, CompanyName, tables),
+                export.ToPdf(title, subtitle, company, tables),
                 "application/pdf", $"{fileName}.pdf"),
             _ => Results.BadRequest("Format must be xlsx or pdf.")
         };

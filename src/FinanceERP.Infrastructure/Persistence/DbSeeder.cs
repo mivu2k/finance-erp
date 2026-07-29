@@ -107,8 +107,6 @@ public static class DbSeeder
 
     private static async Task SeedChartOfAccountsAsync(AppDbContext db)
     {
-        if (await db.Accounts.AnyAsync()) return;
-
         // (code, name, type, parentCode, isPostable)
         var rows = new (string Code, string Name, AccountType Type, string? Parent, bool Postable)[]
         {
@@ -150,14 +148,36 @@ public static class DbSeeder
             ("5170", "Entertainment", AccountType.Expense, "5000", true),
             ("5180", "Travel", AccountType.Expense, "5000", true),
             ("5190", "Marketing", AccountType.Expense, "5000", true),
+
+            // Staff and director spend never share a head, so the trial balance and
+            // income statement separate the two without any extra filtering.
+            ("5200", "Employee Expenses", AccountType.Expense, "5000", false),
+            ("5210", "Employee Travel", AccountType.Expense, "5200", true),
+            ("5220", "Employee Entertainment", AccountType.Expense, "5200", true),
+            ("5230", "Employee Fuel", AccountType.Expense, "5200", true),
+            ("5240", "Employee Meals", AccountType.Expense, "5200", true),
+            ("5250", "Employee Training", AccountType.Expense, "5200", true),
+            ("5290", "Employee Miscellaneous", AccountType.Expense, "5200", true),
+
+            ("5400", "Director Expenses", AccountType.Expense, "5000", false),
+            ("5410", "Director Travel", AccountType.Expense, "5400", true),
+            ("5420", "Director Entertainment", AccountType.Expense, "5400", true),
+            ("5430", "Director Fuel", AccountType.Expense, "5400", true),
+            ("5440", "Director Meals", AccountType.Expense, "5400", true),
+            ("5490", "Director Miscellaneous", AccountType.Expense, "5400", true),
+
             ("5300", "Interest Expense", AccountType.Expense, "5000", true),
             ("5310", "Investment Loss", AccountType.Expense, "5000", true),
             ("5900", "Miscellaneous", AccountType.Expense, "5000", true),
         };
 
-        var byCode = new Dictionary<string, Account>();
+        // Only codes that don't exist yet are added, so an install that predates a new
+        // head (the employee/director expense sub-trees) picks it up on next startup
+        // without disturbing accounts the accountant has since edited.
+        var byCode = await db.Accounts.ToDictionaryAsync(a => a.Code);
         foreach (var r in rows)
         {
+            if (byCode.ContainsKey(r.Code)) continue;
             var acc = new Account
             {
                 Code = r.Code, Name = r.Name, Type = r.Type,

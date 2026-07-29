@@ -1,3 +1,5 @@
+using ErpPlatform.Shared.Kernel;
+using ErpPlatform.Shared.Printing;
 using ClosedXML.Excel;
 using FinanceERP.Application.DTOs;
 using FinanceERP.Application.Interfaces;
@@ -11,7 +13,8 @@ public class ExportService : IExportService
 {
     static ExportService() => QuestPDF.Settings.License = LicenseType.Community;
 
-    public byte[] TableToPdf(string title, string subtitle, string[] headers, IEnumerable<string[]> rows)
+    public byte[] TableToPdf(string title, string subtitle, string[] headers,
+        IEnumerable<string[]> rows, CompanyBranding? company = null)
     {
         var doc = Document.Create(container =>
         {
@@ -21,12 +24,9 @@ public class ExportService : IExportService
                 page.Margin(24);
                 page.DefaultTextStyle(x => x.FontSize(9));
 
-                page.Header().Column(col =>
-                {
-                    col.Item().Text(title).SemiBold().FontSize(16);
-                    col.Item().Text(subtitle).FontColor(Colors.Grey.Darken1);
-                    col.Item().PaddingTop(4).LineHorizontal(1).LineColor(Colors.Grey.Lighten1);
-                });
+                page.Header().CompanyHeader(company ?? CompanyBranding.Empty, title,
+                    right => right.Width(220).AlignRight().AlignMiddle()
+                        .Text(subtitle).FontSize(9).FontColor(Colors.Grey.Darken1));
 
                 page.Content().PaddingTop(8).Table(table =>
                 {
@@ -46,14 +46,7 @@ public class ExportService : IExportService
                                 .Padding(4).Text(cell ?? "");
                 });
 
-                page.Footer().AlignRight().Text(t =>
-                {
-                    t.Span("Generated ").FontColor(Colors.Grey.Darken1);
-                    t.Span($"{DateTime.Now:yyyy-MM-dd HH:mm}  ·  Page ");
-                    t.CurrentPageNumber();
-                    t.Span(" / ");
-                    t.TotalPages();
-                });
+                page.Footer().CompanyFooter(company ?? CompanyBranding.Empty, title);
             });
         });
         return doc.GeneratePdf();
@@ -82,11 +75,29 @@ public class ExportService : IExportService
                 {
                     col.Item().Row(row =>
                     {
+                        // Finance keeps its own blue-ruled header rather than the shared
+                        // Letterhead: the document number block and the title colour are
+                        // part of how these forms are recognised. The branding inside it
+                        // is the same profile every other app prints.
+                        if (doc.Company.HasLogo)
+                            row.ConstantItem(120).PaddingRight(10).AlignMiddle()
+                                .MaxHeight(46).Image(doc.Company.Logo!).FitArea();
+
                         row.RelativeItem().Column(left =>
                         {
-                            if (!string.IsNullOrWhiteSpace(doc.CompanyName))
-                                left.Item().Text(doc.CompanyName).SemiBold().FontSize(13);
-                            left.Item().Text(doc.Title).FontSize(17).Bold().FontColor(Colors.Blue.Darken2);
+                            if (!string.IsNullOrWhiteSpace(doc.Company.Name))
+                                left.Item().Text(doc.Company.Name).SemiBold().FontSize(13);
+                            if (!string.IsNullOrWhiteSpace(doc.Company.Address))
+                                left.Item().Text(doc.Company.Address!).FontSize(8)
+                                    .FontColor(Colors.Grey.Darken2);
+                            if (!string.IsNullOrWhiteSpace(doc.Company.Contact))
+                                left.Item().Text(doc.Company.Contact!).FontSize(8)
+                                    .FontColor(Colors.Grey.Darken2);
+                            if (!string.IsNullOrWhiteSpace(doc.Company.TaxNumber))
+                                left.Item().Text($"Tax No. {doc.Company.TaxNumber}").FontSize(8)
+                                    .FontColor(Colors.Grey.Darken2);
+                            left.Item().PaddingTop(2).Text(doc.Title).FontSize(17).Bold()
+                                .FontColor(Colors.Blue.Darken2);
                             if (!string.IsNullOrWhiteSpace(doc.Subtitle))
                                 left.Item().Text(doc.Subtitle!).FontColor(Colors.Grey.Darken1);
                         });
@@ -237,7 +248,7 @@ public class ExportService : IExportService
                     f.Item().PaddingBottom(3).LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
                     f.Item().Row(row =>
                     {
-                        row.RelativeItem().Text(doc.FooterNote ?? "")
+                        row.RelativeItem().Text(doc.FooterNote ?? doc.Company.FooterNote ?? "")
                             .FontSize(8).FontColor(Colors.Grey.Darken1);
                         row.RelativeItem().AlignRight().Text(t =>
                         {

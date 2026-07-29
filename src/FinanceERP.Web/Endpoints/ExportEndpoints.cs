@@ -1,3 +1,4 @@
+using ErpPlatform.Shared.Identity;
 using FinanceERP.Application.DTOs;
 using FinanceERP.Application.Interfaces;
 using FinanceERP.Domain.Security;
@@ -11,28 +12,28 @@ public static class ExportEndpoints
     {
         var group = app.MapGroup("/export").RequireAuthorization(Permissions.ReportsExport);
 
-        group.MapGet("/ledger", async (IReportService reports, IExportService export,
+        group.MapGet("/ledger", async (IReportService reports, IExportService export, ICompanyProfileService companies,
             DateOnly? from, DateOnly? to, int? accountId, int? departmentId, int? costCenterId,
-            int? projectId, string format = "xlsx") =>
+            int? projectId, string? personId, string format = "xlsx") =>
         {
             var rows = await reports.GeneralLedgerAsync(new ReportFilter
             {
                 From = from, To = to, AccountId = accountId, DepartmentId = departmentId,
-                CostCenterId = costCenterId, ProjectId = projectId
+                CostCenterId = costCenterId, ProjectId = projectId, PersonId = personId
             });
-            string[] headers = ["Date", "Voucher", "Account", "Description", "Debit", "Credit", "Balance"];
+            string[] headers = ["Date", "Voucher", "Account", "Description", "Person", "Debit", "Credit", "Balance"];
             if (format == "pdf")
             {
                 var pdf = export.TableToPdf("General Ledger", $"{from} — {to}", headers,
-                    rows.Select(r => new[] { r.Date.ToString("yyyy-MM-dd"), r.VoucherNo, $"{r.AccountCode} {r.AccountName}", r.Description ?? "", r.Debit.ToString("N2"), r.Credit.ToString("N2"), r.RunningBalance.ToString("N2") }));
+                    rows.Select(r => new[] { r.Date.ToString("yyyy-MM-dd"), r.VoucherNo, $"{r.AccountCode} {r.AccountName}", r.Description ?? "", r.Person ?? "", r.Debit.ToString("N2"), r.Credit.ToString("N2"), r.RunningBalance.ToString("N2") }), await companies.GetBrandingAsync());
                 return Results.File(pdf, "application/pdf", "general-ledger.pdf");
             }
             var xlsx = export.TableToExcel("General Ledger", headers,
-                rows.Select(r => new object?[] { r.Date, r.VoucherNo, $"{r.AccountCode} {r.AccountName}", r.Description, r.Debit, r.Credit, r.RunningBalance }));
+                rows.Select(r => new object?[] { r.Date, r.VoucherNo, $"{r.AccountCode} {r.AccountName}", r.Description, r.Person, r.Debit, r.Credit, r.RunningBalance }));
             return Results.File(xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "general-ledger.xlsx");
         });
 
-        group.MapGet("/project-report", async (IReportService reports, IExportService export,
+        group.MapGet("/project-report", async (IReportService reports, IExportService export, ICompanyProfileService companies,
             DateOnly from, DateOnly to, string format = "xlsx") =>
         {
             var rows = await reports.ProjectBreakdownAsync(from, to);
@@ -42,7 +43,7 @@ public static class ExportEndpoints
             {
                 var pdfRows = rows.Select(r => new[] { r.Category, r.Amount.ToString("N2") }).ToList();
                 pdfRows.Add(["TOTAL", total.ToString("N2")]);
-                return Results.File(export.TableToPdf("Project Report", $"{from} — {to}", headers, pdfRows),
+                return Results.File(export.TableToPdf("Project Report", $"{from} — {to}", headers, pdfRows, await companies.GetBrandingAsync()),
                     "application/pdf", "project-report.pdf");
             }
             var xrows = rows.Select(r => new object?[] { r.Category, r.Amount }).ToList();
@@ -51,7 +52,7 @@ public static class ExportEndpoints
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "project-report.xlsx");
         });
 
-        group.MapGet("/utility-bills", async (IUtilityService utilities, IExportService export,
+        group.MapGet("/utility-bills", async (IUtilityService utilities, IExportService export, ICompanyProfileService companies,
             DateOnly? from, DateOnly? to, int? locationId, int? connectionId, int? type, bool? paid,
             string format = "xlsx") =>
         {
@@ -72,7 +73,7 @@ public static class ExportEndpoints
                     b.VoucherId is null ? "Unpaid" : "Paid", b.PaidDate?.ToString("yyyy-MM-dd") ?? ""
                 }).ToList();
                 rows.Add(["", "", "", "", "", "", "TOTAL", total.ToString("N2"), "", ""]);
-                return Results.File(export.TableToPdf("Utility Bills", $"{from:yyyy-MM} — {to:yyyy-MM}", headers, rows),
+                return Results.File(export.TableToPdf("Utility Bills", $"{from:yyyy-MM} — {to:yyyy-MM}", headers, rows, await companies.GetBrandingAsync()),
                     "application/pdf", "utility-bills.pdf");
             }
             var xrows = bills.Select(b => new object?[]
@@ -86,7 +87,7 @@ public static class ExportEndpoints
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "utility-bills.xlsx");
         });
 
-        group.MapGet("/day-book", async (IReportService reports, IExportService export,
+        group.MapGet("/day-book", async (IReportService reports, IExportService export, ICompanyProfileService companies,
             DateOnly? from, DateOnly? to, int? voucherType, string format = "xlsx") =>
         {
             var rows = await reports.GeneralLedgerAsync(new ReportFilter
@@ -118,62 +119,62 @@ public static class ExportEndpoints
             xlsxRows.Add([null, null, null, "GRAND TOTAL", totalD, totalC]);
 
             if (format == "pdf")
-                return Results.File(export.TableToPdf("Day Book — Combined Ledger", $"{from} — {to}", headers, pdfRows),
+                return Results.File(export.TableToPdf("Day Book — Combined Ledger", $"{from} — {to}", headers, pdfRows, await companies.GetBrandingAsync()),
                     "application/pdf", "day-book.pdf");
             return Results.File(export.TableToExcel("Day Book", headers, xlsxRows),
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "day-book.xlsx");
         });
 
-        group.MapGet("/trial-balance", async (IReportService reports, IExportService export,
+        group.MapGet("/trial-balance", async (IReportService reports, IExportService export, ICompanyProfileService companies,
             DateOnly? asOf, string format = "xlsx") =>
         {
             var rows = await reports.TrialBalanceAsync(asOf);
             string[] headers = ["Code", "Account", "Type", "Debit", "Credit"];
             if (format == "pdf")
                 return Results.File(export.TableToPdf("Trial Balance", $"As of {asOf ?? DateOnly.FromDateTime(DateTime.Today)}", headers,
-                    rows.Select(r => new[] { r.Code, r.Name, r.Type, r.Debit.ToString("N2"), r.Credit.ToString("N2") })),
+                    rows.Select(r => new[] { r.Code, r.Name, r.Type, r.Debit.ToString("N2"), r.Credit.ToString("N2") }), await companies.GetBrandingAsync()),
                     "application/pdf", "trial-balance.pdf");
             return Results.File(export.TableToExcel("Trial Balance", headers,
                 rows.Select(r => new object?[] { r.Code, r.Name, r.Type, r.Debit, r.Credit })),
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "trial-balance.xlsx");
         });
 
-        group.MapGet("/income-statement", async (IReportService reports, IExportService export,
+        group.MapGet("/income-statement", async (IReportService reports, IExportService export, ICompanyProfileService companies,
             DateOnly from, DateOnly to, string format = "xlsx") =>
         {
             var rows = await reports.IncomeStatementAsync(from, to);
             string[] headers = ["Code", "Account", "Type", "Expense", "Income"];
             if (format == "pdf")
                 return Results.File(export.TableToPdf("Income Statement", $"{from} — {to}", headers,
-                    rows.Select(r => new[] { r.Code, r.Name, r.Type, r.Debit.ToString("N2"), r.Credit.ToString("N2") })),
+                    rows.Select(r => new[] { r.Code, r.Name, r.Type, r.Debit.ToString("N2"), r.Credit.ToString("N2") }), await companies.GetBrandingAsync()),
                     "application/pdf", "income-statement.pdf");
             return Results.File(export.TableToExcel("Income Statement", headers,
                 rows.Select(r => new object?[] { r.Code, r.Name, r.Type, r.Debit, r.Credit })),
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "income-statement.xlsx");
         });
 
-        group.MapGet("/balance-sheet", async (IReportService reports, IExportService export,
+        group.MapGet("/balance-sheet", async (IReportService reports, IExportService export, ICompanyProfileService companies,
             DateOnly asOf, string format = "xlsx") =>
         {
             var rows = await reports.BalanceSheetAsync(asOf);
             string[] headers = ["Code", "Account", "Type", "Assets", "Liabilities & Equity"];
             if (format == "pdf")
                 return Results.File(export.TableToPdf("Balance Sheet", $"As of {asOf}", headers,
-                    rows.Select(r => new[] { r.Code, r.Name, r.Type, r.Debit.ToString("N2"), r.Credit.ToString("N2") })),
+                    rows.Select(r => new[] { r.Code, r.Name, r.Type, r.Debit.ToString("N2"), r.Credit.ToString("N2") }), await companies.GetBrandingAsync()),
                     "application/pdf", "balance-sheet.pdf");
             return Results.File(export.TableToExcel("Balance Sheet", headers,
                 rows.Select(r => new object?[] { r.Code, r.Name, r.Type, r.Debit, r.Credit })),
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "balance-sheet.xlsx");
         });
 
-        group.MapGet("/cash-book", async (IReportService reports, IExportService export,
+        group.MapGet("/cash-book", async (IReportService reports, IExportService export, ICompanyProfileService companies,
             DateOnly? from, DateOnly? to, string format = "xlsx") =>
         {
             var rows = await reports.CashBookAsync(new ReportFilter { From = from, To = to });
             string[] headers = ["Date", "Voucher", "Account", "Description", "Receipt", "Payment", "Balance"];
             if (format == "pdf")
                 return Results.File(export.TableToPdf("Cash Book", $"{from} — {to}", headers,
-                    rows.Select(r => new[] { r.Date.ToString("yyyy-MM-dd"), r.VoucherNo, r.AccountName, r.Description ?? "", r.Debit.ToString("N2"), r.Credit.ToString("N2"), r.RunningBalance.ToString("N2") })),
+                    rows.Select(r => new[] { r.Date.ToString("yyyy-MM-dd"), r.VoucherNo, r.AccountName, r.Description ?? "", r.Debit.ToString("N2"), r.Credit.ToString("N2"), r.RunningBalance.ToString("N2") }), await companies.GetBrandingAsync()),
                     "application/pdf", "cash-book.pdf");
             return Results.File(export.TableToExcel("Cash Book", headers,
                 rows.Select(r => new object?[] { r.Date, r.VoucherNo, r.AccountName, r.Description, r.Debit, r.Credit, r.RunningBalance })),

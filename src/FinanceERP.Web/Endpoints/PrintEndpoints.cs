@@ -1,3 +1,5 @@
+using ErpPlatform.Shared.Identity;
+using ErpPlatform.Shared.Kernel;
 using System.Security.Claims;
 using FinanceERP.Application.DTOs;
 using FinanceERP.Application.Interfaces;
@@ -22,7 +24,7 @@ public static class PrintEndpoints
 
         // ------------------------------------------------------------------ voucher
         group.MapGet("/voucher/{id:int}", async (int id, ClaimsPrincipal user,
-            AppDbContext db, IExportService export) =>
+            AppDbContext db, IExportService export, ICompanyProfileService companies) =>
         {
             if (!user.HasPermission(Permissions.VouchersView)) return Results.Forbid();
 
@@ -35,7 +37,7 @@ public static class PrintEndpoints
 
             var doc = new PdfDocument
             {
-                CompanyName = await CompanyNameAsync(db),
+                Company = await companies.GetBrandingAsync(),
                 Title = VoucherTitle(v.Type),
                 DocumentNo = v.VoucherNo,
                 Subtitle = v.Narration,
@@ -73,7 +75,7 @@ public static class PrintEndpoints
 
         // ---------------------------------------------------------- payment request
         group.MapGet("/request/{id:int}", async (int id, ClaimsPrincipal user,
-            AppDbContext db, IExportService export) =>
+            AppDbContext db, IExportService export, ICompanyProfileService companies) =>
         {
             var r = await db.PaymentRequests
                 .Include(x => x.Lines.OrderBy(l => l.LineNo)).ThenInclude(l => l.Account)
@@ -126,7 +128,7 @@ public static class PrintEndpoints
 
             var doc = new PdfDocument
             {
-                CompanyName = await CompanyNameAsync(db),
+                Company = await companies.GetBrandingAsync(),
                 Title = r.IsDirectorRequest ? "Director Fund Request"
                     : isAdvance ? "Advance Request" : "Payment Request",
                 DocumentNo = r.RequestNo,
@@ -160,7 +162,7 @@ public static class PrintEndpoints
 
         // --------------------------------------------------------- employee advance
         group.MapGet("/advance/{id:int}", async (int id, ClaimsPrincipal user,
-            IAdvanceService advances, AppDbContext db, IExportService export) =>
+            IAdvanceService advances, AppDbContext db, IExportService export, ICompanyProfileService companies) =>
         {
             var a = await advances.GetAsync(id);
             if (a is null) return Results.NotFound();
@@ -169,7 +171,7 @@ public static class PrintEndpoints
 
             var doc = new PdfDocument
             {
-                CompanyName = await CompanyNameAsync(db),
+                Company = await companies.GetBrandingAsync(),
                 Title = "Employee Advance",
                 DocumentNo = a.AdvanceNo,
                 Subtitle = a.Reason,
@@ -217,7 +219,7 @@ public static class PrintEndpoints
 
         // -------------------------------------------------------------------- loan
         group.MapGet("/loan/{id:int}", async (int id, ClaimsPrincipal user,
-            ILoanService loans, AppDbContext db, IExportService export) =>
+            ILoanService loans, AppDbContext db, IExportService export, ICompanyProfileService companies) =>
         {
             if (!user.HasPermission(Permissions.LoansView)) return Results.Forbid();
             var l = await loans.GetAsync(id);
@@ -225,7 +227,7 @@ public static class PrintEndpoints
 
             var doc = new PdfDocument
             {
-                CompanyName = await CompanyNameAsync(db),
+                Company = await companies.GetBrandingAsync(),
                 Title = l.Direction == LoanDirection.Taken ? "Loan Taken — Schedule" : "Loan Given — Schedule",
                 DocumentNo = l.LoanNo,
                 Subtitle = l.ThirdParty.Name,
@@ -267,7 +269,7 @@ public static class PrintEndpoints
 
         // -------------------------------------------------------------- investment
         group.MapGet("/investment/{id:int}", async (int id, ClaimsPrincipal user,
-            IInvestmentService investments, AppDbContext db, IExportService export) =>
+            IInvestmentService investments, AppDbContext db, IExportService export, ICompanyProfileService companies) =>
         {
             if (!user.HasPermission(Permissions.InvestmentsView)) return Results.Forbid();
             var i = await investments.GetAsync(id);
@@ -275,7 +277,7 @@ public static class PrintEndpoints
 
             var doc = new PdfDocument
             {
-                CompanyName = await CompanyNameAsync(db),
+                Company = await companies.GetBrandingAsync(),
                 Title = "Investment Statement",
                 DocumentNo = $"INV-{i.Id:D5}",
                 Subtitle = i.Name,
@@ -315,7 +317,7 @@ public static class PrintEndpoints
 
         // ------------------------------------------------------------ utility bill
         group.MapGet("/utility-bill/{id:int}", async (int id, ClaimsPrincipal user,
-            AppDbContext db, IExportService export) =>
+            AppDbContext db, IExportService export, ICompanyProfileService companies) =>
         {
             if (!user.HasPermission(Permissions.UtilitiesView)) return Results.Forbid();
 
@@ -327,7 +329,7 @@ public static class PrintEndpoints
 
             var doc = new PdfDocument
             {
-                CompanyName = await CompanyNameAsync(db),
+                Company = await companies.GetBrandingAsync(),
                 Title = "Utility Bill",
                 DocumentNo = $"UB-{b.Id:D5}",
                 Subtitle = $"{b.Connection.Type} — {b.Connection.Name} ({b.Connection.Location.Name})",
@@ -357,20 +359,20 @@ public static class PrintEndpoints
 
         // ----------------------------------------------------------------- payslip
         group.MapGet("/payslip/{id:int}", async (int id, ClaimsPrincipal user,
-            IPayrollService payroll, AppDbContext db, IExportService export) =>
+            IPayrollService payroll, AppDbContext db, IExportService export, ICompanyProfileService companies) =>
         {
             var slip = await payroll.GetPayslipAsync(id);
             if (slip is null) return Results.NotFound();
             if (!user.HasPermission(Permissions.PayrollView) && !user.Owns(slip.EmployeeId))
                 return Results.Forbid();
 
-            return Pdf(export.DocumentToPdf(BuildPayslipDocument(slip, await CompanyNameAsync(db))),
+            return Pdf(export.DocumentToPdf(BuildPayslipDocument(slip, await companies.GetBrandingAsync())),
                 $"payslip-{slip.PayrollRun.PeriodMonth:yyyy-MM}-{slip.EmployeeName}.pdf");
         });
 
         // ------------------------------------------------------------- payroll run
         group.MapGet("/payroll-run/{id:int}", async (int id, ClaimsPrincipal user,
-            IPayrollService payroll, AppDbContext db, IExportService export) =>
+            IPayrollService payroll, AppDbContext db, IExportService export, ICompanyProfileService companies) =>
         {
             if (!user.HasPermission(Permissions.PayrollView)) return Results.Forbid();
             var run = await payroll.GetRunAsync(id);
@@ -378,7 +380,7 @@ public static class PrintEndpoints
 
             var doc = new PdfDocument
             {
-                CompanyName = await CompanyNameAsync(db),
+                Company = await companies.GetBrandingAsync(),
                 Title = "Payroll Register",
                 DocumentNo = run.RunNo,
                 Subtitle = run.PeriodMonth.ToString("MMMM yyyy"),
@@ -437,14 +439,14 @@ public static class PrintEndpoints
 
         // All payslips in a run, one page each — what actually gets handed out.
         group.MapGet("/payroll-run/{id:int}/payslips", async (int id, ClaimsPrincipal user,
-            IPayrollService payroll, AppDbContext db, IExportService export) =>
+            IPayrollService payroll, AppDbContext db, IExportService export, ICompanyProfileService companies) =>
         {
             if (!user.HasPermission(Permissions.PayrollView)) return Results.Forbid();
             var run = await payroll.GetRunAsync(id);
             if (run is null) return Results.NotFound();
             if (run.Payslips.Count == 0) return Results.BadRequest("This run has no payslips.");
 
-            var company = await CompanyNameAsync(db);
+            var company = await companies.GetBrandingAsync();
             var merged = export.DocumentsToPdf(run.Payslips.Select(slip =>
             {
                 slip.PayrollRun = run; // GetRunAsync loads slips off the run, not the back-reference
@@ -454,7 +456,7 @@ public static class PrintEndpoints
         });
     }
 
-    private static PdfDocument BuildPayslipDocument(Payslip slip, string company)
+    private static PdfDocument BuildPayslipDocument(Payslip slip, CompanyBranding company)
     {
         var run = slip.PayrollRun;
         var earnings = slip.Lines.Where(l => l.Kind == PayComponentKind.Allowance).ToList();
@@ -479,7 +481,7 @@ public static class PrintEndpoints
 
         return new PdfDocument
         {
-            CompanyName = company,
+            Company = company,
             Title = "Payslip",
             DocumentNo = $"{run.RunNo}/{slip.Id}",
             Subtitle = $"{slip.EmployeeName} — {run.PeriodMonth:MMMM yyyy}",
@@ -512,10 +514,6 @@ public static class PrintEndpoints
             FooterNote = "This is a computer-generated payslip."
         };
     }
-
-    private static async Task<string> CompanyNameAsync(AppDbContext db) =>
-        (await db.AppSettings.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.Key == SettingKeys.CompanyName))?.Value ?? "";
 
     private static string VoucherTitle(VoucherType type) => type switch
     {

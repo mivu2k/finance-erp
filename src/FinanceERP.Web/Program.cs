@@ -96,6 +96,11 @@ using (var scope = app.Services.CreateScope())
         sp.GetRequiredService<IPlatformUserDirectory>(),
         logger);
 
+    // One-time backfill: the letterhead used to be a Finance-only "Company.Name"
+    // setting. Carry it into the platform profile so an upgraded install doesn't
+    // start printing blank headers.
+    await SeedCompanyProfileAsync(sp, logger);
+
     await HrModule.SeedAsync(sp.GetRequiredService<HrDbContext>(), logger);
     await GatePassModule.SeedAsync(sp.GetRequiredService<GatePassDbContext>(), logger);
     await RepairModule.SeedAsync(sp.GetRequiredService<RepairDbContext>(), logger);
@@ -143,3 +148,26 @@ app.MapGet("/files/receipts/{name}", (string name, FinanceERP.Web.Services.Recei
 }).RequireAuthorization();
 
 app.Run();
+
+static async Task SeedCompanyProfileAsync(IServiceProvider sp, Microsoft.Extensions.Logging.ILogger logger)
+{
+    var identity = sp.GetRequiredService<PlatformIdentityDbContext>();
+    if (await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+            .AnyAsync(identity.CompanyProfiles)) return;
+
+    var legacy = (await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+        .FirstOrDefaultAsync(
+            Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.AsNoTracking(
+                sp.GetRequiredService<AppDbContext>().AppSettings),
+            s => s.Key == FinanceERP.Domain.Entities.SettingKeys.CompanyName))?.Value;
+
+    identity.CompanyProfiles.Add(new CompanyProfile
+    {
+        Name = string.IsNullOrWhiteSpace(legacy) ? "" : legacy,
+        ModifiedAtUtc = DateTime.UtcNow,
+        ModifiedBy = "seed"
+    });
+    await identity.SaveChangesAsync();
+    logger.LogInformation("Seeded the company profile (name: {Name}).",
+        string.IsNullOrWhiteSpace(legacy) ? "not set — configure at /admin/company" : legacy);
+}

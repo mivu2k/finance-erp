@@ -16,7 +16,10 @@ HOST="${1:-${FINANCE_ERP_HOST:-}}"
 SSH_USER="${FINANCE_ERP_SSH_USER:-root}"
 APP_DIR="${FINANCE_ERP_APP_DIR:-/opt/finance-erp}"
 SERVICE="${FINANCE_ERP_SERVICE:-finance-erp}"
-DB_NAME="${FINANCE_ERP_DB:-finance_erp}"
+# Every database the platform owns. erp_identity holds the users, roles and the
+# company profile and has no other copy, so backing up finance_erp alone would
+# leave a failed migration unrecoverable. Override with a space-separated list.
+DATABASES="${FINANCE_ERP_DBS:-erp_identity finance_erp erp_repair erp_gatepass erp_hr}"
 APP_USER="${FINANCE_ERP_APP_USER:-finance-erp}"
 HEALTH_URL="${FINANCE_ERP_HEALTH_URL:-http://localhost:5000/}"
 KEEP_BACKUPS="${FINANCE_ERP_KEEP_BACKUPS:-10}"
@@ -48,16 +51,28 @@ dotnet publish "$REPO_ROOT/src/FinanceERP.Web" -c Release -o "$PUBLISH_DIR" --no
 echo "built $(find "$PUBLISH_DIR" -type f | wc -l) files ($(du -sh "$PUBLISH_DIR" | cut -f1))"
 
 step "Backing up database and current build"
-"${SSH[@]}" bash -euo pipefail -s -- "$DB_NAME" "$APP_DIR" "$STAMP" "$KEEP_BACKUPS" <<'REMOTE'
-DB_NAME="$1"; APP_DIR="$2"; STAMP="$3"; KEEP="$4"
+"${SSH[@]}" bash -euo pipefail -s -- "$DATABASES" "$APP_DIR" "$STAMP" "$KEEP_BACKUPS" <<'REMOTE'
+DATABASES="$1"; APP_DIR="$2"; STAMP="$3"; KEEP="$4"
 mkdir -p /var/backups/finance-erp
-mysqldump --single-transaction --routines "$DB_NAME" | gzip > "/var/backups/finance-erp/db-$STAMP.sql.gz"
-echo "database  -> /var/backups/finance-erp/db-$STAMP.sql.gz"
+for db in $DATABASES; do
+    # A database this deploy hasn't created yet is not an error on a first run.
+    if ! mysql -N -e "SHOW DATABASES LIKE '$db'" | grep -q .; then
+        echo "database  -- $db does not exist yet, skipped"
+        continue
+    fi
+    mysqldump --single-transaction --routines "$db" \
+        | gzip > "/var/backups/finance-erp/$db-$STAMP.sql.gz"
+    echo "database  -> /var/backups/finance-erp/$db-$STAMP.sql.gz"
+done
 # Snapshot the binaries so a bad release can be put back without a rebuild.
 rm -rf "$APP_DIR.prev"
 cp -a "$APP_DIR" "$APP_DIR.prev"
 echo "binaries  -> $APP_DIR.prev"
-ls -1t /var/backups/finance-erp/db-*.sql.gz 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm --
+# Prune per database, so keeping 10 means 10 rounds rather than 2.
+for db in $DATABASES; do
+    ls -1t "/var/backups/finance-erp/$db-"*.sql.gz 2>/dev/null \
+        | tail -n +$((KEEP + 1)) | xargs -r rm --
+done
 REMOTE
 
 step "Stopping $SERVICE"
@@ -118,8 +133,10 @@ REMOTE
   echo "previous build restored. Recent log:" >&2
   "${SSH[@]}" "journalctl -u $SERVICE -n 40 --no-pager" >&2
   echo >&2
-  echo "the database was NOT rolled back — if the new migrations broke it, restore with:" >&2
-  echo "  ssh $SSH_USER@$HOST 'zcat /var/backups/finance-erp/db-$STAMP.sql.gz | mysql $DB_NAME'" >&2
+  echo "the databases were NOT rolled back — if the new migrations broke one, restore with:" >&2
+  for db in $DATABASES; do
+    echo "  ssh $SSH_USER@$HOST 'zcat /var/backups/finance-erp/$db-$STAMP.sql.gz | mysql $db'" >&2
+  done
   exit 1
 fi
 
@@ -129,4 +146,6 @@ step "Deployed"
 echo
 echo "rollback if needed:"
 echo "  ssh $SSH_USER@$HOST 'systemctl stop $SERVICE && rm -rf $APP_DIR && mv $APP_DIR.prev $APP_DIR && systemctl start $SERVICE'"
-echo "  ssh $SSH_USER@$HOST 'zcat /var/backups/finance-erp/db-$STAMP.sql.gz | mysql $DB_NAME'"
+for db in $DATABASES; do
+  echo "  ssh $SSH_USER@$HOST 'zcat /var/backups/finance-erp/$db-$STAMP.sql.gz | mysql $db'"
+done

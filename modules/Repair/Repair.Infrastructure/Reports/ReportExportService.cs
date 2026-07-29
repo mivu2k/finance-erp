@@ -1,4 +1,6 @@
 using ClosedXML.Excel;
+using ErpPlatform.Shared.Kernel;
+using ErpPlatform.Shared.Printing;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
@@ -15,7 +17,7 @@ public record ReportTable(
 public interface IReportExportService
 {
     byte[] ToExcel(string workbookTitle, IReadOnlyList<ReportTable> tables);
-    byte[] ToPdf(string title, string subtitle, string companyName,
+    byte[] ToPdf(string title, string subtitle, CompanyBranding company,
         IReadOnlyList<ReportTable> tables);
 }
 
@@ -76,7 +78,7 @@ public class ReportExportService : IReportExportService
     }
 
     public byte[] ToPdf(
-        string title, string subtitle, string companyName, IReadOnlyList<ReportTable> tables) =>
+        string title, string subtitle, CompanyBranding company, IReadOnlyList<ReportTable> tables) =>
         Document.Create(doc => doc.Page(page =>
         {
             // Reports are wide; landscape keeps columns readable.
@@ -84,24 +86,13 @@ public class ReportExportService : IReportExportService
             page.Margin(1.2f, Unit.Centimetre);
             page.DefaultTextStyle(t => t.FontSize(8));
 
-            page.Header().Column(col =>
-            {
-                col.Item().Row(r =>
+            page.Header().CompanyHeader(company, title, right => right.Width(220)
+                .AlignRight().Column(c =>
                 {
-                    r.RelativeItem().Column(c =>
-                    {
-                        c.Item().Text(companyName).FontSize(14).Bold();
-                        c.Item().Text(title).FontSize(11).SemiBold();
-                    });
-                    r.ConstantItem(220).AlignRight().Column(c =>
-                    {
-                        c.Item().Text(subtitle).FontSize(9);
-                        c.Item().Text($"Printed {DateTime.Now:yyyy-MM-dd HH:mm}").FontSize(7)
-                            .FontColor(Colors.Grey.Darken1);
-                    });
-                });
-                col.Item().PaddingTop(5).LineHorizontal(1);
-            });
+                    c.Item().Text(subtitle).FontSize(9);
+                    c.Item().Text($"Printed {DateTime.Now:yyyy-MM-dd HH:mm}").FontSize(7)
+                        .FontColor(Colors.Grey.Darken1);
+                }));
 
             page.Content().PaddingVertical(8).Column(col =>
             {
@@ -147,13 +138,7 @@ public class ReportExportService : IReportExportService
                 }
             });
 
-            page.Footer().AlignCenter().Text(t =>
-            {
-                t.Span("Page ").FontSize(7);
-                t.CurrentPageNumber().FontSize(7);
-                t.Span(" of ").FontSize(7);
-                t.TotalPages().FontSize(7);
-            });
+            page.Footer().CompanyFooter(company, title);
         })).GeneratePdf();
 
     private static bool Right(ReportTable table, int index) =>

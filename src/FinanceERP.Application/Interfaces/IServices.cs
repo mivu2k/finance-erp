@@ -16,8 +16,14 @@ public interface IVoucherService
     /// <summary>Copies a voucher into a fresh draft (dated today) — the fix-and-repost path.</summary>
     Task<Voucher> DuplicateAsDraftAsync(int id);
     /// <summary>Creates and posts a system-generated voucher from a source module.</summary>
+    /// <remarks>
+    /// Pass <paramref name="personId"/> when the whole voucher is traceable to one person
+    /// (a payment request, an advance) — every line is stamped with it so the ledger and
+    /// reports can be filtered per user.
+    /// </remarks>
     Task<Voucher> PostSystemVoucherAsync(VoucherType type, DateOnly date, string narration,
-        string source, int? sourceId, IEnumerable<(int AccountId, decimal Debit, decimal Credit, string? Description)> lines);
+        string source, int? sourceId, IEnumerable<(int AccountId, decimal Debit, decimal Credit, string? Description)> lines,
+        string? personId = null, string? personName = null);
     /// <summary>
     /// Year-end close: posts a journal moving all income/expense balances up to
     /// <paramref name="closeDate"/> into Retained Earnings, then locks the books
@@ -240,7 +246,8 @@ public interface IReportService
 
 public interface IExportService
 {
-    byte[] TableToPdf(string title, string subtitle, string[] headers, IEnumerable<string[]> rows);
+    byte[] TableToPdf(string title, string subtitle, string[] headers, IEnumerable<string[]> rows,
+        ErpPlatform.Shared.Kernel.CompanyBranding? company = null);
     byte[] TableToExcel(string sheetName, string[] headers, IEnumerable<object?[]> rows);
     /// <summary>Renders a single record as a printable, signable document (voucher, request, payslip, ...).</summary>
     byte[] DocumentToPdf(PdfDocument document);

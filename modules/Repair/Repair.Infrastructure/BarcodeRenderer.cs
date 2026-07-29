@@ -48,6 +48,51 @@ internal static class BarcodeRenderer
     }
 
     /// <summary>
+    /// Draws a QR code of <paramref name="text"/> at a fixed edge length in points.
+    /// </summary>
+    /// <remarks>
+    /// Always fixed-size, never stretched: a QR code has to stay square, and phone
+    /// cameras need roughly 20pt (7mm) of edge before they lock on reliably.
+    /// </remarks>
+    public static void QrCode(this IContainer container, string text, float size = 60)
+    {
+        QrCode.Matrix matrix;
+        try
+        {
+            matrix = ErpPlatform.Shared.Kernel.QrCode.Encode(text);
+        }
+        catch (ArgumentException)
+        {
+            // Never fail a whole document over an unencodable payload.
+            container.Text(text).FontSize(8);
+            return;
+        }
+
+        // The quiet zone is part of the symbol — without it a scanner sitting on a
+        // busy label can't find the finder patterns.
+        const int quiet = 4;
+        var cells = matrix.Size + quiet * 2;
+        var cell = size / cells;
+
+        container.Width(size).Height(size).Column(col =>
+        {
+            for (var y = 0; y < cells; y++)
+            {
+                col.Item().Height(cell).Row(row =>
+                {
+                    for (var x = 0; x < cells; x++)
+                    {
+                        var c = row.ConstantItem(cell);
+                        var inside = x >= quiet && y >= quiet
+                                     && x < cells - quiet && y < cells - quiet;
+                        if (inside && matrix[x - quiet, y - quiet]) c.Background(Colors.Black);
+                    }
+                });
+            }
+        });
+    }
+
+    /// <summary>
     /// A fixed-width barcode, for slips where the bars shouldn't stretch across the
     /// whole roll.
     /// </summary>

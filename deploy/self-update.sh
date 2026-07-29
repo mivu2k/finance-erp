@@ -14,7 +14,10 @@ set -euo pipefail
 SRC_DIR="${FINANCE_ERP_SRC:-/opt/src/finance-erp}"
 APP_DIR="${FINANCE_ERP_APP_DIR:-/opt/finance-erp}"
 SERVICE="${FINANCE_ERP_SERVICE:-finance-erp}"
-DB_NAME="${FINANCE_ERP_DB:-finance_erp}"
+# Every database the platform owns. erp_identity holds the users, roles and the
+# company profile and has no other copy, so backing up finance_erp alone would
+# leave a failed migration unrecoverable. Override with a space-separated list.
+DATABASES="${FINANCE_ERP_DBS:-erp_identity finance_erp erp_repair erp_gatepass erp_hr}"
 APP_USER="${FINANCE_ERP_APP_USER:-finance-erp}"
 BRANCH="${FINANCE_ERP_BRANCH:-main}"
 HEALTH_URL="${FINANCE_ERP_HEALTH_URL:-http://localhost:5000/}"
@@ -68,8 +71,16 @@ dotnet publish "$SRC_DIR/src/FinanceERP.Web" -c Release -o "$BUILD_DIR" --nologo
 
 step "Backing up"
 mkdir -p /var/backups/finance-erp
-mysqldump --single-transaction --routines "$DB_NAME" | gzip > "/var/backups/finance-erp/db-$STAMP.sql.gz"
-echo "database -> /var/backups/finance-erp/db-$STAMP.sql.gz"
+for db in $DATABASES; do
+    # A database the deploy hasn't created yet is not an error on a first run.
+    if ! mysql -N -e "SHOW DATABASES LIKE '$db'" | grep -q .; then
+        echo "database $db does not exist yet — skipped"
+        continue
+    fi
+    mysqldump --single-transaction --routines "$db" \
+        | gzip > "/var/backups/finance-erp/$db-$STAMP.sql.gz"
+    echo "database -> /var/backups/finance-erp/$db-$STAMP.sql.gz"
+done
 
 have_snapshot=0
 if [ -d "$APP_DIR" ]; then
@@ -83,7 +94,11 @@ else
     mkdir -p "$APP_DIR"
     echo "no existing install at $APP_DIR — first deploy, no rollback snapshot"
 fi
-ls -1t /var/backups/finance-erp/db-*.sql.gz 2>/dev/null | tail -n +$((KEEP_BACKUPS + 1)) | xargs -r rm --
+# Prune per database, so keeping 10 means 10 rounds rather than 2.
+for db in $DATABASES; do
+    ls -1t "/var/backups/finance-erp/$db-"*.sql.gz 2>/dev/null \
+        | tail -n +$((KEEP_BACKUPS + 1)) | xargs -r rm --
+done
 
 step "Installing"
 systemctl stop "$SERVICE"
@@ -143,8 +158,10 @@ if [ "$healthy" -ne 1 ]; then
 
     journalctl -u "$SERVICE" -n 40 --no-pager >&2
     echo >&2
-    echo "the database was NOT rolled back — if a migration broke it:" >&2
-    echo "  zcat /var/backups/finance-erp/db-$STAMP.sql.gz | mysql $DB_NAME" >&2
+    echo "the databases were NOT rolled back — if a migration broke one:" >&2
+    for db in $DATABASES; do
+        echo "  zcat /var/backups/finance-erp/$db-$STAMP.sql.gz | mysql $db" >&2
+    done
     exit 1
 fi
 
@@ -157,4 +174,4 @@ step "Updated to ${remote_rev:0:8}"
 journalctl -u "$SERVICE" -n 15 --no-pager | sed 's/^/  /'
 echo
 echo "rollback:  systemctl stop $SERVICE && rm -rf $APP_DIR && mv $APP_DIR.prev $APP_DIR && systemctl start $SERVICE"
-echo "db restore: zcat /var/backups/finance-erp/db-$STAMP.sql.gz | mysql $DB_NAME"
+echo "db restore: for db in $DATABASES; do zcat /var/backups/finance-erp/\$db-$STAMP.sql.gz | mysql \$db; done"

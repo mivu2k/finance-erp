@@ -1,3 +1,5 @@
+using ErpPlatform.Shared.Kernel;
+using ErpPlatform.Shared.Printing;
 using GatePass.Domain;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -20,8 +22,8 @@ public enum PrintVariant
 /// </summary>
 public interface IGatePassPrintService
 {
-    byte[] GatePass(GatePassRecord pass, PrintVariant variant, string companyName);
-    byte[] DemoIssuance(DemoIssuance issuance, PrintVariant variant, string companyName);
+    byte[] GatePass(GatePassRecord pass, PrintVariant variant, CompanyBranding company);
+    byte[] DemoIssuance(DemoIssuance issuance, PrintVariant variant, CompanyBranding company);
 }
 
 public class GatePassPrintService : IGatePassPrintService
@@ -29,10 +31,11 @@ public class GatePassPrintService : IGatePassPrintService
     static GatePassPrintService() => QuestPDF.Settings.License = LicenseType.Community;
 
     private const float PosWidthMm = 80f;
+    private const float PosWidthPoints = PosWidthMm * 72f / 25.4f;
 
-    public byte[] GatePass(GatePassRecord pass, PrintVariant variant, string companyName) =>
+    public byte[] GatePass(GatePassRecord pass, PrintVariant variant, CompanyBranding company) =>
         variant == PrintVariant.Pos
-            ? RenderPos(companyName,
+            ? RenderPos(company,
                 pass.Direction == GatePassDirection.Inward ? "INWARD GATE PASS" : "OUTWARD GATE PASS",
                 pass.PassNumber,
                 [
@@ -45,7 +48,7 @@ public class GatePassPrintService : IGatePassPrintService
                 ],
                 pass.Items.Select(i => ($"{i.Description}{(i.SerialNumber is null ? "" : $" ({i.SerialNumber})")}",
                     $"{i.Quantity:0.##} {i.Unit}")).ToList())
-            : RenderA4(companyName,
+            : RenderA4(company,
                 pass.Direction == GatePassDirection.Inward ? "INWARD GATE PASS" : "OUTWARD GATE PASS",
                 pass.PassNumber,
                 [
@@ -71,9 +74,9 @@ public class GatePassPrintService : IGatePassPrintService
                 pass.Notes,
                 ["Carried by", "Authorised by", "Security / Gate"]);
 
-    public byte[] DemoIssuance(DemoIssuance issuance, PrintVariant variant, string companyName) =>
+    public byte[] DemoIssuance(DemoIssuance issuance, PrintVariant variant, CompanyBranding company) =>
         variant == PrintVariant.Pos
-            ? RenderPos(companyName, "DEMO ISSUANCE", issuance.IssuanceNumber,
+            ? RenderPos(company, "DEMO ISSUANCE", issuance.IssuanceNumber,
                 [
                     ("Customer", issuance.CustomerName),
                     ("Phone", issuance.CustomerPhone ?? "-"),
@@ -83,7 +86,7 @@ public class GatePassPrintService : IGatePassPrintService
                 ],
                 issuance.Items.Select(i => ($"{i.Description}{(i.SerialNumber is null ? "" : $" ({i.SerialNumber})")}",
                     $"{i.Quantity:0.##}")).ToList())
-            : RenderA4(companyName, "DEMO GOODS ISSUANCE", issuance.IssuanceNumber,
+            : RenderA4(company, "DEMO GOODS ISSUANCE", issuance.IssuanceNumber,
                 [
                     ("Customer", issuance.CustomerName),
                     ("Phone", issuance.CustomerPhone ?? "-"),
@@ -105,7 +108,7 @@ public class GatePassPrintService : IGatePassPrintService
                 ["Received by (customer)", "Issued by", "Returned / checked by"]);
 
     private static byte[] RenderA4(
-        string company, string title, string number,
+        CompanyBranding company, string title, string number,
         List<(string Label, string Value)> fields,
         string[] columns, List<string[]> rows,
         string? notes, string[] signatures) =>
@@ -117,19 +120,8 @@ public class GatePassPrintService : IGatePassPrintService
                 page.Margin(1.5f, Unit.Centimetre);
                 page.DefaultTextStyle(t => t.FontSize(10));
 
-                page.Header().Column(col =>
-                {
-                    col.Item().Row(r =>
-                    {
-                        r.RelativeItem().Text(company).FontSize(15).Bold();
-                        r.ConstantItem(180).AlignRight().Column(c =>
-                        {
-                            c.Item().Text(title).FontSize(13).Bold();
-                            c.Item().Text(number).FontSize(11);
-                        });
-                    });
-                    col.Item().PaddingTop(6).LineHorizontal(1);
-                });
+                page.Header().CompanyHeader(company, title, right => right.Width(180)
+                    .AlignRight().AlignMiddle().Text(number).FontSize(13).Bold());
 
                 page.Content().PaddingVertical(10).Column(col =>
                 {
@@ -197,18 +189,12 @@ public class GatePassPrintService : IGatePassPrintService
                     });
                 });
 
-                page.Footer().AlignCenter().Text(t =>
-                {
-                    t.Span("Page ").FontSize(8);
-                    t.CurrentPageNumber().FontSize(8);
-                    t.Span(" of ").FontSize(8);
-                    t.TotalPages().FontSize(8);
-                });
+                page.Footer().CompanyFooter(company, number);
             });
         }).GeneratePdf();
 
     private static byte[] RenderPos(
-        string company, string title, string number,
+        CompanyBranding company, string title, string number,
         List<(string Label, string Value)> fields,
         List<(string Description, string Qty)> items) =>
         Document.Create(doc =>
@@ -222,8 +208,7 @@ public class GatePassPrintService : IGatePassPrintService
 
                 page.Content().Column(col =>
                 {
-                    col.Item().AlignCenter().Text(company).Bold().FontSize(10);
-                    col.Item().AlignCenter().Text(title).Bold().FontSize(9);
+                    col.PosCompanyHeader(company, title, PosWidthPoints);
                     col.Item().AlignCenter().Text(number).FontSize(9);
                     col.Item().PaddingVertical(3).LineHorizontal(0.5f);
 
@@ -246,8 +231,7 @@ public class GatePassPrintService : IGatePassPrintService
 
                     col.Item().PaddingVertical(3).LineHorizontal(0.5f);
                     col.Item().PaddingTop(18).Text("Signature: ______________").FontSize(8);
-                    col.Item().PaddingTop(6).AlignCenter()
-                        .Text(DateTime.Now.ToString("yyyy-MM-dd HH:mm")).FontSize(7);
+                    col.PosCompanyFooter(company);
                 });
             });
         }).GeneratePdf();

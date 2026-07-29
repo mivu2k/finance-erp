@@ -38,6 +38,13 @@ public class VoucherLine : BaseEntity
     public ThirdParty? ThirdParty { get; set; }
     public string? AttachmentPath { get; set; }
     public string? AttachmentName { get; set; }
+    /// <summary>
+    /// Identity user this line's spend belongs to (the requester of a payment request or
+    /// advance, the employee of a payslip line). Set only where the money is traceable to
+    /// one person; a name snapshot rides along because identity lives in another database.
+    /// </summary>
+    public string? PersonId { get; set; }
+    public string? PersonName { get; set; }
     public int LineNo { get; set; }
     /// <summary>Bank reconciliation: line matched against a bank/cash statement.</summary>
     public bool IsReconciled { get; set; }

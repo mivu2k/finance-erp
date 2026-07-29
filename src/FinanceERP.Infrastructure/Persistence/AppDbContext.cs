@@ -75,6 +75,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUserSe
         {
             e.Property(x => x.Debit).HasPrecision(18, 2);
             e.Property(x => x.Credit).HasPrecision(18, 2);
+            // Bounded so the per-person ledger filter can use an index rather than scan a longtext.
+            e.Property(x => x.PersonId).HasMaxLength(64);
+            e.Property(x => x.PersonName).HasMaxLength(256);
+            e.HasIndex(x => x.PersonId);
             e.HasOne(x => x.Voucher).WithMany(x => x.Lines)
                 .HasForeignKey(x => x.VoucherId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Account).WithMany()

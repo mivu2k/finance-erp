@@ -11,6 +11,8 @@ public class ReportFilter
     public int? CostCenterId { get; set; }
     public int? ProjectId { get; set; }
     public int? ThirdPartyId { get; set; }
+    /// <summary>Identity user id — narrows to spend traceable to one person.</summary>
+    public string? PersonId { get; set; }
     public FinanceERP.Domain.Enums.VoucherType? VoucherType { get; set; }
     public FinanceERP.Domain.Enums.VoucherStatus? VoucherStatus { get; set; }
     public string? Search { get; set; }
@@ -21,7 +23,7 @@ public class ReportFilter
 public record LedgerRowDto(
     DateOnly Date, string VoucherNo, int VoucherId, string AccountCode, string AccountName,
     string? Description, decimal Debit, decimal Credit, decimal RunningBalance,
-    string? CostCenter, string? Department, string? Project);
+    string? CostCenter, string? Department, string? Project, string? Person = null);
 
 public record TrialBalanceRowDto(string Code, string Name, string Type, decimal Debit, decimal Credit);
 

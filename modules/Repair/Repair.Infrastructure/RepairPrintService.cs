@@ -1,3 +1,5 @@
+using ErpPlatform.Shared.Kernel;
+using ErpPlatform.Shared.Printing;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
@@ -16,24 +18,26 @@ public enum PrintSize
 
 /// <summary>
 /// Every printable document in the repair flow. Each one carries a Code 128
-/// barcode of its own number, so any piece of paper in the workshop can be
-/// scanned straight back to its record.
+/// barcode <em>and</em> a QR code of its own number, so any piece of paper in the
+/// workshop can be scanned straight back to its record — bars for the bench
+/// scanner, the square for a phone. A collective intake gets both for the intake
+/// itself and again for every device on it.
 /// </summary>
 public interface IRepairPrintService
 {
     /// <summary>Handed to the customer when the device is booked in.</summary>
-    byte[] IntakeReceipt(Intake intake, PrintSize size, string companyName);
+    byte[] IntakeReceipt(Intake intake, PrintSize size, CompanyBranding company);
     /// <summary>Small adhesive label for the device itself.</summary>
-    byte[] DeviceLabels(Intake intake, string companyName);
-    byte[] JobCard(RepairJob job, string companyName);
+    byte[] DeviceLabels(Intake intake, CompanyBranding company);
+    byte[] JobCard(RepairJob job, CompanyBranding company);
     /// <summary>Single device label, reprinted from the job.</summary>
-    byte[] JobLabel(RepairJob job, string companyName);
-    byte[] Quotation(Quotation quotation, string companyName);
-    byte[] Invoice(SalesOrder order, PrintSize size, string companyName);
+    byte[] JobLabel(RepairJob job, CompanyBranding company);
+    byte[] Quotation(Quotation quotation, CompanyBranding company);
+    byte[] Invoice(SalesOrder order, PrintSize size, CompanyBranding company);
     /// <summary>Signed on handover — the workshop's proof the device left.</summary>
-    byte[] DeliveryNote(RepairJob job, PrintSize size, string companyName);
+    byte[] DeliveryNote(RepairJob job, PrintSize size, CompanyBranding company);
     /// <summary>Goods received note for a parts purchase.</summary>
-    byte[] PurchaseNote(PartPurchase purchase, string companyName);
+    byte[] PurchaseNote(PartPurchase purchase, CompanyBranding company);
 }
 
 public class RepairPrintService : IRepairPrintService
@@ -41,12 +45,13 @@ public class RepairPrintService : IRepairPrintService
     static RepairPrintService() => QuestPDF.Settings.License = LicenseType.Community;
 
     private const float PosWidthMm = 80f;
+    private const float PosWidthPoints = PosWidthMm * 72f / 25.4f;
 
     // --- receiving ---
 
-    public byte[] IntakeReceipt(Intake intake, PrintSize size, string companyName) =>
+    public byte[] IntakeReceipt(Intake intake, PrintSize size, CompanyBranding company) =>
         size == PrintSize.Pos
-            ? PosDocument(companyName, "INTAKE RECEIPT", intake.IntakeNumber, col =>
+            ? PosDocument(company, "INTAKE RECEIPT", intake.IntakeNumber, col =>
             {
                 PosFields(col,
                 [
@@ -69,13 +74,16 @@ public class RepairPrintService : IRepairPrintService
                     col.Item().Text(job.IssueDescription).FontSize(7);
                     col.Item().PaddingTop(2).AlignCenter()
                         .Element(c => c.BarcodeFixed(job.JobNumber, 0.9f, 22));
+                    col.Item().PaddingTop(2).AlignCenter()
+                        .Element(c => c.QrCode(job.JobNumber, 52));
+                    col.Item().AlignCenter().Text(job.JobNumber).FontSize(7);
                 }
 
                 PosRule(col);
                 col.Item().Text("Please bring this receipt when collecting.").FontSize(7).Italic();
                 col.Item().PaddingTop(14).Text("Customer signature: ____________").FontSize(7);
             })
-            : A4Document(companyName, "INTAKE RECEIPT", intake.IntakeNumber, page =>
+            : A4Document(company, "INTAKE RECEIPT", intake.IntakeNumber, page =>
             {
                 page.Content().PaddingVertical(10).Column(col =>
                 {
@@ -112,6 +120,8 @@ public class RepairPrintService : IRepairPrintService
 
                             row.ConstantItem(150).AlignMiddle()
                                 .Element(c => c.Barcode(job.JobNumber, 32));
+                            row.ConstantItem(56).PaddingLeft(6).AlignMiddle()
+                                .Element(c => c.QrCode(job.JobNumber, 50));
                         });
                     }
 
@@ -126,19 +136,19 @@ public class RepairPrintService : IRepairPrintService
                 });
             });
 
-    public byte[] DeviceLabels(Intake intake, string companyName) =>
+    public byte[] DeviceLabels(Intake intake, CompanyBranding company) =>
         Document.Create(doc =>
         {
             // One label per device, on a 62mm roll — the usual label-printer size.
             foreach (var job in intake.Jobs)
-                doc.Page(page => Label(page, job, intake, companyName));
+                doc.Page(page => Label(page, job, intake, company));
         }).GeneratePdf();
 
-    public byte[] JobLabel(RepairJob job, string companyName) =>
-        Document.Create(doc => doc.Page(page => Label(page, job, job.Intake, companyName)))
+    public byte[] JobLabel(RepairJob job, CompanyBranding company) =>
+        Document.Create(doc => doc.Page(page => Label(page, job, job.Intake, company)))
             .GeneratePdf();
 
-    private static void Label(PageDescriptor page, RepairJob job, Intake? intake, string company)
+    private static void Label(PageDescriptor page, RepairJob job, Intake? intake, CompanyBranding company)
     {
         page.ContinuousSize(62, Unit.Millimetre);
         page.Margin(3, Unit.Millimetre);
@@ -148,14 +158,31 @@ public class RepairPrintService : IRepairPrintService
         {
             col.Item().Row(r =>
             {
-                r.RelativeItem().Text(company).Bold().FontSize(8);
+                r.RelativeItem().Row(brand =>
+                {
+                    // A label is only 62mm wide, so the logo gets a strip rather
+                    // than the full letterhead block.
+                    if (company.HasLogo)
+                        brand.ConstantItem(34).PaddingRight(3).AlignMiddle()
+                            .MaxHeight(12).Image(company.Logo!).FitArea();
+                    brand.RelativeItem().AlignMiddle()
+                        .Text(company.Name).Bold().FontSize(8);
+                });
                 r.ConstantItem(60).AlignRight()
                     .Text(job.Priority == JobPriority.Urgent ? "URGENT" : "")
                     .Bold().FontSize(8).FontColor(Colors.Red.Darken2);
             });
 
-            col.Item().PaddingTop(2).AlignCenter()
-                .Element(c => c.BarcodeFixed(job.JobNumber, 1.0f, 26));
+            // The stretching renderer, not BarcodeFixed: a 62mm roll leaves ~159pt,
+            // and a fixed-width Code 128 plus a QR does not fit in that.
+            col.Item().PaddingTop(2).Row(r =>
+            {
+                r.RelativeItem().AlignMiddle()
+                    .Element(c => c.Barcode(job.JobNumber, 26, showText: false));
+                r.ConstantItem(44).PaddingLeft(4).AlignMiddle()
+                    .Element(c => c.QrCode(job.JobNumber, 40));
+            });
+            col.Item().AlignCenter().Text(job.JobNumber).FontSize(7).FontFamily(Fonts.Consolas);
 
             col.Item().PaddingTop(2).Text(job.DeviceName).SemiBold().FontSize(8);
             col.Item().Text($"{job.Brand} {job.Model}".Trim());
@@ -173,8 +200,8 @@ public class RepairPrintService : IRepairPrintService
 
     // --- workshop ---
 
-    public byte[] JobCard(RepairJob job, string companyName) =>
-        A4Document(companyName, "JOB CARD", job.JobNumber, page =>
+    public byte[] JobCard(RepairJob job, CompanyBranding company) =>
+        A4Document(company, "JOB CARD", job.JobNumber, page =>
         {
             page.Content().PaddingVertical(10).Column(col =>
             {
@@ -221,6 +248,46 @@ public class RepairPrintService : IRepairPrintService
                         col.Item().Text($"Work performed: {d.WorkPerformed}").FontSize(9);
                 }
 
+                if (job.WorkItems.Count > 0)
+                {
+                    col.Item().PaddingTop(12).Text("Parts fitted & labour").SemiBold();
+                    col.Item().PaddingTop(4).Table(table =>
+                    {
+                        table.ColumnsDefinition(c =>
+                        {
+                            c.ConstantColumn(52);
+                            c.RelativeColumn();
+                            c.ConstantColumn(45);
+                            c.ConstantColumn(62);
+                            c.ConstantColumn(68);
+                        });
+
+                        foreach (var header in new[] { "Kind", "Description", "Qty", "Unit", "Total" })
+                            table.Cell().BorderBottom(0.8f).PaddingVertical(3)
+                                .AlignRight().Text(header).SemiBold().FontSize(9);
+
+                        foreach (var w in job.WorkItems)
+                        {
+                            table.Cell().PaddingVertical(2).Text(w.Kind.ToString()).FontSize(9);
+                            table.Cell().PaddingVertical(2)
+                                .Text(w.Billable ? w.Description : $"{w.Description} (not billed)")
+                                .FontSize(9);
+                            table.Cell().PaddingVertical(2).AlignRight()
+                                .Text(w.Quantity.ToString("N2")).FontSize(9);
+                            table.Cell().PaddingVertical(2).AlignRight()
+                                .Text(w.UnitPrice.ToString("N2")).FontSize(9);
+                            table.Cell().PaddingVertical(2).AlignRight()
+                                .Text(w.Billable ? w.LineTotal.ToString("N2") : "-").FontSize(9);
+                        }
+
+                        table.Cell().ColumnSpan(4).BorderTop(0.8f).PaddingTop(3)
+                            .AlignRight().Text("Billable total").SemiBold().FontSize(9);
+                        table.Cell().BorderTop(0.8f).PaddingTop(3).AlignRight()
+                            .Text(job.WorkItems.Where(w => w.Billable).Sum(w => w.LineTotal).ToString("N2"))
+                            .SemiBold().FontSize(9);
+                    });
+                }
+
                 // Blank ruled space for the bench to write on.
                 col.Item().PaddingTop(12).Text("Work log").SemiBold();
                 for (var i = 0; i < 6; i++)
@@ -233,8 +300,8 @@ public class RepairPrintService : IRepairPrintService
 
     // --- commercial ---
 
-    public byte[] Quotation(Quotation q, string companyName) =>
-        A4Document(companyName, "QUOTATION", q.QuotationNumber, page =>
+    public byte[] Quotation(Quotation q, CompanyBranding company) =>
+        A4Document(company, "QUOTATION", q.QuotationNumber, page =>
         {
             page.Content().PaddingVertical(10).Column(col =>
             {
@@ -297,9 +364,9 @@ public class RepairPrintService : IRepairPrintService
             });
         });
 
-    public byte[] Invoice(SalesOrder order, PrintSize size, string companyName) =>
+    public byte[] Invoice(SalesOrder order, PrintSize size, CompanyBranding company) =>
         size == PrintSize.Pos
-            ? PosDocument(companyName, "INVOICE", order.OrderNumber, col =>
+            ? PosDocument(company, "INVOICE", order.OrderNumber, col =>
             {
                 PosFields(col,
                 [
@@ -328,7 +395,7 @@ public class RepairPrintService : IRepairPrintService
                 PosRule(col);
                 col.Item().AlignCenter().Text("Thank you for your business").FontSize(7).Italic();
             })
-            : A4Document(companyName, "INVOICE", order.OrderNumber, page =>
+            : A4Document(company, "INVOICE", order.OrderNumber, page =>
             {
                 page.Content().PaddingVertical(10).Column(col =>
                 {
@@ -392,15 +459,15 @@ public class RepairPrintService : IRepairPrintService
                     }
 
                     col.Item().PaddingTop(40).Element(c =>
-                        Signatures(c, ["Received by", $"For {companyName}"]));
+                        Signatures(c, ["Received by", $"For {company.Name}"]));
                 });
             });
 
     // --- delivering ---
 
-    public byte[] DeliveryNote(RepairJob job, PrintSize size, string companyName) =>
+    public byte[] DeliveryNote(RepairJob job, PrintSize size, CompanyBranding company) =>
         size == PrintSize.Pos
-            ? PosDocument(companyName, "DELIVERY NOTE", job.JobNumber, col =>
+            ? PosDocument(company, "DELIVERY NOTE", job.JobNumber, col =>
             {
                 PosFields(col,
                 [
@@ -425,7 +492,7 @@ public class RepairPrintService : IRepairPrintService
                 col.Item().Text("Received in working order and complete.").FontSize(7).Italic();
                 col.Item().PaddingTop(16).Text("Signature: ______________").FontSize(7);
             })
-            : A4Document(companyName, "DELIVERY NOTE", job.JobNumber, page =>
+            : A4Document(company, "DELIVERY NOTE", job.JobNumber, page =>
             {
                 page.Content().PaddingVertical(10).Column(col =>
                 {
@@ -482,8 +549,8 @@ public class RepairPrintService : IRepairPrintService
 
     // --- purchasing ---
 
-    public byte[] PurchaseNote(PartPurchase purchase, string companyName) =>
-        A4Document(companyName, "GOODS RECEIVED NOTE", purchase.PurchaseNumber, page =>
+    public byte[] PurchaseNote(PartPurchase purchase, CompanyBranding company) =>
+        A4Document(company, "GOODS RECEIVED NOTE", purchase.PurchaseNumber, page =>
         {
             page.Content().PaddingVertical(10).Column(col =>
             {
@@ -553,47 +620,32 @@ public class RepairPrintService : IRepairPrintService
         "proceeds.";
 
     private static byte[] A4Document(
-        string company, string title, string number, Action<PageDescriptor> body) =>
+        CompanyBranding company, string title, string number, Action<PageDescriptor> body) =>
         Document.Create(doc => doc.Page(page =>
         {
             page.Size(PageSizes.A4);
             page.Margin(1.4f, Unit.Centimetre);
             page.DefaultTextStyle(t => t.FontSize(10));
 
-            page.Header().Column(col =>
+            page.Header().CompanyHeader(company, title, right => right.Row(r =>
             {
-                col.Item().Row(r =>
-                {
-                    r.RelativeItem().Column(c =>
-                    {
-                        c.Item().Text(company).FontSize(15).Bold();
-                        c.Item().Text(title).FontSize(12).SemiBold();
-                    });
-                    // Stretching renderer, not the fixed-width one: a longer number
-                    // must scale down to fit rather than overflow the header.
-                    r.ConstantItem(170).AlignRight().Element(c => c.Barcode(number, 32));
-                });
-                col.Item().PaddingTop(6).LineHorizontal(1);
-            });
+                // Stretching renderer, not the fixed-width one: a longer number
+                // must scale down to fit rather than overflow the header.
+                r.ConstantItem(160).AlignRight().AlignMiddle()
+                    .Element(c => c.Barcode(number, 32));
+                // The QR carries the same number: a bench scanner reads the bars,
+                // a phone reads the square, and both land on the same record.
+                r.ConstantItem(58).PaddingLeft(8).AlignRight()
+                    .Element(c => c.QrCode(number, 50));
+            }));
 
             body(page);
 
-            page.Footer().Row(r =>
-            {
-                r.RelativeItem().Text($"{number} · printed {DateTime.Now:yyyy-MM-dd HH:mm}")
-                    .FontSize(7).FontColor(Colors.Grey.Darken1);
-                r.ConstantItem(100).AlignRight().Text(t =>
-                {
-                    t.Span("Page ").FontSize(7);
-                    t.CurrentPageNumber().FontSize(7);
-                    t.Span(" / ").FontSize(7);
-                    t.TotalPages().FontSize(7);
-                });
-            });
+            page.Footer().CompanyFooter(company, number);
         })).GeneratePdf();
 
     private static byte[] PosDocument(
-        string company, string title, string number, Action<ColumnDescriptor> body) =>
+        CompanyBranding company, string title, string number, Action<ColumnDescriptor> body) =>
         Document.Create(doc => doc.Page(page =>
         {
             page.ContinuousSize(PosWidthMm, Unit.Millimetre);
@@ -602,16 +654,15 @@ public class RepairPrintService : IRepairPrintService
 
             page.Content().Column(col =>
             {
-                col.Item().AlignCenter().Text(company).Bold().FontSize(10);
-                col.Item().AlignCenter().Text(title).Bold().FontSize(9);
+                col.PosCompanyHeader(company, title, PosWidthPoints);
                 col.Item().PaddingTop(2).AlignCenter()
                     .Element(c => c.BarcodeFixed(number, 0.9f, 24));
+                col.Item().PaddingTop(3).AlignCenter().Element(c => c.QrCode(number, 62));
                 PosRule(col);
 
                 body(col);
 
-                col.Item().PaddingTop(6).AlignCenter()
-                    .Text(DateTime.Now.ToString("yyyy-MM-dd HH:mm")).FontSize(7);
+                col.PosCompanyFooter(company);
             });
         })).GeneratePdf();
 

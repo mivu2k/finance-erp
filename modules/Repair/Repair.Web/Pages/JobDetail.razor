@@ -239,6 +239,129 @@
             }
         </MudPaper>
     </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <div class="d-flex align-center mb-3 flex-wrap gap-2">
+                <MudText Typo="Typo.subtitle1">Parts fitted &amp; labour</MudText>
+                <MudSpacer />
+                @if (_editWork)
+                {
+                    <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                               OnClick="@(() => _work.Add(new JobWorkItem()))">Add line</MudButton>
+                    <MudButton Size="Size.Small" OnClick="CancelWork">Cancel</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                               OnClick="SaveWork">Save</MudButton>
+                }
+                else
+                {
+                    <AuthorizeView Policy="@RepairPermissions.JobsDiagnose" Context="we">
+                        @if (_canEdit)
+                        {
+                            <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Edit"
+                                       OnClick="BeginWork">Edit</MudButton>
+                        }
+                    </AuthorizeView>
+                    <AuthorizeView Policy="@RepairPermissions.QuotationsManage" Context="qb">
+                        <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Secondary"
+                                   StartIcon="@Icons.Material.Filled.RequestQuote"
+                                   Disabled="@(!_job.WorkItems.Any(w => w.Billable))"
+                                   Href="@($"/repair/quotations/new?jobId={_job.Id}")">
+                            Quote this job
+                        </MudButton>
+                    </AuthorizeView>
+                }
+            </div>
+
+            @if (_editWork)
+            {
+                <MudSimpleTable Dense="true">
+                    <thead>
+                        <tr>
+                            <th style="width:110px">Kind</th><th style="width:180px">Part</th>
+                            <th>Description</th>
+                            <th style="width:90px">Qty</th><th style="width:120px">Unit price</th>
+                            <th style="width:90px">Billable</th><th style="width:48px"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var w in _work)
+                        {
+                            var line = w;
+                            <tr>
+                                <td>
+                                    <MudSelect T="JobWorkItemKind" @bind-Value="line.Kind" Dense="true" Margin="Margin.Dense">
+                                        @foreach (var k in Enum.GetValues<JobWorkItemKind>())
+                                        {
+                                            <MudSelectItem T="JobWorkItemKind" Value="@k">@k</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                </td>
+                                <td>
+                                    <MudSelect T="int?" Value="@line.PartId" Clearable="true" Dense="true" Margin="Margin.Dense"
+                                               ValueChanged="@(v => PickPart(line, v))">
+                                        @foreach (var p in _parts)
+                                        {
+                                            <MudSelectItem T="int?" Value="@p.Id">@p.Name</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                </td>
+                                <td><MudTextField @bind-Value="line.Description" Margin="Margin.Dense" /></td>
+                                <td><MudNumericField T="decimal" @bind-Value="line.Quantity" Min="0" Format="N2" Margin="Margin.Dense" /></td>
+                                <td><MudNumericField T="decimal" @bind-Value="line.UnitPrice" Min="0" Format="N2" Margin="Margin.Dense" /></td>
+                                <td><MudCheckBox T="bool" @bind-Value="line.Billable" Dense="true" /></td>
+                                <td>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                                   Color="Color.Error" OnClick="@(() => _work.Remove(line))" />
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">
+                    Non-billable lines stay on the job card but are left out of any quotation.
+                </MudText>
+            }
+            else if (_job.WorkItems.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    Nothing recorded yet. Add the parts fitted and the labour spent here — a
+                    quotation for this job, or for the whole intake, is built from these lines.
+                </MudText>
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Hover="true">
+                    <thead>
+                        <tr>
+                            <th>Kind</th><th>Description</th>
+                            <th style="text-align:right">Qty</th>
+                            <th style="text-align:right">Unit</th>
+                            <th style="text-align:right">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var w in _job.WorkItems)
+                        {
+                            <tr style="@(w.Billable ? "" : "opacity:.55")">
+                                <td>@w.Kind</td>
+                                <td>@w.Description @(w.Billable ? "" : "(not billed)")</td>
+                                <td style="text-align:right">@w.Quantity.ToString("N2")</td>
+                                <td style="text-align:right">@w.UnitPrice.ToString("N2")</td>
+                                <td style="text-align:right">@w.LineTotal.ToString("N2")</td>
+                            </tr>
+                        }
+                        <tr>
+                            <td colspan="4" style="text-align:right"><b>Billable total</b></td>
+                            <td style="text-align:right">
+                                <b>@_job.WorkItems.Where(w => w.Billable).Sum(w => w.LineTotal).ToString("N2")</b>
+                            </td>
+                        </tr>
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </MudPaper>
+    </MudItem>
 </MudGrid>
 
 @if (_diagnosisOpen)
@@ -344,6 +467,9 @@
     private bool _diagnosisOpen;
     private Diagnosis _diagnosis = new();
 
+    private bool _editWork;
+    private List<JobWorkItem> _work = [];
+
     private bool _assignOpen;
     private string? _assignTechnicianId;
 
@@ -357,6 +483,50 @@
     private string? _deliveryNote;
 
     private bool _canEdit => _job.Status is not (JobStatus.Delivered or JobStatus.Cancelled);
+
+    private void BeginWork()
+    {
+        _work = _job.WorkItems.Select(w => new JobWorkItem
+        {
+            Kind = w.Kind, PartId = w.PartId, Description = w.Description,
+            Quantity = w.Quantity, UnitPrice = w.UnitPrice, Billable = w.Billable, Notes = w.Notes
+        }).ToList();
+        if (_work.Count == 0) _work.Add(new JobWorkItem());
+        _editWork = true;
+    }
+
+    private void CancelWork()
+    {
+        _editWork = false;
+        _work = [];
+    }
+
+    /// <summary>Picking a catalog part fills the description and the selling price in.</summary>
+    private void PickPart(JobWorkItem line, int? partId)
+    {
+        line.PartId = partId;
+        if (_parts.FirstOrDefault(p => p.Id == partId) is not { } part) return;
+        line.Kind = JobWorkItemKind.Part;
+        if (string.IsNullOrWhiteSpace(line.Description)) line.Description = part.Name;
+        if (line.UnitPrice == 0) line.UnitPrice = part.Price;
+    }
+
+    private async Task SaveWork()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IRepairJobService>()
+                .SetWorkItemsAsync(_job.Id, _work.Where(w => !string.IsNullOrWhiteSpace(w.Description)));
+            _editWork = false;
+            await LoadAsync();
+            Snackbar.Add("Parts and labour saved.", Severity.Success);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
 
     protected override async Task OnParametersSetAsync() => await LoadAsync();
 

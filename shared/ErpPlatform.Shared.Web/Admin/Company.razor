@@ -1,0 +1,202 @@
+@page "/admin/company"
+@attribute [Authorize(Policy = PlatformPermissions.CompanyManage)]
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>Company Profile</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h5">Company Profile</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save"
+               Disabled="@(_busy || string.IsNullOrWhiteSpace(_profile.Name))">Save</MudButton>
+</div>
+
+<MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+    This is the letterhead for every printed document in all four apps — job cards,
+    invoices, gate passes, vouchers, payslips and report packs.
+</MudAlert>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Identity</MudText>
+            <MudTextField @bind-Value="_profile.Name" Label="Company name *" Class="mb-2"
+                          HelperText="Heads every document. Required." />
+            <MudTextField @bind-Value="_profile.Tagline" Label="Tagline" Class="mb-2"
+                          HelperText="Optional line under the name." />
+            <MudTextField @bind-Value="_profile.TaxNumber" Label="Tax / NTN number" Class="mb-2" />
+
+            <MudText Typo="Typo.subtitle1" Class="mt-4 mb-3">Address</MudText>
+            <MudTextField @bind-Value="_profile.AddressLine1" Label="Address line 1" Class="mb-2" />
+            <MudTextField @bind-Value="_profile.AddressLine2" Label="Address line 2" Class="mb-2" />
+            <MudGrid Spacing="2">
+                <MudItem xs="6"><MudTextField @bind-Value="_profile.City" Label="City" /></MudItem>
+                <MudItem xs="6"><MudTextField @bind-Value="_profile.Country" Label="Country" /></MudItem>
+            </MudGrid>
+
+            <MudText Typo="Typo.subtitle1" Class="mt-4 mb-3">Contact</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="4"><MudTextField @bind-Value="_profile.Phone" Label="Phone" /></MudItem>
+                <MudItem xs="12" sm="4"><MudTextField @bind-Value="_profile.Email" Label="Email" /></MudItem>
+                <MudItem xs="12" sm="4"><MudTextField @bind-Value="_profile.Website" Label="Website" /></MudItem>
+            </MudGrid>
+
+            <MudText Typo="Typo.subtitle1" Class="mt-4 mb-3">Footer</MudText>
+            <MudTextField @bind-Value="_profile.FooterNote" Label="Footer note" Lines="3"
+                          HelperText="Small print at the foot of every page — bank details, a disclaimer." />
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Logo</MudText>
+
+            @if (_logoPreview is not null)
+            {
+                <div class="mb-3 pa-3 d-flex justify-center"
+                     style="border:1px solid var(--mud-palette-divider);border-radius:4px;background:#fff">
+                    <img src="@_logoPreview" alt="Company logo"
+                         style="max-height:90px;max-width:100%;object-fit:contain" />
+                </div>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                    No logo set — documents print the company name on its own.
+                </MudText>
+            }
+
+            <MudFileUpload T="IBrowserFile" FilesChanged="UploadLogo" Accept=".png,.jpg,.jpeg,.webp">
+                <ActivatorContent>
+                    <MudButton Variant="Variant.Outlined"
+                               StartIcon="@Icons.Material.Filled.CloudUpload">Upload logo</MudButton>
+                </ActivatorContent>
+            </MudFileUpload>
+
+            @if (_logoPreview is not null)
+            {
+                <MudButton Class="mt-2" Color="Color.Error" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Delete" OnClick="RemoveLogo">Remove logo</MudButton>
+            }
+
+            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-3">
+                PNG, JPEG or WebP up to @(MaxLogoBytes / 1024) KB. A wide transparent PNG
+                reads best — it is drawn into a @LogoBoxHint box on A4 and scaled down
+                further on thermal slips and device labels.
+            </MudText>
+
+            @if (_profile.ModifiedAtUtc is { } when)
+            {
+                <MudDivider Class="my-3" />
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    Last changed @when.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                    @(_profile.ModifiedBy is null ? "" : $" by {_profile.ModifiedBy}")
+                </MudText>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    /// <summary>Big enough for a detailed wordmark, small enough to sit in every PDF.</summary>
+    private const int MaxLogoBytes = 512 * 1024;
+    private const string LogoBoxHint = "130 × 46 pt";
+
+    private static readonly string[] AllowedTypes = ["image/png", "image/jpeg", "image/webp"];
+
+    private CompanyProfile _profile = new();
+    private string? _logoPreview;
+    private bool _busy;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var stored = await scope.ServiceProvider.GetRequiredService<ICompanyProfileService>().GetAsync();
+
+        // The service hands back a cached, shared instance — edit a copy so an
+        // abandoned edit can't leak into what everyone else is printing.
+        _profile = new CompanyProfile
+        {
+            Id = stored.Id, Name = stored.Name, Tagline = stored.Tagline,
+            AddressLine1 = stored.AddressLine1, AddressLine2 = stored.AddressLine2,
+            City = stored.City, Country = stored.Country,
+            Phone = stored.Phone, Email = stored.Email, Website = stored.Website,
+            TaxNumber = stored.TaxNumber, FooterNote = stored.FooterNote,
+            ModifiedAtUtc = stored.ModifiedAtUtc, ModifiedBy = stored.ModifiedBy
+        };
+
+        _logoPreview = stored.HasLogo
+            ? $"data:{stored.LogoContentType};base64,{Convert.ToBase64String(stored.Logo!)}"
+            : null;
+    }
+
+    private async Task<string?> ActorAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        return auth.User.Identity?.Name;
+    }
+
+    private async Task Save()
+    {
+        _busy = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<ICompanyProfileService>()
+                .SaveAsync(_profile, await ActorAsync());
+            await LoadAsync();
+            Snackbar.Add("Company profile saved. New documents use it immediately.", Severity.Success);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task UploadLogo(IBrowserFile? file)
+    {
+        if (file is null) return;
+
+        if (!AllowedTypes.Contains(file.ContentType))
+        {
+            Snackbar.Add("The logo must be a PNG, JPEG or WebP image.", Severity.Error);
+            return;
+        }
+        if (file.Size > MaxLogoBytes)
+        {
+            Snackbar.Add($"That logo is {file.Size / 1024} KB — the limit is {MaxLogoBytes / 1024} KB.",
+                Severity.Error);
+            return;
+        }
+
+        using var buffer = new MemoryStream();
+        await file.OpenReadStream(MaxLogoBytes).CopyToAsync(buffer);
+        var bytes = buffer.ToArray();
+
+        using var scope = ScopeFactory.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<ICompanyProfileService>()
+            .SetLogoAsync(bytes, file.ContentType, file.Name, await ActorAsync());
+
+        await LoadAsync();
+        Snackbar.Add("Logo updated.", Severity.Success);
+    }
+
+    private async Task RemoveLogo()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<ICompanyProfileService>()
+            .SetLogoAsync(null, null, null, await ActorAsync());
+
+        await LoadAsync();
+        Snackbar.Add("Logo removed.", Severity.Info);
+    }
+}

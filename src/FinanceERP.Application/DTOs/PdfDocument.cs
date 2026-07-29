@@ -1,3 +1,5 @@
+using ErpPlatform.Shared.Kernel;
+
 namespace FinanceERP.Application.DTOs;
 
 /// <summary>
@@ -7,7 +9,8 @@ namespace FinanceERP.Application.DTOs;
 /// </summary>
 public class PdfDocument
 {
-    public string CompanyName { get; set; } = "";
+    /// <summary>Letterhead — logo, address, footer note. Blank until an admin sets it.</summary>
+    public CompanyBranding Company { get; set; } = CompanyBranding.Empty;
     /// <summary>Document class, e.g. "Payment Voucher", "Payslip".</summary>
     public string Title { get; set; } = "";
     /// <summary>The record's own reference, e.g. "PV-2026-00042".</summary>

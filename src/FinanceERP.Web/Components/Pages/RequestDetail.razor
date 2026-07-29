@@ -440,6 +440,12 @@ else
         _postableAccounts = db.Accounts.Where(a => a.IsPostable && a.IsActive
                 && (a.Type == AccountType.Expense || a.Type == AccountType.Asset))
             .OrderBy(a => a.Code).ToList();
+        // Employee and director spend have their own expense heads; only offer the
+        // side this request belongs to so the two can never be booked together.
+        var otherSide = _request?.IsDirectorRequest == true ? "52" : "54";
+        _postableAccounts = _postableAccounts
+            .Where(a => a.Type != AccountType.Expense || !a.Code.StartsWith(otherSide))
+            .ToList();
         _categories = _postableAccounts.Where(a => a.Type == AccountType.Expense)
             .Select(a => a.Name).OrderBy(n => n).ToList();
 

@@ -111,7 +111,7 @@ public class AdvanceService(
             [
                 (advAccount.Id, a.Amount, 0m, $"Advance to {a.EmployeeName}"),
                 (payFromAccountId, 0m, a.Amount, $"Advance {a.AdvanceNo}")
-            ]);
+            ], a.EmployeeId, a.EmployeeName);
 
         a.Status = AdvanceStatus.Disbursed;
         a.DisbursementVoucherId = voucher.Id;
@@ -280,7 +280,7 @@ public class AdvanceService(
             [
                 (receiveIntoAccountId, amount, 0m, $"Repayment {a.AdvanceNo} #{inst.Number}"),
                 (advAccount.Id, 0m, amount, $"Repayment {a.AdvanceNo} #{inst.Number}")
-            ]);
+            ], a.EmployeeId, a.EmployeeName);
 
         inst.PaidAmount += amount;
         inst.PaidDate = date;

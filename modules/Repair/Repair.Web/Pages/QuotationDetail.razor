@@ -246,6 +246,12 @@
 @code {
     [Parameter] public int? Id { get; set; }
 
+    /// <summary>Build a new quotation from one job's recorded parts and labour.</summary>
+    [SupplyParameterFromQuery(Name = "jobId")] public int? FromJobId { get; set; }
+
+    /// <summary>The collective case — one quotation across every device on an intake.</summary>
+    [SupplyParameterFromQuery(Name = "intakeId")] public int? FromIntakeId { get; set; }
+
     private Quotation _q = new() { Date = DateOnly.FromDateTime(DateTime.UtcNow) };
     private List<Part> _parts = [];
     private RepairJob? _job;
@@ -267,6 +273,28 @@
                  ?? throw new InvalidOperationException("Quotation not found.");
             _job = _q.RepairJob;
             _customer = _q.Customer;
+        }
+        else if (FromJobId is { } jobId || FromIntakeId is { } intakeId)
+        {
+            // Prefilled but unsaved: the preparer still reviews and adjusts prices
+            // before this becomes a document.
+            var quotations = scope.ServiceProvider.GetRequiredService<IQuotationService>();
+            try
+            {
+                _q = FromJobId is { } j
+                    ? await quotations.BuildForJobAsync(j)
+                    : await quotations.BuildForIntakeAsync(FromIntakeId!.Value);
+                _q.Currency = "PKR";
+                _job = _q.RepairJobId is null ? null : _q.RepairJob;
+                _customer = _q.Customer;
+                Snackbar.Add($"{_q.Items.Count} line(s) taken from the workshop record.", Severity.Info);
+            }
+            catch (InvalidOperationException ex)
+            {
+                Snackbar.Add(ex.Message, Severity.Warning);
+                _q = new Quotation { Date = DateOnly.FromDateTime(DateTime.UtcNow), Currency = "PKR" };
+                AddLine();
+            }
         }
         else
         {

@@ -19,6 +19,7 @@ public class ReportService(AppDbContext db) : IReportService
         if (f.CostCenterId is not null) q = q.Where(l => l.CostCenterId == f.CostCenterId);
         if (f.ProjectId is not null) q = q.Where(l => l.ProjectId == f.ProjectId);
         if (f.ThirdPartyId is not null) q = q.Where(l => l.ThirdPartyId == f.ThirdPartyId);
+        if (!string.IsNullOrEmpty(f.PersonId)) q = q.Where(l => l.PersonId == f.PersonId);
         if (f.VoucherType is not null) q = q.Where(l => l.Voucher.Type == f.VoucherType);
         return q;
     }
@@ -33,7 +34,8 @@ public class ReportService(AppDbContext db) : IReportService
                 l.Voucher.Date, l.Voucher.VoucherNo, l.VoucherId,
                 l.Account.Code, AccountName = l.Account.Name,
                 l.Description, l.Debit, l.Credit,
-                CostCenter = l.CostCenter!.Name, Department = l.Department!.Name, Project = l.Project!.Name
+                CostCenter = l.CostCenter!.Name, Department = l.Department!.Name, Project = l.Project!.Name,
+                Person = l.PersonName
             })
             .ToListAsync();
 
@@ -42,7 +44,7 @@ public class ReportService(AppDbContext db) : IReportService
         {
             running += r.Debit - r.Credit;
             return new LedgerRowDto(r.Date, r.VoucherNo, r.VoucherId, r.Code, r.AccountName,
-                r.Description, r.Debit, r.Credit, running, r.CostCenter, r.Department, r.Project);
+                r.Description, r.Debit, r.Credit, running, r.CostCenter, r.Department, r.Project, r.Person);
         }).ToList();
     }
 

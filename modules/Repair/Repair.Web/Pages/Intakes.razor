@@ -52,6 +52,12 @@
                         <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Label"
                                        Title="Device labels"
                                        Href="@($"/repair/print/intake/{i.Id}/labels")" Target="_blank" />
+                        <AuthorizeView Policy="@RepairPermissions.QuotationsManage" Context="q">
+                            <MudIconButton Size="Size.Small" Color="Color.Secondary"
+                                           Icon="@Icons.Material.Filled.RequestQuote"
+                                           Title="Collective quotation for every device on this intake"
+                                           Href="@($"/repair/quotations/new?intakeId={i.Id}")" />
+                        </AuthorizeView>
                     </td>
                 </tr>
             }

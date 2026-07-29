@@ -18,6 +18,20 @@ public interface IQuotationService
     Task DeleteAsync(int id, CancellationToken ct = default);
 
     /// <summary>
+    /// Builds an unsaved quotation for one job from the parts and labour recorded
+    /// against it. Nothing is persisted — the editor opens on the result so the
+    /// preparer can adjust prices before saving.
+    /// </summary>
+    Task<Quotation> BuildForJobAsync(int jobId, CancellationToken ct = default);
+
+    /// <summary>
+    /// The collective case: one quotation covering every device on an intake. Lines
+    /// stay tagged with the job they came from, so the printed estimate and the
+    /// per-device reports still agree on which device cost what.
+    /// </summary>
+    Task<Quotation> BuildForIntakeAsync(int intakeId, CancellationToken ct = default);
+
+    /// <summary>
     /// Recomputes line totals and the header from the items. Public because the
     /// editor previews the arithmetic before anything is saved.
     /// </summary>
@@ -192,6 +206,96 @@ public class QuotationService(RepairDbContext db) : IQuotationService
         db.Quotations.Remove(q);
         await db.SaveChangesAsync(ct);
     }
+
+    public async Task<Quotation> BuildForJobAsync(int jobId, CancellationToken ct = default)
+    {
+        var job = await db.RepairJobs
+                      .Include(j => j.Customer).Include(j => j.Intake)
+                      .Include(j => j.WorkItems).ThenInclude(w => w.Part)
+                      .AsNoTracking()
+                      .FirstOrDefaultAsync(j => j.Id == jobId, ct)
+                  ?? throw new InvalidOperationException("Job not found.");
+
+        var q = new Quotation
+        {
+            RepairJobId = job.Id,
+            IntakeId = job.IntakeId,
+            CustomerId = job.CustomerId,
+            Customer = job.Customer,
+            RepairJob = job,
+            Date = DateOnly.FromDateTime(DateTime.UtcNow),
+            Subject = $"{job.JobNumber} — {DeviceLabel(job)}",
+            Reference = job.Intake.IntakeNumber,
+            Items = LinesFor(job, prefixDevice: false)
+        };
+
+        if (q.Items.Count == 0)
+            throw new InvalidOperationException(
+                $"{job.JobNumber} has no billable parts or labour recorded yet.");
+
+        IQuotationService.Recalculate(q);
+        return q;
+    }
+
+    public async Task<Quotation> BuildForIntakeAsync(int intakeId, CancellationToken ct = default)
+    {
+        var intake = await db.Intakes
+                         .Include(i => i.Customer)
+                         .Include(i => i.Jobs).ThenInclude(j => j.WorkItems).ThenInclude(w => w.Part)
+                         .AsNoTracking()
+                         .FirstOrDefaultAsync(i => i.Id == intakeId, ct)
+                     ?? throw new InvalidOperationException("Intake not found.");
+
+        // Device name is folded into each description because a collective estimate
+        // is read by the customer, who knows their devices, not our job numbers.
+        var items = intake.Jobs
+            .Where(j => j.Status != JobStatus.Cancelled)
+            .OrderBy(j => j.JobNumber)
+            .SelectMany(j => LinesFor(j, prefixDevice: true))
+            .ToList();
+
+        if (items.Count == 0)
+            throw new InvalidOperationException(
+                $"No job on {intake.IntakeNumber} has billable parts or labour recorded yet.");
+
+        var q = new Quotation
+        {
+            IntakeId = intake.Id,
+            CustomerId = intake.CustomerId,
+            Customer = intake.Customer,
+            Date = DateOnly.FromDateTime(DateTime.UtcNow),
+            Subject = $"{intake.IntakeNumber} — {items.Select(i => i.RepairJobId).Distinct().Count()} device(s)",
+            Reference = intake.IntakeNumber,
+            Items = items
+        };
+
+        IQuotationService.Recalculate(q);
+        return q;
+    }
+
+    private static string DeviceLabel(RepairJob job) =>
+        string.Join(' ', new[] { job.Brand, job.DeviceName, job.Model }
+            .Where(s => !string.IsNullOrWhiteSpace(s)));
+
+    /// <summary>
+    /// Non-billable work (goodwill, warranty rework) stays on the job card but is
+    /// deliberately left out of the estimate.
+    /// </summary>
+    private static List<QuotationItem> LinesFor(RepairJob job, bool prefixDevice) =>
+        job.WorkItems
+            .Where(w => w.Billable)
+            .Select(w => new QuotationItem
+            {
+                RepairJobId = job.Id,
+                PartId = w.PartId,
+                ItemType = (QuotationItemType)w.Kind,
+                Description = prefixDevice
+                    ? $"{job.JobNumber} {DeviceLabel(job)} — {w.Description}"
+                    : w.Description,
+                Quantity = w.Quantity,
+                UnitPrice = w.UnitPrice
+            })
+            .ToList();
 
     private async Task<Quotation> Require(int id, CancellationToken ct) =>
         await db.Quotations.Include(q => q.Items).FirstOrDefaultAsync(q => q.Id == id, ct)

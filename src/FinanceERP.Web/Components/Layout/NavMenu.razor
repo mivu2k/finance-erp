@@ -89,6 +89,9 @@
         <AuthorizeView Policy="@PlatformPermissions.RolesManage" Context="r">
             <MudNavLink Href="/admin/roles" Icon="@Icons.Material.Filled.Security">Roles &amp; Permissions</MudNavLink>
         </AuthorizeView>
+        <AuthorizeView Policy="@PlatformPermissions.CompanyManage" Context="co">
+            <MudNavLink Href="/admin/company" Icon="@Icons.Material.Filled.Business">Company Profile</MudNavLink>
+        </AuthorizeView>
             <AuthorizeView Policy="@Permissions.AuditView" Context="au">
                 <MudNavLink Href="/finance/admin/audit" Icon="@Icons.Material.Filled.History">Audit Trail</MudNavLink>
             </AuthorizeView>

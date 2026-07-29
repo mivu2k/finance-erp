@@ -74,6 +74,36 @@ public class RepairJob : AuditableEntity
     public List<JobAccessory> Accessories { get; set; } = [];
     public List<Diagnosis> Diagnoses { get; set; } = [];
     public List<JobPhoto> Photos { get; set; } = [];
+    public List<JobWorkItem> WorkItems { get; set; } = [];
+}
+
+/// <summary>
+/// What was actually fitted or done on one device — a part replaced, an hour of
+/// bench work. This is the priced record the workshop keeps per job, and it is what
+/// a quotation is built from, whether that quotation covers the single job or every
+/// job on a collective intake.
+/// </summary>
+/// <remarks>
+/// Parts and labour share one entity because they only differ by
+/// <see cref="Kind"/> and both become a quotation line unchanged. Non-billable
+/// items (goodwill, warranty rework) stay on the job card but never reach a price.
+/// </remarks>
+public class JobWorkItem : AuditableEntity
+{
+    public int RepairJobId { get; set; }
+    public RepairJob RepairJob { get; set; } = null!;
+
+    public JobWorkItemKind Kind { get; set; } = JobWorkItemKind.Part;
+    /// <summary>Set when the line came off the parts catalog; free-text lines leave it null.</summary>
+    public int? PartId { get; set; }
+    public Part? Part { get; set; }
+
+    public string Description { get; set; } = string.Empty;
+    public decimal Quantity { get; set; } = 1;
+    public decimal UnitPrice { get; set; }
+    public decimal LineTotal { get; set; }
+    public bool Billable { get; set; } = true;
+    public string? Notes { get; set; }
 }
 
 public class JobStatusHistory : BaseEntity
@@ -375,4 +405,10 @@ public enum PhotoType { Before = 0, After = 1, Damage = 2 }
 public enum ApprovalState { Pending = 0, Approved = 1, Rejected = 2 }
 public enum QuotationStatus { Draft = 0, Sent = 1, Pending = 2, Approved = 3, Rejected = 4, Expired = 5 }
 public enum QuotationItemType { Misc = 0, Part = 1, Labor = 2, Service = 3 }
+
+/// <summary>
+/// Deliberately mirrors <see cref="QuotationItemType"/> value for value — a job
+/// work item becomes a quotation line without a lookup table.
+/// </summary>
+public enum JobWorkItemKind { Misc = 0, Part = 1, Labor = 2, Service = 3 }
 public enum PaymentStatus { Unpaid = 0, Partial = 1, Paid = 2 }

@@ -1,3 +1,4 @@
+using ErpPlatform.Shared.Identity;
 using GatePass.Domain;
 using GatePass.Infrastructure;
 using Microsoft.AspNetCore.Builder;
@@ -17,30 +18,27 @@ public static class PrintEndpoints
         var group = app.MapGroup("/gatepass/print");
 
         group.MapGet("/pass/{id:int}/{variant?}", async (
-            int id, string? variant, IGatePassService passes, IGatePassPrintService print) =>
+            int id, string? variant, IGatePassService passes, IGatePassPrintService print, ICompanyProfileService companies) =>
         {
             var pass = await passes.GetAsync(id);
             if (pass is null) return Results.NotFound();
 
-            var pdf = print.GatePass(pass, Parse(variant), CompanyName);
+            var pdf = print.GatePass(pass, Parse(variant), await companies.GetBrandingAsync());
             return Results.File(pdf, "application/pdf", $"{pass.PassNumber}.pdf");
         }).RequireAuthorization(GatePassPermissions.PassesView);
 
         group.MapGet("/demo/{id:int}/{variant?}", async (
-            int id, string? variant, IDemoIssuanceService demos, IGatePassPrintService print) =>
+            int id, string? variant, IDemoIssuanceService demos, IGatePassPrintService print, ICompanyProfileService companies) =>
         {
             var demo = await demos.GetAsync(id);
             if (demo is null) return Results.NotFound();
 
-            var pdf = print.DemoIssuance(demo, Parse(variant), CompanyName);
+            var pdf = print.DemoIssuance(demo, Parse(variant), await companies.GetBrandingAsync());
             return Results.File(pdf, "application/pdf", $"{demo.IssuanceNumber}.pdf");
         }).RequireAuthorization(GatePassPermissions.DemosView);
 
         return app;
     }
-
-    // TODO: read this from the platform settings once they're shared across apps.
-    private const string CompanyName = "MEI";
 
     private static PrintVariant Parse(string? variant) =>
         string.Equals(variant, "pos", StringComparison.OrdinalIgnoreCase)

@@ -46,15 +46,32 @@ apt install -y aspnetcore-runtime-10.0
 
 ## 4. Database
 
+The platform is four apps over five databases: one shared identity database and
+one per app. Create them all — the app migrates each on boot but will not create
+them.
+
 ```bash
 mysql_secure_installation   # set root password, remove test db
 mysql -u root -p <<'SQL'
-CREATE DATABASE finance_erp CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE erp_identity CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE finance_erp  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE erp_repair   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE erp_gatepass CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE erp_hr       CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER 'finance'@'localhost' IDENTIFIED BY 'STRONG_PASSWORD_HERE';
-GRANT ALL PRIVILEGES ON finance_erp.* TO 'finance'@'localhost';
+GRANT ALL PRIVILEGES ON erp_identity.* TO 'finance'@'localhost';
+GRANT ALL PRIVILEGES ON finance_erp.*  TO 'finance'@'localhost';
+GRANT ALL PRIVILEGES ON erp_repair.*   TO 'finance'@'localhost';
+GRANT ALL PRIVILEGES ON erp_gatepass.* TO 'finance'@'localhost';
+GRANT ALL PRIVILEGES ON erp_hr.*       TO 'finance'@'localhost';
 FLUSH PRIVILEGES;
 SQL
 ```
+
+> **Upgrading an install that predates the identity split?** Run
+> `deploy/migrate-identity-out-of-accounts.sql` before starting the new build, or
+> the accounts migration drops the old `AspNet*` tables and takes your users with
+> them. A fresh install needs nothing.
 
 ## 5. Publish and install the app
 
@@ -78,7 +95,11 @@ Configure production settings **outside** the repo — create `/opt/finance-erp/
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Server=localhost;Port=3306;Database=finance_erp;User=finance;Password=STRONG_PASSWORD_HERE;"
+    "IdentityConnection": "Server=localhost;Port=3306;Database=erp_identity;User=finance;Password=STRONG_PASSWORD_HERE;",
+    "AccountsConnection": "Server=localhost;Port=3306;Database=finance_erp;User=finance;Password=STRONG_PASSWORD_HERE;",
+    "RepairConnection":   "Server=localhost;Port=3306;Database=erp_repair;User=finance;Password=STRONG_PASSWORD_HERE;",
+    "GatePassConnection": "Server=localhost;Port=3306;Database=erp_gatepass;User=finance;Password=STRONG_PASSWORD_HERE;",
+    "HrConnection":       "Server=localhost;Port=3306;Database=erp_hr;User=finance;Password=STRONG_PASSWORD_HERE;"
   },
   "Seed": {
     "AdminEmail": "admin@yourcompany.com",
@@ -119,12 +140,15 @@ If the container is reachable from the internet, use certbot (`apt install certb
 ## 8. First login & hardening
 
 1. Browse to the container IP → log in with the seeded admin → **change the password immediately** (top-right menu → My profile → Password).
-2. Create real users under **Administration → Users**, assign roles.
-3. Review the permission matrix under **Administration → Roles & Permissions**.
+2. Set the letterhead under **Administration → Company Profile** — name, logo,
+   address and footer. Every printed document in all four apps uses it, and it
+   starts blank.
+3. Create real users under **Administration → Users**, assign roles and app access.
+4. Review the permission matrix under **Administration → Roles & Permissions**.
 
 ## 9. Updates
 
-Two scripted paths, both of which back up the database, snapshot the current
+Two scripted paths, both of which back up every database, snapshot the current
 binaries, restart the service (migrations apply on boot), wait for a health
 check, and roll the code back automatically if the app doesn't come back.
 
