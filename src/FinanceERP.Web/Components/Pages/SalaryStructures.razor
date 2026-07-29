@@ -3,6 +3,9 @@
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.EntityFrameworkCore
 @using ErpPlatform.Shared.Identity
+@using FinanceERP.Domain.Entities
+@using FinanceERP.Infrastructure.Persistence
+@using Microsoft.Extensions.Logging
 @inject IServiceScopeFactory ScopeFactory
 @inject ISnackbar Snackbar
 
@@ -66,9 +69,18 @@
                                Disabled="@(_editing.Id != 0)">
                         @foreach (var u in _users)
                         {
-                            <MudSelectItem T="string" Value="@u.Id">@u.FullName (@u.Email)</MudSelectItem>
+                            <MudSelectItem T="string" Value="@u.UserId">@u.FullName (@u.Email)</MudSelectItem>
                         }
                     </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    @if (_users.Count == 0)
+                    {
+                        <MudAlert Severity="Severity.Warning" Dense="true">
+                            Nobody has Finance access yet. Grant a role for the Finance app
+                            under Administration &rsaquo; Users, then reopen this page.
+                        </MudAlert>
+                    }
                 </MudItem>
                 <MudItem xs="12" sm="3">
                     <MudNumericField T="decimal" @bind-Value="_editing.BasicSalary" Label="Basic salary"
@@ -151,7 +163,7 @@
 @code {
     private List<SalaryStructure> _structures = [];
     private List<PayComponent> _components = [];
-    private List<ApplicationUser> _users = [];
+    private List<EmployeeProfile> _users = [];
     private SalaryStructure? _editing;
     private int? _addComponentId;
     private bool _loading = true;
@@ -173,10 +185,21 @@
         _loading = true;
         using var scope = ScopeFactory.CreateScope();
         var payroll = scope.ServiceProvider.GetRequiredService<IPayrollService>();
-        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         _structures = await payroll.GetStructuresAsync(activeOnly: !_showInactive);
         _components = await payroll.GetComponentsAsync();
-        _users = await userManager.Users.Where(u => u.IsActive).OrderBy(u => u.FullName).ToListAsync();
+
+        // Refresh the accounts-side mirror first. It is otherwise only rebuilt at
+        // startup, so anyone granted Finance access since the last restart would be
+        // offered here and then rejected by the save with "Employee not found".
+        var db = scope.ServiceProvider.GetRequiredService<FinanceERP.Infrastructure.Persistence.AppDbContext>();
+        await DbSeeder.SyncEmployeeProfilesAsync(
+            db,
+            scope.ServiceProvider.GetRequiredService<IPlatformUserDirectory>(),
+            scope.ServiceProvider.GetRequiredService<ILogger<SalaryStructures>>());
+
+        // Exactly the set SaveStructureAsync will accept — nothing else belongs here.
+        _users = await db.EmployeeProfiles.AsNoTracking()
+            .Where(u => u.IsActive).OrderBy(u => u.FullName).ToListAsync();
         _loading = false;
     }
 
