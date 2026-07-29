@@ -171,7 +171,42 @@ Nothing later works if this doesn't. Fix it here.
 
 ## 5. Install the application
 
-Build on your **dev machine**, copy the output over:
+Two ways to get the binaries onto the box. **Option A keeps everything on the
+server** — no dev machine involved — and leaves a checkout in place so the
+pull-based updates in §11 work with nothing further to install. Pick one.
+
+### Option A — build on the container (recommended)
+
+Needs the .NET **SDK**, not just the runtime installed in §3. The SDK includes the
+runtime, so §3 is not wasted either way:
+
+```bash
+apt install -y dotnet-sdk-10.0
+# if apt has no such package, the same script from §3 installs the SDK by default:
+#   /tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet
+
+dotnet --list-sdks          # must print an SDK, not just runtimes
+```
+
+Clone and publish straight into place:
+
+```bash
+mkdir -p /opt/src
+git clone https://github.com/mivu2k/finance-erp.git /opt/src/finance-erp
+cd /opt/src/finance-erp
+dotnet publish src/FinanceERP.Web -c Release -o /opt/finance-erp
+```
+
+The first build downloads the whole NuGet dependency tree and takes several minutes
+on 2 cores. It needs roughly 1.5 GB of RAM — fine on the 4 GB from §1, OOM-killed on
+a 2 GB container.
+
+> Only publish directly into `/opt/finance-erp` on a **first** install, while the
+> directory is empty. `dotnet publish` does not remove files it no longer produces,
+> so for updates use §11, which rsyncs with `--delete` and preserves your state
+> directories.
+
+### Option B — build on your dev machine
 
 ```bash
 # on your dev machine, in the repo
@@ -179,7 +214,10 @@ dotnet publish src/FinanceERP.Web -c Release -o publish
 rsync -a publish/ root@<container-ip>:/opt/finance-erp/
 ```
 
-Back **in the container**:
+Keeps the SDK and the ~2 GB it costs off the server, at the price of needing a
+working dev machine for every deploy.
+
+### Then, either way
 
 ```bash
 useradd -r -s /usr/sbin/nologin finance-erp
@@ -400,6 +438,9 @@ nothing on GitHub records what is running.
 The container fetches `main`, builds it, and swaps the binaries in. Needs the
 **SDK**, not just the runtime installed in §3:
 
+**If you used §5 Option A, the SDK and the checkout are already there** — just make
+the script executable and skip to running it. Otherwise:
+
 ```bash
 apt install -y dotnet-sdk-10.0
 # or, if apt has no such package:
@@ -407,8 +448,10 @@ apt install -y dotnet-sdk-10.0
 
 mkdir -p /opt/src
 git clone https://github.com/mivu2k/finance-erp.git /opt/src/finance-erp
-chmod +x /opt/src/finance-erp/deploy/self-update.sh
+```
 
+```bash
+chmod +x /opt/src/finance-erp/deploy/self-update.sh
 dotnet --list-sdks          # must print an SDK, not just runtimes
 command -v rsync            # must print a path
 ```
