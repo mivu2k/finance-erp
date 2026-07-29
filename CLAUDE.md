@@ -300,10 +300,22 @@ encode-side defect was invisible, because the tests generated their inputs with
 the same assumptions the parser used. Anything that only fails on a real device
 needs a pinned capture, not a round-trip.
 
-Connect/auth is verified; **reading users and attendance is still unproven**,
-because that terminal has a non-zero comm key and answers `ACK_UNAUTH` (2005)
-until it is supplied. `MakeCommKey` is verified correct against the reference
-algorithm, so supplying the right key in `/hr/devices` is all that is needed.
+Connect is verified; **auth and reading are still unproven**. The test terminal
+answers `ACK_UNAUTH` (2005) to every `CMD_AUTH`, including with the comm key its
+own screen displays. Ruled out from this end: `MakeCommKey` matches the reference
+algorithm byte for byte, and a raw reference implementation is rejected too —
+across four reply-id sequences, eight `ticks` values, four key-derivation
+variants and ten candidate keys.
+
+**Prime suspect: ADMS.** That terminal has Cloud Server / ADMS settings. ZK
+firmware in push mode generally considers itself owned by its ADMS server and
+stops honouring direct SDK connections on 4370, refusing auth regardless of the
+key — which matches exactly what we see. **This platform pulls**, so ADMS must be
+off. Confirm before assuming a comm key is wrong: a key that is correct on screen
+and still rejected is the signature.
+
+If push is ever wanted instead, it is a different protocol — the device POSTs to
+`/iclock/*` over HTTP — and none of it is implemented here.
 
 ## Gotchas
 

@@ -599,6 +599,14 @@ vendor SDK is 32-bit Windows COM and cannot run here, so the protocol is impleme
 in-process.
 
 - The container must reach each terminal's IP on port 4370. Separate VLAN? Open it.
+- **Turn ADMS / Cloud Server off on the terminal.** This platform *pulls* over the
+  SDK port; a device in ADMS push mode generally refuses direct SDK connections and
+  answers `ACK_UNAUTH` to every authentication attempt — even when the comm key
+  matches what the device's own screen shows. A correct key that is still rejected
+  is the signature of this, not of a wrong key.
+- Set **Comm Key** (Menu → Comm → PC Connection) to `0` for no authentication, or
+  enter the same number under HR → Devices. Some firmware only applies a changed
+  key after a restart.
 - Add terminals under **HR → Devices**, then *Test connection* — it also warns when
   the terminal clock is more than 5 minutes off, the top cause of wrong attendance.
 - `Attendance:IntervalMinutes` sets the interval (default 15). Sync is idempotent:
