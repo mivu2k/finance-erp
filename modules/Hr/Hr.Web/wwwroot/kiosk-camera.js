@@ -16,8 +16,17 @@ window.kioskCamera = (() => {
     // it keeps each post to a few kilobytes.
     const CAPTURE_WIDTH = 640;
 
+    // Returns "ok", or a reason the page can turn into something actionable.
+    // Lumping these together is no help: the fix for a blocked origin has nothing
+    // to do with the fix for a camera someone else is already using.
     async function start(videoEl, canvasEl, token, dotnet) {
-        if (stream) return true;
+        if (stream) return 'ok';
+
+        // Browsers only expose getUserMedia on HTTPS or localhost, and they hide
+        // the API entirely rather than failing the call — so check first, or the
+        // real cause shows up as a confusing TypeError.
+        if (!window.isSecureContext) return 'insecure';
+        if (!navigator.mediaDevices?.getUserMedia) return 'unsupported';
 
         try {
             stream = await navigator.mediaDevices.getUserMedia({
@@ -25,16 +34,21 @@ window.kioskCamera = (() => {
                 audio: false
             });
         } catch (e) {
-            // Denied, already in use, or no camera. The page says so; the hardware
-            // scanner still works either way.
-            return false;
+            switch (e.name) {
+                case 'NotAllowedError':
+                case 'SecurityError':      return 'denied';
+                case 'NotFoundError':
+                case 'OverconstrainedError': return 'nocamera';
+                case 'NotReadableError':   return 'inuse';
+                default:                   return 'failed:' + (e.name || 'unknown');
+            }
         }
 
         videoEl.srcObject = stream;
         await videoEl.play();
 
         timer = setInterval(() => grab(videoEl, canvasEl, token, dotnet), INTERVAL_MS);
-        return true;
+        return 'ok';
     }
 
     async function grab(videoEl, canvasEl, token, dotnet) {

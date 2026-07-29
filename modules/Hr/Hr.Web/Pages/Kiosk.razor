@@ -146,14 +146,28 @@
         _cameraOn = true;
         StateHasChanged();      // the <video> must exist before JS is handed it
 
-        var started = await JS.InvokeAsync<bool>(
+        var reason = await JS.InvokeAsync<string>(
             "kioskCamera.start", _video, _canvas, Token, _self);
 
-        if (!started)
+        if (reason == "ok") return;
+
+        _cameraOn = false;
+        _cameraError = reason switch
         {
-            _cameraOn = false;
-            _cameraError = "No camera available, or permission was refused.";
-        }
+            // By far the most common, and the one whose message has to name the fix:
+            // nothing about the camera is wrong, the page just isn't on a trusted origin.
+            "insecure" =>
+                "Browsers only allow the camera on HTTPS or localhost. Open this page as "
+                + "http://localhost/… on the station PC, or put a certificate in front of it. "
+                + "A USB scanner needs none of this.",
+            "denied" =>
+                "Camera permission was refused. Allow it for this site in the browser's "
+                + "address bar, then try again.",
+            "nocamera" => "No camera is attached to this PC.",
+            "inuse" => "The camera is already in use by another application.",
+            "unsupported" => "This browser has no camera support.",
+            _ => $"The camera could not be started ({reason})."
+        };
     }
 
     private async Task StopCamera()

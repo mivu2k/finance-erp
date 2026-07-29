@@ -608,10 +608,22 @@ network path to any device.
    the site so it survives a restart. Frames are decoded on the server, so this
    works in any browser.
 
-> Camera capture needs the page on **HTTPS or localhost** — browsers refuse
-> `getUserMedia` on a plain-HTTP origin that isn't local. Either put a certificate
-> in front of the kiosk, or open it on the station PC as `http://localhost/...` if
-> the app runs on that same machine. The USB scanner path has no such restriction.
+> **Camera capture needs HTTPS or localhost.** Browsers refuse `getUserMedia` on a
+> plain-HTTP origin that isn't local, so `http://192.168.x.x/hr/kiosk/...` shows
+> "Browsers only allow the camera on HTTPS or localhost" no matter what permission
+> you grant. The NFC reader and a USB QR scanner are unaffected — they are keyboards.
+>
+> Three ways out, cheapest first:
+>
+> 1. **Trust the origin in the browser.** On the station PC open
+>    `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, add
+>    `http://<container-ip>`, and restart the browser. Fine for a kiosk on a private
+>    LAN, and it takes a minute.
+> 2. **Put a certificate in front of it** — §8's certbot if it is reachable
+>    externally, or your existing reverse proxy if it already terminates TLS.
+> 3. **Run the browser on the app's own machine** and open `http://localhost/...`,
+>    which browsers treat as secure. Only applicable if the station PC *is* the
+>    server.
 
 > **The kiosk link is the station's credential.** That page cannot require a login —
 > nobody signs in to a machine by a door — so anyone holding the URL can record
