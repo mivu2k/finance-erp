@@ -564,6 +564,7 @@ in-process.
 | `Unknown database 'erp_identity'` | §4 was skipped or partially run |
 | Service `active`, `curl` returns `000` | Read `journalctl -u finance-erp -n 50` — almost always a database connection failure |
 | UI connects then drops every few seconds | WebSockets not proxied — check nginx **and** any upstream proxy (§8) |
+| `502 Bad Gateway` right after a successful login | nginx proxy buffers too small for the auth cookie. `tail /var/log/nginx/error.log` shows `upstream sent too big header`. The supplied config sets 32k; an upstream proxy in front needs the same |
 | `Assets file project.assets.json not found` | `dotnet restore` in the checkout first (path B) |
 | Login works but an app tile is missing | App access applies at **next sign-in** — sign out and back in (§9) |
 | `mysql -u root -p` fails on a fresh box | MariaDB root uses socket auth on Ubuntu — run `mysql` as root, no `-u root -p` |
