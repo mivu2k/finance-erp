@@ -38,15 +38,22 @@ pct enter 210
 
 4 GB RAM is the comfortable figure now that four apps, PDF rendering (QuestPDF)
 and the attendance poller share one process; the app idles around 300–400 MB and
-spikes while generating report packs. 16 GB of disk is enough to start, but
-receipt attachments and job photos accumulate in `uploads/` — see §11.
+spikes while generating report packs. It is also what building on the container
+needs — see §10 path B, which is OOM-killed on a 2 GB box.
+
+24 GB of disk covers the runtime, the databases and room to grow. Budget another
+~2 GB if you build on the container (the .NET SDK plus its NuGet cache), and watch
+`uploads/` — receipt attachments accumulate there and nothing prunes them (§11).
 
 ## 2. Inside the container — base packages
 
 ```bash
 apt update && apt upgrade -y
-apt install -y curl gnupg ca-certificates nginx mariadb-server git
+apt install -y curl gnupg ca-certificates nginx mariadb-server git rsync
 ```
+
+`rsync` is not optional: **both** update paths in §10 use it to swap the binaries
+without touching `uploads/` and `keys/`, and they abort without it.
 
 > MariaDB from Debian repos is fully compatible (Pomelo auto-detects the server
 > version). If you specifically want Oracle MySQL 8, add the MySQL APT repo instead.
@@ -223,35 +230,92 @@ the *code* back automatically if the app doesn't come back.
 
 ### A. Push from your dev machine — `deploy/update.sh`
 
-Nothing extra is needed on the container: it publishes locally and rsyncs the
-output. Requires SSH key auth (`ssh-copy-id root@<container-ip>`).
+The build happens on your machine; the container only receives files. Needs the
+.NET SDK locally, plus `rsync` and key-based SSH on **both** ends
+(`ssh-copy-id root@<container-ip>`).
 
 ```bash
 ./deploy/update.sh <container-ip>
 # or: FINANCE_ERP_HOST=<container-ip> ./deploy/update.sh
 ```
 
-This ships your **working tree**, which may not match any commit.
+This ships your **working tree**, which may not match any commit — handy for a
+hotfix, but it means nothing on GitHub records what is running. The script clears
+the `.deployed-revision` stamp afterwards so path B does not mistake your
+hand-built deploy for the commit it last shipped.
 
 ### B. Pull on the container — `deploy/self-update.sh`
 
-The container builds from GitHub itself. Needs the .NET **SDK** and a checkout:
+The container fetches `main` from GitHub, builds it itself, and swaps the binaries
+in. Nothing is needed on your dev machine, and you can trigger it over SSH or from
+a timer.
+
+**One-time setup**, as root on the container:
 
 ```bash
-apt install -y git dotnet-sdk-10.0
+# The SDK, not just the runtime — section 3 installs only the runtime.
+apt install -y git rsync dotnet-sdk-10.0
+
 mkdir -p /opt/src && cd /opt/src
 git clone https://github.com/mivu2k/finance-erp.git
 chmod +x /opt/src/finance-erp/deploy/self-update.sh
+
+# Sanity check before you rely on it:
+dotnet --list-sdks          # must print at least one SDK, not just runtimes
+command -v rsync            # must print a path
 ```
 
-Then, whenever you want to update:
+The repository is **public**, so the clone needs no credentials. If you ever make
+it private, give the container read access with a
+[deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys)
+and clone over SSH instead — do not put a personal access token on the server.
+
+**To update:**
 
 ```bash
 /opt/src/finance-erp/deploy/self-update.sh
 ```
 
-It exits immediately if `origin/main` hasn't moved (`FINANCE_ERP_FORCE=1` to
-rebuild anyway).
+What it does, in order: fetch `main` → compare against the deployed revision →
+build to a temp directory → back up all five databases → snapshot the binaries →
+stop the service → rsync the new build in → start → health-check → record the
+revision. A failed health check rolls the binaries back and resets the checkout to
+the commit that was working — unless this was a first deploy, where there is no
+snapshot to return to and the script says so rather than deleting anything.
+
+Things worth knowing before you rely on it:
+
+- **It builds before it stops the service**, so a compile error costs no downtime —
+  the running app is untouched until there is something good to install.
+- **It compares against what is *deployed*, not against the checkout.** The stamp
+  lives at `/opt/finance-erp/.deployed-revision`. A fresh clone already sits at
+  `origin/main` while the old binaries are still running, so comparing the checkout
+  would skip the very first deploy and wrongly report success.
+- It exits immediately if nothing has moved. `FINANCE_ERP_FORCE=1` rebuilds anyway.
+- **`git reset --hard` runs against `/opt/src/finance-erp`.** Never edit anything
+  there — local changes are discarded without warning. That checkout is a build
+  input, not a place to work.
+- **Building needs headroom.** The SDK is roughly 1 GB on disk, and the NuGet cache
+  under `/root/.nuget` grows to a few hundred MB more. A release build peaks around
+  1–1.5 GB of RAM *while the old app is still running*, which is why §1 asks for
+  4 GB. On a 2 GB container the build gets OOM-killed.
+- **Don't alternate paths A and B casually.** Running B after A rebuilds from `main`
+  and discards whatever working tree A shipped.
+- Deploying a branch other than `main`: `FINANCE_ERP_BRANCH=my-branch
+  /opt/src/finance-erp/deploy/self-update.sh`.
+
+**First run on a box installed by hand** (§5's `scp`): there is no
+`.deployed-revision` yet, so it reports "no deployment stamp found — treating this
+as a first deploy" and rebuilds. That is correct, not an error.
+
+**Watching it:** the script is chatty on stdout. Over SSH:
+
+```bash
+ssh root@<container-ip> '/opt/src/finance-erp/deploy/self-update.sh'
+```
+
+If it fails, it prints the last 40 journal lines and the exact restore commands
+before exiting non-zero.
 
 ### Fully unattended (optional)
 
@@ -269,6 +333,21 @@ journalctl -u finance-erp-update -f         # watch an update happen
 ```
 
 Trigger one by hand with `systemctl start finance-erp-update`.
+
+The unit runs at 03:15 with up to 15 minutes of jitter, allows 30 minutes for the
+build (`TimeoutStartSec=1800`), and **hardcodes `/opt/src/finance-erp`**. If your
+checkout is elsewhere, or you want to override any `FINANCE_ERP_*` setting for the
+timer only, edit the unit — the script's environment defaults do not reach a
+systemd service otherwise:
+
+```ini
+# /etc/systemd/system/finance-erp-update.service
+[Service]
+Environment=FINANCE_ERP_SRC=/srv/finance-erp
+Environment=FINANCE_ERP_KEEP_BACKUPS=20
+```
+
+Then `systemctl daemon-reload`.
 
 ### Rollback
 
