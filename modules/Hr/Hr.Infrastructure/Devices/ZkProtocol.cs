@@ -43,6 +43,33 @@ internal static class ZkFraming
     /// <summary>Magic prefix: 0x50 0x50 0x82 0x7d.</summary>
     public static readonly byte[] Magic = [0x50, 0x50, 0x82, 0x7d];
     public const int HeaderSize = 8;
+
+    /// <summary>
+    /// The protocol's 16-bit ones-complement checksum over an 8-byte command packet
+    /// plus its payload, with the checksum field itself treated as zero.
+    /// </summary>
+    /// <remarks>
+    /// Both the carry fold and the complement are modulo 0x10000. Folding with
+    /// 0xFFFF instead lands exactly one short: the terminal then discards the packet
+    /// as corrupt and answers nothing at all, so the caller blocks on a reply that
+    /// never comes. It fails as a hang, not as an error.
+    /// </remarks>
+    public static ushort Checksum(ReadOnlySpan<byte> packet)
+    {
+        var sum = 0u;
+
+        for (var i = 0; i + 1 < packet.Length; i += 2)
+        {
+            if (i == 2) continue; // the checksum field
+            sum += System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(packet[i..]);
+        }
+
+        if (packet.Length % 2 == 1) sum += packet[^1];
+
+        while (sum >> 16 != 0) sum = (sum & 0xFFFF) + (sum >> 16);
+
+        return (ushort)~(ushort)sum;
+    }
 }
 
 /// <summary>A single attendance record as the terminal reports it.</summary>

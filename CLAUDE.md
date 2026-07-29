@@ -287,10 +287,23 @@ Linux host, so `Hr.Infrastructure/Devices` implements the protocol directly: an
   Unmatched ids surface on `/hr/devices` for an admin to assign, which backfills.
 - Polling interval is `Attendance:IntervalMinutes` in appsettings (default 15).
 
-**This has never been run against real hardware from here** — there was no device
-on the network. The wire format is covered by unit tests that reproduce the
-device's own encoding, but first contact with a real terminal is still unproven.
-Test connection on `/hr/devices` is the first thing to try.
+**First contact with real hardware happened on 2026-07-29** against a uFace at
+192.168.19.231, and it found a bug the tests could not: the outbound checksum
+folded carries with `0xFFFF` instead of `0x10000`, landing exactly one short. The
+terminal discards a packet with a bad checksum **without replying**, so every
+read hung until it timed out — it presented as "connected but no data", never as
+an error. `ZkFraming.Checksum` is now pinned in `ZkProtocolTests` against bytes
+the device actually accepted.
+
+The lesson worth keeping: the wire-format tests covered **decoding only**. Every
+encode-side defect was invisible, because the tests generated their inputs with
+the same assumptions the parser used. Anything that only fails on a real device
+needs a pinned capture, not a round-trip.
+
+Connect/auth is verified; **reading users and attendance is still unproven**,
+because that terminal has a non-zero comm key and answers `ACK_UNAUTH` (2005)
+until it is supplied. `MakeCommKey` is verified correct against the reference
+algorithm, so supplying the right key in `/hr/devices` is all that is needed.
 
 ## Gotchas
 

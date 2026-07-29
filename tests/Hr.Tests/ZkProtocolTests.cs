@@ -7,9 +7,10 @@ using Xunit;
 namespace Hr.Tests;
 
 /// <summary>
-/// Covers the wire-format decoding. This is the part that cannot be checked
-/// against a real terminal from here, so the encoding is reproduced from the
-/// device's own packing rules and decoded back.
+/// Covers the wire format in both directions. Decoding is reproduced from the
+/// device's own packing rules and decoded back; the outbound checksum is pinned
+/// against bytes captured from a real uFace terminal, because that is the half
+/// that had no coverage and was wrong.
 /// </summary>
 public class ZkProtocolTests
 {
@@ -125,5 +126,50 @@ public class ZkProtocolTests
         BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(27), Encode(at));
         record[31] = (byte)verify;
         return record;
+    }
+
+    // --- outbound framing -------------------------------------------------
+
+    /// <summary>
+    /// Captured from a real terminal at 192.168.19.231: this exact CMD_CONNECT
+    /// frame was answered, and a checksum one less than this was silently dropped.
+    /// A wrong checksum costs nothing at compile time and hangs at run time, so the
+    /// value is pinned rather than recomputed by the same logic under test.
+    /// </summary>
+    [Theory]
+    // command, sessionId, replyId, expected checksum
+    [InlineData(1000, 0, 0, 0xFC17)]
+    [InlineData(1000, 0, 1, 0xFC16)]
+    public void Checksum_matches_what_the_terminal_accepts(
+        ushort command, ushort session, ushort reply, int expected)
+    {
+        var packet = new byte[8];
+        BinaryPrimitives.WriteUInt16LittleEndian(packet.AsSpan(0), command);
+        BinaryPrimitives.WriteUInt16LittleEndian(packet.AsSpan(4), session);
+        BinaryPrimitives.WriteUInt16LittleEndian(packet.AsSpan(6), reply);
+
+        Assert.Equal((ushort)expected, ZkFraming.Checksum(packet));
+    }
+
+    [Fact]
+    public void Checksum_folds_carries_rather_than_truncating_them()
+    {
+        // Words that overflow 16 bits on their own: the carry must come back in,
+        // which is precisely where the original implementation lost a bit.
+        var packet = new byte[] { 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF };
+
+        // 0xFFFF * 3 = 0x2FFFD -> fold -> 0xFFFD + 0x2 = 0xFFFF -> ~ = 0x0000.
+        // Truncating instead of folding gives 0xFFFD here, and one less than the
+        // right answer on ordinary packets.
+        Assert.Equal(0x0000, ZkFraming.Checksum(packet));
+    }
+
+    [Fact]
+    public void Checksum_ignores_whatever_is_already_in_the_checksum_field()
+    {
+        var clean = new byte[] { 0xE8, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+        var dirty = new byte[] { 0xE8, 0x03, 0xAB, 0xCD, 0x00, 0x00, 0x00, 0x00 };
+
+        Assert.Equal(ZkFraming.Checksum(clean), ZkFraming.Checksum(dirty));
     }
 }

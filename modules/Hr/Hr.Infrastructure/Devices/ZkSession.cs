@@ -271,7 +271,7 @@ internal sealed class ZkSession : IDisposable
         BinaryPrimitives.WriteUInt16LittleEndian(body.AsSpan(6), _replyId);
         payload.CopyTo(body, 8);
 
-        BinaryPrimitives.WriteUInt16LittleEndian(body.AsSpan(2), Checksum(body));
+        BinaryPrimitives.WriteUInt16LittleEndian(body.AsSpan(2), ZkFraming.Checksum(body));
 
         var frame = new byte[ZkFraming.HeaderSize + body.Length];
         ZkFraming.Magic.CopyTo(frame, 0);
@@ -315,30 +315,6 @@ internal sealed class ZkSession : IDisposable
                 throw new ZkDeviceException("The terminal closed the connection mid-transfer.");
             read += got;
         }
-    }
-
-    /// <summary>
-    /// The protocol's 16-bit ones-complement checksum over the packet, with the
-    /// checksum field itself treated as zero.
-    /// </summary>
-    private static ushort Checksum(byte[] packet)
-    {
-        var sum = 0;
-
-        for (var i = 0; i + 1 < packet.Length; i += 2)
-        {
-            if (i == 2) continue; // the checksum field
-            sum += BinaryPrimitives.ReadUInt16LittleEndian(packet.AsSpan(i));
-            if (sum > ushort.MaxValue) sum -= ushort.MaxValue;
-        }
-
-        if (packet.Length % 2 == 1) sum += packet[^1];
-        while (sum > ushort.MaxValue) sum -= ushort.MaxValue;
-
-        sum = ~sum;
-        while (sum < 0) sum += ushort.MaxValue;
-
-        return (ushort)sum;
     }
 
     /// <summary>
