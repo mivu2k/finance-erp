@@ -99,7 +99,8 @@
       "Bash(curl -s -o /dev/null -w \"root:%{http_code}\\\\n\" http://localhost:5080/)",
       "Bash(python3 -c \"import qrcode; print\\(qrcode.__version__\\)\")",
       "Bash(pip install *)",
-      "Bash(:)"
+      "Bash(:)",
+      "Bash(command -v gh)"
     ]
   }
 }
