@@ -219,8 +219,10 @@ working dev machine for every deploy.
 
 ### Then, either way
 
+**Do not skip this** — §6 and §7 both fail without the service account:
+
 ```bash
-useradd -r -s /usr/sbin/nologin finance-erp
+id finance-erp || useradd -r -s /usr/sbin/nologin finance-erp
 mkdir -p /opt/finance-erp/{logs,keys,uploads/receipts}
 chown -R finance-erp:finance-erp /opt/finance-erp
 ```
@@ -241,7 +243,12 @@ The update scripts exclude all three from their rsync for exactly this reason.
 
 ```bash
 ls /opt/finance-erp/FinanceERP.Web.dll && echo "binaries present"
+id finance-erp
+ls -ld /opt/finance-erp/keys /opt/finance-erp/uploads/receipts
 ```
+
+Both directories must be owned by `finance-erp`. The app writes DataProtection keys
+into `keys/` at startup and will not start if it cannot.
 
 ---
 
@@ -560,6 +567,7 @@ in-process.
 | `Assets file project.assets.json not found` | `dotnet restore` in the checkout first (path B) |
 | Login works but an app tile is missing | App access applies at **next sign-in** — sign out and back in (§9) |
 | `mysql -u root -p` fails on a fresh box | MariaDB root uses socket auth on Ubuntu — run `mysql` as root, no `-u root -p` |
+| `chown: invalid spec: 'finance-erp:'` | The service account was never created — the `useradd` at the end of §5 |
 
 ---
 
