@@ -126,6 +126,10 @@
                 <MudTextField @bind-Value="_employee.WorkLocation" Label="Work location" />
             </MudItem>
             <MudItem xs="12" md="4">
+                <MudTextField @bind-Value="_employee.DeviceUserId" Label="Biometric device user ID"
+                              HelperText="@DeviceIdHelp" />
+            </MudItem>
+            <MudItem xs="12" md="4">
                 <MudSelect T="string" @bind-Value="_employee.ReportsToEmployeeCode"
                            Label="Reports to" Clearable="true">
                     @foreach (var m in _managers)
@@ -262,6 +266,15 @@
 }
 
 @code {
+    /// <summary>
+    /// Spells out the fallback so nobody enters the employee code twice, and so it
+    /// is obvious what the terminal will be matched on.
+    /// </summary>
+    private string DeviceIdHelp =>
+        string.IsNullOrWhiteSpace(_employee.DeviceUserId)
+            ? $"Blank — punches are matched on the employee code ({(string.IsNullOrWhiteSpace(_employee.EmployeeCode) ? "not set yet" : _employee.EmployeeCode)})."
+            : "The ID enrolled on the ZKTeco terminal. Overrides the employee code when matching punches.";
+
     [Parameter] public int? Id { get; set; }
 
     private Employee _employee = new() { JoinedOn = DateOnly.FromDateTime(DateTime.Today) };
@@ -331,6 +344,19 @@
             var saved = await scope.ServiceProvider.GetRequiredService<IEmployeeService>()
                 .SaveAsync(_employee);
             Snackbar.Add("Employee saved.", Severity.Success);
+
+            // Punches already pulled under this terminal ID were stored unmatched.
+            // Claim them now rather than making the admin find the same ID again on
+            // the devices page.
+            if (!string.IsNullOrWhiteSpace(saved.DeviceUserId))
+            {
+                var claimed = await scope.ServiceProvider.GetRequiredService<IAttendanceService>()
+                    .AssignUnmatchedAsync(saved.DeviceUserId, saved.Id);
+                if (claimed > 0)
+                    Snackbar.Add($"{claimed} earlier punch(es) matched to {saved.FullName}.",
+                        Severity.Info);
+            }
+
             if (_isNew) Nav.NavigateTo($"/hr/employees/{saved.Id}");
             else await LoadAsync();
         }
