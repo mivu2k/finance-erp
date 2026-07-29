@@ -1,10 +1,20 @@
-# Deploying the MEI ERP platform on a Proxmox LXC
+# Deploying the MEI ERP platform — Ubuntu 24.04 LXC
 
-Target: a Debian 12 LXC container running MariaDB, the app under systemd, nginx in
-front.
+A start-to-finish runbook for a **fresh** container. Every step ends with a check —
+run it, and don't move on until it prints what it says it should. Most deployment
+pain is a step that half-failed three steps earlier.
 
-This is **one process hosting four apps**, chosen from a portal at `/` after a
-single login:
+Target: Ubuntu 24.04 LXC on Proxmox, MariaDB, the app under systemd, nginx in front.
+
+> **Have an existing install?** A fresh install is far simpler, because the schema is
+> created from scratch and there is no data migration at all. If you have real books
+> on an older container, do the fresh install first, confirm it works, *then* follow
+> [Appendix A](#appendix-a--carrying-data-over-from-an-old-container). Don't upgrade
+> the old container in place unless you have a specific reason to.
+
+## What you are installing
+
+One process hosting four apps, chosen from a portal at `/` after a single login:
 
 | App | Route | Database |
 |---|---|---|
@@ -13,19 +23,24 @@ single login:
 | Gate Pass & Demo Goods | `/gatepass` | `erp_gatepass` |
 | HR | `/hr` | `erp_hr` |
 
-Plus `erp_identity`, the one shared database holding users, roles, permissions,
-per-user app access and the company letterhead. **Five databases in total** — that
-matters for every backup and restore instruction below.
+Plus `erp_identity` — the one shared database holding users, roles, permissions,
+per-user app access and the company letterhead. **Five databases.** That matters for
+every backup and restore instruction below.
 
-## 1. Create the container (Proxmox host)
+---
+
+## 1. Create the container
+
+On the **Proxmox host** shell:
 
 ```bash
-# Download a template once (host shell):
 pveam update
-pveam download local debian-12-standard_12.7-1_amd64.tar.zst
+pveam available | grep ubuntu-24.04           # confirm the current filename
+pveam download local ubuntu-24.04-standard_24.04-2_amd64.tar.zst
+```
 
-# Create the container (adjust IDs/storage/bridge to your setup):
-pct create 210 local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst \
+```bash
+pct create 210 local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst \
   --hostname mei-erp \
   --cores 2 --memory 4096 --swap 512 \
   --rootfs local-lvm:24 \
@@ -36,54 +51,101 @@ pct start 210
 pct enter 210
 ```
 
-4 GB RAM is the comfortable figure now that four apps, PDF rendering (QuestPDF)
-and the attendance poller share one process; the app idles around 300–400 MB and
-spikes while generating report packs. It is also what building on the container
-needs — see §10 path B, which is OOM-killed on a 2 GB box.
+**Why 4 GB:** four apps, PDF rendering and the attendance poller share one process
+(~300–400 MB idle). If you later build on this box (§11 path B) a Release build peaks
+around 1.5 GB *while the app is still running* — a 2 GB container gets OOM-killed
+mid-build.
 
-24 GB of disk covers the runtime, the databases and room to grow. Budget another
-~2 GB if you build on the container (the .NET SDK plus its NuGet cache), and watch
-`uploads/` — receipt attachments accumulate there and nothing prunes them (§11).
+**Check** — you should be at a root prompt inside the container:
 
-## 2. Inside the container — base packages
+```bash
+head -2 /etc/os-release              # expect Ubuntu 24.04
+ip -4 addr show eth0 | grep inet     # note this IP, you need it later
+```
+
+---
+
+## 2. Base packages
 
 ```bash
 apt update && apt upgrade -y
-apt install -y curl gnupg ca-certificates nginx mariadb-server git rsync
+apt install -y curl ca-certificates nginx mariadb-server git rsync libicu74 tzdata
+timedatectl set-timezone Asia/Karachi     # or yours — attendance timestamps depend on it
 ```
 
-`rsync` is not optional: **both** update paths in §10 use it to swap the binaries
-without touching `uploads/` and `keys/`, and they abort without it.
+Two of these are non-obvious, and both fail in ways that look like something else:
 
-> MariaDB from Debian repos is fully compatible (Pomelo auto-detects the server
-> version). If you specifically want Oracle MySQL 8, add the MySQL APT repo instead.
+- **`libicu74`** — .NET refuses to start without ICU, and the error talks about
+  globalization without ever saying "ICU is missing". LXC templates are minimal
+  enough to lack it.
+- **`rsync`** — both update paths in §11 use it to replace binaries while preserving
+  `uploads/` and `keys/`. They abort without it.
 
-## 3. Install the .NET 10 runtime
+**Check:**
 
 ```bash
-curl -fsSL https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb -o /tmp/msprod.deb
-dpkg -i /tmp/msprod.deb && apt update
+systemctl is-active mariadb          # expect: active
+command -v rsync nginx git           # expect three paths
+timedatectl | head -3
+```
+
+---
+
+## 3. Install .NET 10
+
+Ubuntu 24.04 may carry .NET 10 in its own feed. Try that first — it gets security
+updates through `apt`:
+
+```bash
+apt-cache policy aspnetcore-runtime-10.0
+```
+
+**If it shows a candidate version:**
+
+```bash
 apt install -y aspnetcore-runtime-10.0
 ```
 
-(If the package isn't available for your distro yet: `curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --runtime aspnetcore --channel 10.0 --install-dir /usr/share/dotnet && ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet`.)
-
-If you plan to build **on** the container (§10 path B), install the SDK instead:
-`apt install -y dotnet-sdk-10.0`.
-
-## 4. Databases
-
-Create all five. The app migrates each on boot but will **not** create them.
+**If it says `Unable to locate package`**, use Microsoft's installer script. Do *not*
+add the packages.microsoft.com apt repo on Ubuntu 24.04 — it collides with Ubuntu's
+own .NET packages and produces `dotnet-host` conflicts that are tedious to unpick:
 
 ```bash
-mysql_secure_installation   # set root password, remove test db
-mysql -u root -p <<'SQL'
+curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+chmod +x /tmp/dotnet-install.sh
+/tmp/dotnet-install.sh --runtime aspnetcore --channel 10.0 --install-dir /usr/share/dotnet
+ln -sf /usr/share/dotnet/dotnet /usr/bin/dotnet
+```
+
+Installed this way, .NET is **not** updated by `apt` — re-run the script for patch
+releases.
+
+**Check:**
+
+```bash
+dotnet --list-runtimes
+```
+
+You must see **both** `Microsoft.NETCore.App 10.x` and `Microsoft.AspNetCore.App 10.x`.
+If only the first appears, you installed the base runtime — the app needs ASP.NET Core.
+
+---
+
+## 4. Create the five databases
+
+On Ubuntu, MariaDB's `root` authenticates over a **unix socket**. `mysql -u root -p`
+prompts for a password that doesn't exist and fails; since you are already root, just
+run `mysql`:
+
+```bash
+mysql <<'SQL'
 CREATE DATABASE erp_identity CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE DATABASE finance_erp  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE DATABASE erp_repair   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE DATABASE erp_gatepass CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE DATABASE erp_hr       CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'finance'@'localhost' IDENTIFIED BY 'STRONG_PASSWORD_HERE';
+
+CREATE USER 'finance'@'localhost' IDENTIFIED BY 'CHANGE_THIS_PASSWORD';
 GRANT ALL PRIVILEGES ON erp_identity.* TO 'finance'@'localhost';
 GRANT ALL PRIVILEGES ON finance_erp.*  TO 'finance'@'localhost';
 GRANT ALL PRIVILEGES ON erp_repair.*   TO 'finance'@'localhost';
@@ -93,21 +155,31 @@ FLUSH PRIVILEGES;
 SQL
 ```
 
-> **Upgrading an install that predates the identity split?** Run
-> `deploy/migrate-identity-out-of-accounts.sql` **before** starting the new build,
-> or the accounts migration drops the old `AspNet*` tables and takes your users
-> with it. A fresh install needs nothing.
+Choose a password with **no `;` and no `"`** — it goes into both a connection string
+and a JSON file, and each uses one of those characters structurally. `@`, `!`, `#`
+are fine.
 
-## 5. Publish and install the app
-
-On your dev machine (or clone + build in the container):
+**Check** — must succeed *as the finance user* and list all five:
 
 ```bash
-dotnet publish src/FinanceERP.Web -c Release -o publish
-scp -r publish/* root@<container-ip>:/opt/finance-erp/
+mysql -u finance -p -e "SHOW DATABASES;"
 ```
 
-In the container:
+Nothing later works if this doesn't. Fix it here.
+
+---
+
+## 5. Install the application
+
+Build on your **dev machine**, copy the output over:
+
+```bash
+# on your dev machine, in the repo
+dotnet publish src/FinanceERP.Web -c Release -o publish
+rsync -a publish/ root@<container-ip>:/opt/finance-erp/
+```
+
+Back **in the container**:
 
 ```bash
 useradd -r -s /usr/sbin/nologin finance-erp
@@ -115,245 +187,269 @@ mkdir -p /opt/finance-erp/{logs,keys,uploads/receipts}
 chown -R finance-erp:finance-erp /opt/finance-erp
 ```
 
-Those three directories are **runtime state that lives alongside the binaries** and
-is not part of a publish. Losing them costs you real things:
+Those three directories are runtime state that lives beside the binaries and is
+**not** produced by a build:
 
-| Directory | Holds | If you delete it |
+| Directory | Holds | Cost of losing it |
 |---|---|---|
-| `keys/` | DataProtection keys | Everyone is logged out; existing auth cookies break |
+| `keys/` | DataProtection keys | Everyone logged out; existing auth cookies invalid |
 | `uploads/receipts/` | Receipt attachments on payment requests | Gone — no other copy exists |
-| `logs/` | Serilog files | Only history is lost |
+| `logs/` | Serilog files | History only |
 
 The update scripts exclude all three from their rsync for exactly this reason.
-**Never `rm -rf /opt/finance-erp`** — see §10.
+**Never `rm -rf /opt/finance-erp`.**
 
-## 6. Production configuration
-
-Configure **outside** the repo — create `/opt/finance-erp/appsettings.Production.json`:
-
-```json
-{
-  "ConnectionStrings": {
-    "IdentityConnection": "Server=localhost;Port=3306;Database=erp_identity;User=finance;Password=STRONG_PASSWORD_HERE;",
-    "AccountsConnection": "Server=localhost;Port=3306;Database=finance_erp;User=finance;Password=STRONG_PASSWORD_HERE;",
-    "RepairConnection":   "Server=localhost;Port=3306;Database=erp_repair;User=finance;Password=STRONG_PASSWORD_HERE;",
-    "GatePassConnection": "Server=localhost;Port=3306;Database=erp_gatepass;User=finance;Password=STRONG_PASSWORD_HERE;",
-    "HrConnection":       "Server=localhost;Port=3306;Database=erp_hr;User=finance;Password=STRONG_PASSWORD_HERE;"
-  },
-  "Seed": {
-    "AdminEmail": "admin@yourcompany.com",
-    "AdminPassword": "A-Strong-One-Time-Password!1"
-  },
-  "Attendance": {
-    "Enabled": true,
-    "IntervalMinutes": 15
-  },
-  "Smtp": {
-    "Host": "",
-    "Port": 587,
-    "User": "",
-    "Password": "",
-    "From": "erp@yourcompany.com",
-    "EnableSsl": true
-  }
-}
-```
+**Check:**
 
 ```bash
-chmod 600 /opt/finance-erp/appsettings.Production.json
-chown finance-erp: /opt/finance-erp/appsettings.Production.json
+ls /opt/finance-erp/FinanceERP.Web.dll && echo "binaries present"
 ```
 
-- **`Seed`** creates the first admin on first boot only. Both keys must be present
-  or no admin is seeded.
-- **`Attendance`** drives the ZKTeco poller — set `Enabled: false` if you have no
-  biometric terminals, or it will log connection failures every interval.
-- **`Smtp`** is entirely optional. Email notifications stay off unless `Smtp:Host`
-  is non-empty; everything else in the app works without it.
+---
+
+## 6. Configuration
+
+Create `/opt/finance-erp/appsettings.Production.json`. This generates it so you
+can't mistype the password in one of the five places:
+
+```bash
+read -rsp "finance DB password: " DBPW; echo
+
+python3 - "$DBPW" <<'PY'
+import json, sys
+pw = sys.argv[1]
+cfg = {
+    "ConnectionStrings": {
+        name: f"Server=localhost;Port=3306;Database={db};User=finance;Password={pw};"
+        for name, db in [
+            ("IdentityConnection", "erp_identity"),
+            ("AccountsConnection", "finance_erp"),
+            ("RepairConnection",   "erp_repair"),
+            ("GatePassConnection", "erp_gatepass"),
+            ("HrConnection",       "erp_hr"),
+        ]
+    },
+    "Seed": {
+        "AdminEmail": "admin@yourcompany.com",
+        "AdminPassword": "Change-This-Once!1",
+    },
+    "Attendance": {"Enabled": True, "IntervalMinutes": 15},
+}
+json.dump(cfg, open("/opt/finance-erp/appsettings.Production.json", "w"), indent=2)
+print("written")
+PY
+
+chmod 600 /opt/finance-erp/appsettings.Production.json
+chown finance-erp: /opt/finance-erp/appsettings.Production.json
+unset DBPW
+```
+
+Edit the `Seed` values before first boot — they create the first admin and are read
+**only** while no admin exists.
+
+- **`Attendance`** drives the ZKTeco poller. Harmless with no terminals configured;
+  `"Enabled": false` switches it off entirely.
+- **SMTP is optional** and omitted above. Notifications stay off unless you add an
+  `Smtp` block with a non-empty `Host`. Nothing else depends on it.
+- There is **no `DefaultConnection`** any more. The build looks up each of the five
+  names explicitly and never falls back.
+
+**Check** — prints the file, five connection strings, no syntax error:
+
+```bash
+python3 -m json.tool /opt/finance-erp/appsettings.Production.json
+```
+
+---
 
 ## 7. systemd service
 
 ```bash
-cp deploy/finance-erp.service /etc/systemd/system/
+curl -fsSL https://raw.githubusercontent.com/mivu2k/finance-erp/main/deploy/finance-erp.service \
+  -o /etc/systemd/system/finance-erp.service
 systemctl daemon-reload
 systemctl enable --now finance-erp
-journalctl -u finance-erp -f     # watch first boot: migrations + seeding run here
 ```
 
-The service binds `http://127.0.0.1:5000` — loopback only, with nginx in front.
+The service binds `http://127.0.0.1:5000` — loopback only, nginx in front.
 
-> `[ERR] The model for context '...' has pending changes` on startup is **benign**
-> and appears once per database context. EF logs it without throwing. Don't chase it.
-
-## 8. nginx reverse proxy
+**Check** — first boot runs every migration and the seeder, so give it a minute:
 
 ```bash
-cp deploy/nginx-finance-erp.conf /etc/nginx/sites-available/finance-erp
-ln -s /etc/nginx/sites-available/finance-erp /etc/nginx/sites-enabled/
+systemctl status finance-erp --no-pager
+journalctl -u finance-erp -n 50 --no-pager
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:5000/
+```
+
+`302` is success — the redirect to the login page. `000` means it isn't listening;
+read the journal.
+
+> `[ERR] The model for context '...' has pending changes` appears once per database
+> context at startup. It is **benign** — EF logs it without throwing. Don't chase it.
+
+**Confirm the schema built and the admin seeded:**
+
+```bash
+mysql -u finance -p -e "SELECT COUNT(*) AS users FROM erp_identity.AspNetUsers;"
+```
+
+Expect `1`.
+
+---
+
+## 8. nginx
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mivu2k/finance-erp/main/deploy/nginx-finance-erp.conf \
+  -o /etc/nginx/sites-available/finance-erp
+sed -i "s/erp.example.com/$(hostname -I | awk '{print $1}')/" /etc/nginx/sites-available/finance-erp
+ln -sf /etc/nginx/sites-available/finance-erp /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 ```
 
-Blazor Server uses WebSockets — the provided config includes the required
-`Upgrade`/`Connection` headers. Without them the UI disconnects or falls back.
+Blazor Server needs WebSockets; the supplied config carries the `Upgrade`/`Connection`
+headers and a 100s read timeout to keep circuits alive. Without them the UI
+disconnects every few seconds in a way that looks like an application bug.
+
+**Check** — in the container, then from your desktop browser:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost/       # expect 302
+```
 
 ### HTTPS
 
-If the container is reachable from the internet, use certbot (`apt install certbot
-python3-certbot-nginx && certbot --nginx -d erp.example.com`). On a LAN-only setup,
-terminate TLS on your existing reverse proxy (NPM/Traefik/Caddy on another LXC) and
-point it at this container's port 80 — enable WebSocket support there too.
+Internet-facing: `apt install -y certbot python3-certbot-nginx && certbot --nginx -d erp.example.com`.
+LAN-only: terminate TLS on your existing reverse proxy and point it at this
+container's port 80 — **enable WebSocket support there too**.
 
-## 9. First login & setup
+---
 
-1. Browse to the container IP → log in with the seeded admin → **change the
-   password immediately** (top-right menu → My profile → Password).
-2. **Administration → Company Profile** — set the name, upload the logo, fill in
-   the address, contact details, tax number and footer note. This is the letterhead
-   on every printed document in all four apps, and it starts effectively blank.
-3. **Administration → Users** — create real users, assign roles *and* app access.
-   A role is scoped to one app: holding it both admits the user to that app's tile
-   on the portal and decides what they can do inside it.
-4. **Administration → Roles & Permissions** — review the permission matrix.
-5. If you use biometric attendance, add your terminals under **HR → Devices** and
-   hit *Test connection* first — see §12.
+## 9. First login
 
-> **Access changes apply at next sign-in.** App access is stamped onto the login
-> cookie as claims so the portal and nav never hit the database. A user you just
-> granted an app to must sign out and back in.
+Browse to `http://<container-ip>/` and sign in with the `Seed` credentials.
 
-## 10. Updates
+1. **Change the admin password immediately** — top-right menu → My profile → Password.
+2. **Administration → Company Profile** — name, logo, address, contact, tax number,
+   footer note. This is the letterhead on every printed document in all four apps,
+   and it starts blank.
+3. **Administration → Users** — create real users; assign roles **and** app access.
+   A role is scoped to one app: holding it both admits the user to that app's tile on
+   the portal and decides what they can do inside it.
+4. **Administration → Roles & Permissions** — review the matrix.
+5. **Finance → Settings** — currency and the low-cash alert threshold.
 
-Two scripted paths. Both back up **every database**, snapshot the current binaries,
-restart the service (migrations apply on boot), wait for a health check, and roll
-the *code* back automatically if the app doesn't come back.
+> **App access is a sign-in claim.** It is stamped onto the login cookie so the portal
+> and nav never hit the database. A user you just granted access to must sign out and
+> back in before the tile appears.
+
+---
+
+## 10. Backups
+
+Set this up **now**, not later:
+
+```bash
+cat > /etc/cron.daily/mei-erp-backup <<'EOF'
+#!/bin/sh
+set -e
+DEST=/var/backups/mei-erp
+mkdir -p "$DEST"
+STAMP=$(date +%F)
+
+for db in erp_identity finance_erp erp_repair erp_gatepass erp_hr; do
+    mysqldump --single-transaction --routines "$db" | gzip > "$DEST/$db-$STAMP.sql.gz"
+done
+
+# Receipt attachments and DataProtection keys are in no database.
+tar czf "$DEST/files-$STAMP.tar.gz" -C /opt/finance-erp uploads keys
+
+find "$DEST" -name '*.gz' -mtime +30 -delete
+EOF
+chmod +x /etc/cron.daily/mei-erp-backup
+/etc/cron.daily/mei-erp-backup
+ls -lh /var/backups/mei-erp/
+```
+
+Root's socket auth means the job needs no stored password. Add Proxmox vzdump
+snapshots of the whole container too (Datacenter → Backup), and **test a restore
+once** — an untested backup is a guess.
+
+---
+
+## 11. Updates
+
+Two paths. Both back up all five databases, snapshot the binaries, restart,
+health-check, and roll the *code* back automatically if the app doesn't return.
 
 ### A. Push from your dev machine — `deploy/update.sh`
 
-The build happens on your machine; the container only receives files. Needs the
-.NET SDK locally, plus `rsync` and key-based SSH on **both** ends
-(`ssh-copy-id root@<container-ip>`).
+Builds locally, ships the result. Needs the .NET SDK on your machine, `rsync` on both
+ends, and key-based SSH (`ssh-copy-id root@<container-ip>`).
 
 ```bash
 ./deploy/update.sh <container-ip>
-# or: FINANCE_ERP_HOST=<container-ip> ./deploy/update.sh
 ```
 
-This ships your **working tree**, which may not match any commit — handy for a
-hotfix, but it means nothing on GitHub records what is running. The script clears
-the `.deployed-revision` stamp afterwards so path B does not mistake your
-hand-built deploy for the commit it last shipped.
+Ships your **working tree**, which may match no commit — fine for a hotfix, but then
+nothing on GitHub records what is running.
 
 ### B. Pull on the container — `deploy/self-update.sh`
 
-The container fetches `main` from GitHub, builds it itself, and swaps the binaries
-in. Nothing is needed on your dev machine, and you can trigger it over SSH or from
-a timer.
-
-**One-time setup**, as root on the container:
+The container fetches `main`, builds it, and swaps the binaries in. Needs the
+**SDK**, not just the runtime installed in §3:
 
 ```bash
-# The SDK, not just the runtime — section 3 installs only the runtime.
-apt install -y git rsync dotnet-sdk-10.0
+apt install -y dotnet-sdk-10.0
+# or, if apt has no such package:
+#   /tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet
 
-mkdir -p /opt/src && cd /opt/src
-git clone https://github.com/mivu2k/finance-erp.git
+mkdir -p /opt/src
+git clone https://github.com/mivu2k/finance-erp.git /opt/src/finance-erp
 chmod +x /opt/src/finance-erp/deploy/self-update.sh
 
-# Sanity check before you rely on it:
-dotnet --list-sdks          # must print at least one SDK, not just runtimes
+dotnet --list-sdks          # must print an SDK, not just runtimes
 command -v rsync            # must print a path
 ```
-
-The repository is **public**, so the clone needs no credentials. If you ever make
-it private, give the container read access with a
-[deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys)
-and clone over SSH instead — do not put a personal access token on the server.
-
-**To update:**
 
 ```bash
 /opt/src/finance-erp/deploy/self-update.sh
 ```
 
-What it does, in order: fetch `main` → compare against the deployed revision →
-build to a temp directory → back up all five databases → snapshot the binaries →
-stop the service → rsync the new build in → start → health-check → record the
-revision. A failed health check rolls the binaries back and resets the checkout to
-the commit that was working — unless this was a first deploy, where there is no
-snapshot to return to and the script says so rather than deleting anything.
+- Builds **before** stopping the service, so a compile error costs no downtime.
+- Compares against `/opt/finance-erp/.deployed-revision`, not the checkout — a fresh
+  clone already sits at `origin/main` while old binaries run, so comparing the
+  checkout would skip the first deploy and wrongly report success.
+- Exits immediately if nothing moved; `FINANCE_ERP_FORCE=1` rebuilds anyway.
+- **`git reset --hard` runs against `/opt/src/finance-erp`** — never edit anything
+  there. It is a build input; local changes vanish without warning.
+- Another branch: `FINANCE_ERP_BRANCH=my-branch /opt/src/finance-erp/deploy/self-update.sh`.
+- The repo is **public**, so the clone needs no credentials. If it ever goes private,
+  use a deploy key — not a personal access token on the server.
 
-Things worth knowing before you rely on it:
+### Unattended (optional)
 
-- **It builds before it stops the service**, so a compile error costs no downtime —
-  the running app is untouched until there is something good to install.
-- **It compares against what is *deployed*, not against the checkout.** The stamp
-  lives at `/opt/finance-erp/.deployed-revision`. A fresh clone already sits at
-  `origin/main` while the old binaries are still running, so comparing the checkout
-  would skip the very first deploy and wrongly report success.
-- It exits immediately if nothing has moved. `FINANCE_ERP_FORCE=1` rebuilds anyway.
-- **`git reset --hard` runs against `/opt/src/finance-erp`.** Never edit anything
-  there — local changes are discarded without warning. That checkout is a build
-  input, not a place to work.
-- **Building needs headroom.** The SDK is roughly 1 GB on disk, and the NuGet cache
-  under `/root/.nuget` grows to a few hundred MB more. A release build peaks around
-  1–1.5 GB of RAM *while the old app is still running*, which is why §1 asks for
-  4 GB. On a 2 GB container the build gets OOM-killed.
-- **Don't alternate paths A and B casually.** Running B after A rebuilds from `main`
-  and discards whatever working tree A shipped.
-- Deploying a branch other than `main`: `FINANCE_ERP_BRANCH=my-branch
-  /opt/src/finance-erp/deploy/self-update.sh`.
-
-**First run on a box installed by hand** (§5's `scp`): there is no
-`.deployed-revision` yet, so it reports "no deployment stamp found — treating this
-as a first deploy" and rebuilds. That is correct, not an error.
-
-**Watching it:** the script is chatty on stdout. Over SSH:
-
-```bash
-ssh root@<container-ip> '/opt/src/finance-erp/deploy/self-update.sh'
-```
-
-If it fails, it prints the last 40 journal lines and the exact restore commands
-before exiting non-zero.
-
-### Fully unattended (optional)
-
-A timer can run path B nightly. Weigh this up first: it deploys whatever is on
-`main` to your live books with nobody watching, and while the script rolls back a
-failed *start*, it cannot undo a migration that applied successfully but was
-wrong. Tagged releases or a manual trigger are safer for financial data.
+A timer can run path B nightly. Weigh it up: it deploys whatever is on `main` to your
+live books with nobody watching, and while it rolls back a failed *start*, it cannot
+undo a migration that applied successfully but was wrong.
 
 ```bash
 cp /opt/src/finance-erp/deploy/finance-erp-update.{service,timer} /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now finance-erp-update.timer
-systemctl list-timers finance-erp-update    # confirm next run
-journalctl -u finance-erp-update -f         # watch an update happen
+systemctl list-timers finance-erp-update
 ```
 
-Trigger one by hand with `systemctl start finance-erp-update`.
-
-The unit runs at 03:15 with up to 15 minutes of jitter, allows 30 minutes for the
-build (`TimeoutStartSec=1800`), and **hardcodes `/opt/src/finance-erp`**. If your
-checkout is elsewhere, or you want to override any `FINANCE_ERP_*` setting for the
-timer only, edit the unit — the script's environment defaults do not reach a
-systemd service otherwise:
-
-```ini
-# /etc/systemd/system/finance-erp-update.service
-[Service]
-Environment=FINANCE_ERP_SRC=/srv/finance-erp
-Environment=FINANCE_ERP_KEEP_BACKUPS=20
-```
-
-Then `systemctl daemon-reload`.
+Runs 03:15 with 15m jitter, 30-minute build timeout, and **hardcodes
+`/opt/src/finance-erp`**. Overriding any `FINANCE_ERP_*` for the timer means adding
+`Environment=` lines to the unit — the script's defaults do not reach a systemd
+service.
 
 ### Rollback
 
-Both scripts print the exact commands afterwards. Roll the binaries back by
-**syncing over** the app directory, never by deleting it — `uploads/` and `keys/`
-live there and the snapshot does not contain them:
+Roll binaries back by **syncing over** the directory, never deleting it — `uploads/`
+and `keys/` live there and are not in the snapshot:
 
 ```bash
 systemctl stop finance-erp
@@ -366,21 +462,14 @@ chown -R finance-erp:finance-erp /opt/finance-erp
 systemctl start finance-erp
 ```
 
-Only if a migration needs undoing — restore the database(s) it touched. Dumps are
-named per database:
+Databases only if a migration needs undoing — dumps are named per database:
 
 ```bash
 zcat /var/backups/finance-erp/erp_identity-<stamp>.sql.gz | mysql erp_identity
 zcat /var/backups/finance-erp/finance_erp-<stamp>.sql.gz  | mysql finance_erp
-# ...and so on for erp_repair, erp_gatepass, erp_hr
 ```
 
-A release usually migrates only some databases; restoring one that didn't change
-is harmless but pointless. `journalctl -u finance-erp` shows which migrations ran.
-
 ### Script settings
-
-Environment variables both scripts honour, if your install differs from this guide:
 
 | Variable | Default |
 |---|---|
@@ -394,60 +483,86 @@ Environment variables both scripts honour, if your install differs from this gui
 | `FINANCE_ERP_KEEP_BACKUPS` | `10` (per database) |
 | `FINANCE_ERP_HOST` / `FINANCE_ERP_SSH_USER` | — / `root` (path A) |
 
-## 11. Backups
-
-The update scripts only back up *at deploy time*. Run a standing daily backup too —
-all five databases plus the file state that has no other copy:
-
-```bash
-# /etc/cron.daily/mei-erp-backup
-#!/bin/sh
-set -e
-DEST=/var/backups/mei-erp
-mkdir -p "$DEST"
-STAMP=$(date +%F)
-
-for db in erp_identity finance_erp erp_repair erp_gatepass erp_hr; do
-    mysqldump --single-transaction --routines "$db" | gzip > "$DEST/$db-$STAMP.sql.gz"
-done
-
-# Receipt attachments and the DataProtection keys are not in any database.
-tar czf "$DEST/files-$STAMP.tar.gz" -C /opt/finance-erp uploads keys
-
-find "$DEST" -name '*.gz' -mtime +30 -delete
-```
-
-```bash
-chmod +x /etc/cron.daily/mei-erp-backup
-```
-
-Plus Proxmox-level vzdump snapshots of the whole container (Datacenter → Backup).
-Test a restore at least once — an untested backup is a guess.
+---
 
 ## 12. Biometric attendance (optional)
 
-HR polls ZKTeco terminals (uFace 800 and the standalone range) directly over
-**TCP 4370** — the vendor SDK is 32-bit Windows COM and can't run here, so the
-protocol is implemented in-process.
+HR polls ZKTeco terminals (uFace 800 and the standalone range) over **TCP 4370**. The
+vendor SDK is 32-bit Windows COM and cannot run here, so the protocol is implemented
+in-process.
 
-- The container must reach each terminal's IP on port 4370. If they're on a
-  separate VLAN, open that path.
-- Add terminals under **HR → Devices**, then use *Test connection* — it also warns
-  when the terminal's clock is more than 5 minutes off, which is the top cause of
-  wrong attendance.
-- Polling interval is `Attendance:IntervalMinutes` (default 15). Sync is
-  idempotent: devices keep their whole log and are re-read in full, deduped.
-- Set `Attendance:Enabled: false` if you have no terminals.
+- The container must reach each terminal's IP on port 4370. Separate VLAN? Open it.
+- Add terminals under **HR → Devices**, then *Test connection* — it also warns when
+  the terminal clock is more than 5 minutes off, the top cause of wrong attendance.
+- `Attendance:IntervalMinutes` sets the interval (default 15). Sync is idempotent:
+  devices keep their whole log and are re-read in full, deduped.
 
 > This has never been run against real hardware. The wire format is covered by unit
-> tests that reproduce the device's own encoding, but first contact with a live
-> terminal is unproven — test connection is the first thing to try.
+> tests reproducing the device's own encoding, but first contact with a live terminal
+> is unproven. *Test connection* is the first thing to try.
 
-## 13. Known gaps
+---
 
-- **`/files/receipts/{name}` is auth-only.** Any logged-in user who knows or
-  guesses a stored filename can fetch any receipt; there is no ownership or
-  permission check. Filenames are GUIDs, so this is obscurity rather than a
-  control. Worth knowing if your user base is wider than your accounts team.
-- **No CI.** Nothing runs the test suite except you: `dotnet test` before you
-  deploy.
+## Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| `Couldn't find a valid ICU package` | `libicu74` missing (§2) |
+| `Access denied for user 'finance'@'localhost'` | Wrong password in the config, or grants not applied. Prove it with `mysql -u finance -p` first |
+| `ConnectionStrings:IdentityConnection is not configured` | Config still has a single `DefaultConnection`. The build needs all five names (§6) |
+| `Unable to locate package aspnetcore-runtime-10.0` | Use the installer script (§3) |
+| `Unknown database 'erp_identity'` | §4 was skipped or partially run |
+| Service `active`, `curl` returns `000` | Read `journalctl -u finance-erp -n 50` — almost always a database connection failure |
+| UI connects then drops every few seconds | WebSockets not proxied — check nginx **and** any upstream proxy (§8) |
+| `Assets file project.assets.json not found` | `dotnet restore` in the checkout first (path B) |
+| Login works but an app tile is missing | App access applies at **next sign-in** — sign out and back in (§9) |
+| `mysql -u root -p` fails on a fresh box | MariaDB root uses socket auth on Ubuntu — run `mysql` as root, no `-u root -p` |
+
+---
+
+## Appendix A — carrying data over from an old container
+
+Only if you have real data on a pre-split install, where users and accounts shared one
+`finance_erp`. Do this **after** the fresh install above is confirmed working.
+
+On the **old** container:
+
+```bash
+systemctl stop finance-erp
+mysqldump --single-transaction --routines finance_erp | gzip > /root/old-finance.sql.gz
+tar czf /root/old-files.tar.gz -C /opt/finance-erp uploads keys
+```
+
+Copy both across, then on the **new** container:
+
+```bash
+systemctl stop finance-erp
+zcat /root/old-finance.sql.gz | mysql finance_erp
+tar xzf /root/old-files.tar.gz -C /opt/finance-erp
+chown -R finance-erp:finance-erp /opt/finance-erp
+
+mysql < /opt/src/finance-erp/deploy/migrate-identity-out-of-accounts.sql
+mysql -e "SELECT COUNT(*) FROM erp_identity.AspNetUsers;"     # must be > 0
+
+systemctl start finance-erp
+```
+
+`migrate-identity-out-of-accounts.sql` copies users, roles and permission claims out
+of the old `finance_erp.AspNet*` tables into `erp_identity`. The accounts migration
+then drops the stale originals on the next boot — which is why the count check above
+is not optional.
+
+Two things people forget:
+
+- **Restoring `keys/`** — without the old DataProtection keys, every existing session
+  and auth cookie is invalid.
+- **Restoring `uploads/`** — receipt attachments exist nowhere else.
+
+---
+
+## Known gaps
+
+- **`/files/receipts/{name}` is auth-only.** Any logged-in user who knows a stored
+  filename can fetch any receipt; there is no ownership or permission check.
+  Filenames are GUIDs, so this is obscurity rather than a control.
+- **No CI.** Run `dotnet test` yourself before deploying.
