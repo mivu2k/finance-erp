@@ -44,7 +44,18 @@ public class Employee : AuditableEntity
     /// Defaults to <see cref="EmployeeCode"/> but kept separate because the device
     /// often carries a shorter numeric id that predates the HR record.
     /// </summary>
-    public string? DeviceUserId { get; set; }
+    /// <summary>
+    /// UID of the NFC card or fob issued to this person, exactly as the reader
+    /// types it. Unique: two people on one card would merge their attendance.
+    /// </summary>
+    public string? CardNumber { get; set; }
+
+    /// <summary>
+    /// Per-employee secret behind their rotating attendance QR. Random, generated
+    /// on first use. Re-issuing it invalidates every code already on their screen,
+    /// which is what you want when a phone is lost.
+    /// </summary>
+    public string? QrSecret { get; set; }
     public string? ReportsToEmployeeCode { get; set; }
     public EmploymentType EmploymentType { get; set; } = EmploymentType.Permanent;
     public EmployeeStatus Status { get; set; } = EmployeeStatus.Active;
@@ -67,9 +78,6 @@ public class Employee : AuditableEntity
 
     public List<EmployeeDocument> Documents { get; set; } = [];
 
-    /// <summary>What the terminals should match this person on.</summary>
-    public string EffectiveDeviceUserId =>
-        string.IsNullOrWhiteSpace(DeviceUserId) ? EmployeeCode : DeviceUserId;
 }
 
 /// <summary>A scanned or uploaded file attached to an employee (contract, CV, ID, certificate).</summary>

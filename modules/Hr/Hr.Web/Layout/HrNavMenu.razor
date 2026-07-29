@@ -20,11 +20,15 @@
                 Monthly Report
             </MudNavLink>
             <AuthorizeView Policy="@HrPermissions.DevicesManage" Context="dev">
-                <MudNavLink Href="/hr/devices" Icon="@Icons.Material.Filled.Router">
-                    Devices
+                <MudNavLink Href="/hr/stations" Icon="@Icons.Material.Filled.PointOfSale">
+                    Attendance Stations
                 </MudNavLink>
             </AuthorizeView>
         </MudNavGroup>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@HrPermissions.AttendanceViewOwn" Context="mc">
+        <MudNavLink Href="/hr/my-code" Icon="@Icons.Material.Filled.QrCode2">My Attendance Code</MudNavLink>
     </AuthorizeView>
 
     <AuthorizeView Policy="@HrPermissions.LeaveViewAll" Context="lv">

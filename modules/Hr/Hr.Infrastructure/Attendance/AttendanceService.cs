@@ -51,14 +51,8 @@ public interface IAttendanceService
     Task<AttendanceDay> SaveManualAsync(ManualDayInput input, string actorId, string actorName,
         CancellationToken ct = default);
 
-    /// <summary>Drops a manual override so the day reverts to what the device says.</summary>
+    /// <summary>Drops a manual override so the day reverts to what the punches say.</summary>
     Task RevertToDeviceAsync(int attendanceDayId, CancellationToken ct = default);
-
-    /// <summary>Punches the terminals recorded against a device id we can't match to anyone.</summary>
-    Task<List<(string DeviceUserId, int Count, DateTime LastSeen)>> GetUnmatchedAsync(
-        CancellationToken ct = default);
-    /// <summary>Assigns orphaned punches to an employee and rebuilds their days.</summary>
-    Task<int> AssignUnmatchedAsync(string deviceUserId, int employeeId, CancellationToken ct = default);
 }
 
 public class AttendanceService(HrDbContext db, IAttendanceSyncService sync) : IAttendanceService
@@ -90,7 +84,7 @@ public class AttendanceService(HrDbContext db, IAttendanceSyncService sync) : IA
         var end = date.AddDays(1).ToDateTime(TimeOnly.MinValue);
 
         return db.AttendancePunches
-            .Include(p => p.BiometricDevice)
+            .Include(p => p.AttendanceStation)
             .Where(p => p.EmployeeId == employeeId && p.PunchedAt >= start && p.PunchedAt < end)
             .OrderBy(p => p.PunchedAt)
             .AsNoTracking()
@@ -234,50 +228,5 @@ public class AttendanceService(HrDbContext db, IAttendanceSyncService sync) : IA
         await db.SaveChangesAsync(ct);
 
         await sync.RebuildAsync(date, date, employeeId, ct);
-    }
-
-    public async Task<List<(string DeviceUserId, int Count, DateTime LastSeen)>> GetUnmatchedAsync(
-        CancellationToken ct = default)
-    {
-        var rows = await db.AttendancePunches
-            .Where(p => p.EmployeeId == null)
-            .GroupBy(p => p.DeviceUserId)
-            .Select(g => new
-            {
-                DeviceUserId = g.Key,
-                Count = g.Count(),
-                LastSeen = g.Max(p => p.PunchedAt)
-            })
-            .OrderByDescending(r => r.LastSeen)
-            .ToListAsync(ct);
-
-        return rows.Select(r => (r.DeviceUserId, r.Count, r.LastSeen)).ToList();
-    }
-
-    public async Task<int> AssignUnmatchedAsync(
-        string deviceUserId, int employeeId, CancellationToken ct = default)
-    {
-        var employee = await db.Employees.FirstOrDefaultAsync(e => e.Id == employeeId, ct)
-                       ?? throw new InvalidOperationException("Employee not found.");
-
-        var punches = await db.AttendancePunches
-            .Where(p => p.EmployeeId == null && p.DeviceUserId == deviceUserId)
-            .ToListAsync(ct);
-
-        if (punches.Count == 0) return 0;
-
-        foreach (var punch in punches) punch.EmployeeId = employeeId;
-
-        // Remember the mapping so the next sync matches these automatically.
-        if (!string.Equals(employee.EmployeeCode, deviceUserId, StringComparison.OrdinalIgnoreCase))
-            employee.DeviceUserId = deviceUserId;
-
-        await db.SaveChangesAsync(ct);
-
-        var from = DateOnly.FromDateTime(punches.Min(p => p.PunchedAt));
-        var to = DateOnly.FromDateTime(punches.Max(p => p.PunchedAt));
-        await sync.RebuildAsync(from, to, employeeId, ct);
-
-        return punches.Count;
     }
 }

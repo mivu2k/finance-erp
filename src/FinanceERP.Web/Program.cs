@@ -137,7 +137,6 @@ app.MapPrintEndpoints();
 app.MapGatePassPrintEndpoints();
 app.MapRepairPrintEndpoints();
 app.MapHrExportEndpoints();
-app.MapHrAdmsEndpoints();
 
 // Authenticated receipt downloads (files live outside wwwroot).
 app.MapGet("/files/receipts/{name}", (string name, FinanceERP.Web.Services.ReceiptStorage storage) =>

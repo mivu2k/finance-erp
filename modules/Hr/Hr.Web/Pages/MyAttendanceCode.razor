@@ -1,0 +1,162 @@
+@page "/hr/my-code"
+@attribute [Authorize(Policy = HrPermissions.AttendanceViewOwn)]
+@layout HrLayout
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using ErpPlatform.Shared.Kernel
+@using Hr.Domain
+@using Hr.Infrastructure
+@using Hr.Infrastructure.Attendance
+@using Microsoft.EntityFrameworkCore
+@inject IServiceScopeFactory ScopeFactory
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>My Attendance Code</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">My Attendance Code</MudText>
+
+@if (_employee is null)
+{
+    <MudAlert Severity="Severity.Warning">
+        Your login isn't linked to an employee record yet. Ask HR to connect them —
+        until then this code can't identify you.
+    </MudAlert>
+}
+else
+{
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="5">
+            <MudPaper Class="pa-6 d-flex flex-column align-center">
+                <MudText Typo="Typo.subtitle1" Class="mb-1">@_employee.FullName</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary mb-4">
+                    @_employee.EmployeeCode
+                </MudText>
+
+                <div style="background:#fff;padding:16px;border-radius:8px;line-height:0">
+                    @((MarkupString)_svg)
+                </div>
+
+                <MudProgressLinear Value="@(_remaining * 100.0 / 30)" Class="mt-4" Style="width:100%"
+                                   Color="@(_remaining <= 5 ? Color.Warning : Color.Primary)" />
+                <MudText Typo="Typo.caption" Class="mt-2 mud-text-secondary">
+                    Refreshes in @_remaining second@(_remaining == 1 ? "" : "s")
+                </MudText>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="7">
+            <MudPaper Class="pa-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">How to use it</MudText>
+                <MudText Typo="Typo.body2" Class="mb-4">
+                    Hold this screen up to the scanner at the door. The code changes every
+                    30 seconds, so a screenshot of it is worth nothing a minute later —
+                    which is the point. If the scanner beeps but nothing happens, let the
+                    code refresh and try again.
+                </MudText>
+
+                <MudText Typo="Typo.subtitle1" Class="mb-2">If your phone is lost</MudText>
+                <MudText Typo="Typo.body2" Class="mb-3">
+                    Reissue the code. Every code already shown anywhere stops working
+                    immediately, including on the lost device.
+                </MudText>
+                <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                           StartIcon="@Icons.Material.Filled.Autorenew"
+                           OnClick="Reissue">Reissue my code</MudButton>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private Employee? _employee;
+    private string _svg = "";
+    private int _remaining = 30;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        var userId = auth.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (userId is null) return;
+
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<HrDbContext>();
+        _employee = await db.Employees.FirstOrDefaultAsync(e => e.UserId == userId);
+        if (_employee is null) return;
+
+        await EnsureSecretAsync(db);
+        Refresh();
+        _ = TickAsync();
+    }
+
+    /// <summary>
+    /// Generated on first view rather than at enrolment, so an employee who never
+    /// uses the QR never has a secret sitting in the database.
+    /// </summary>
+    private async Task EnsureSecretAsync(HrDbContext db)
+    {
+        if (!string.IsNullOrWhiteSpace(_employee!.QrSecret)) return;
+
+        using var scope = ScopeFactory.CreateScope();
+        _employee.QrSecret = scope.ServiceProvider
+            .GetRequiredService<IAttendanceTokenService>().NewSecret();
+        await db.SaveChangesAsync();
+    }
+
+    private async Task TickAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        while (await timer.WaitForNextTickAsync())
+        {
+            Refresh();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void Refresh()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var tokens = scope.ServiceProvider.GetRequiredService<IAttendanceTokenService>();
+
+        _remaining = tokens.SecondsRemaining();
+        _svg = Svg(tokens.Issue(_employee!.Id, _employee.QrSecret!));
+    }
+
+    private async Task Reissue()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<HrDbContext>();
+        var row = await db.Employees.FirstAsync(e => e.Id == _employee!.Id);
+
+        row.QrSecret = scope.ServiceProvider
+            .GetRequiredService<IAttendanceTokenService>().NewSecret();
+        await db.SaveChangesAsync();
+
+        _employee!.QrSecret = row.QrSecret;
+        Refresh();
+    }
+
+    /// <summary>
+    /// Draws the matrix as one SVG path. Rendering it inline avoids a round trip
+    /// per second, which matters when the code changes every 30.
+    /// </summary>
+    private static string Svg(string payload)
+    {
+        var m = QrCode.Encode(payload);
+        const int quiet = 4;
+        var size = m.Size + quiet * 2;
+
+        var path = new System.Text.StringBuilder();
+        for (var y = 0; y < m.Size; y++)
+        for (var x = 0; x < m.Size; x++)
+            if (m[x, y])
+                path.Append($"M{x + quiet} {y + quiet}h1v1h-1z");
+
+        return $"""
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {size} {size}"
+                 width="260" height="260" shape-rendering="crispEdges">
+              <rect width="{size}" height="{size}" fill="#fff"/>
+              <path d="{path}" fill="#000"/>
+            </svg>
+            """;
+    }
+}

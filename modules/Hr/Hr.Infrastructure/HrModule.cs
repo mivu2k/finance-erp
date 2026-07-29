@@ -1,7 +1,6 @@
 using ErpPlatform.Shared.Identity;
 using Hr.Domain;
 using Hr.Infrastructure.Attendance;
-using Hr.Infrastructure.Devices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,7 +29,7 @@ public static class HrModule
             P(HrPermissions.AttendanceViewAll, "Attendance", "See everyone's attendance"),
             P(HrPermissions.AttendanceEdit, "Attendance",
                 "Correct attendance by hand when a terminal misses a read"),
-            P(HrPermissions.DevicesManage, "Attendance", "Configure and sync biometric terminals"),
+            P(HrPermissions.DevicesManage, "Attendance", "Configure attendance stations and enrol cards"),
 
             P(HrPermissions.LeaveRequest, "Leave", "Apply for leave"),
             P(HrPermissions.LeaveViewOwn, "Leave", "See own leave and balances"),
@@ -84,14 +83,10 @@ public static class HrModule
         services.AddScoped<IEmployeeService, EmployeeService>();
         services.AddScoped<IAttendanceService, AttendanceService>();
         services.AddScoped<IAttendanceSyncService, AttendanceSyncService>();
-        services.AddScoped<IAdmsService, AdmsService>();
         services.AddScoped<ILeaveService, LeaveService>();
-        services.AddSingleton<IZkDeviceClient, ZkDeviceClient>();
+        services.AddScoped<IKioskService, KioskService>();
+        services.AddSingleton<IAttendanceTokenService, AttendanceTokenService>();
         services.AddSingleton<IHrExportService, HrExportService>();
-
-        services.Configure<AttendancePollingOptions>(
-            config.GetSection(AttendancePollingOptions.Section));
-        services.AddHostedService<AttendancePollingService>();
 
         ModuleRegistry.Register(Registration);
         return services;

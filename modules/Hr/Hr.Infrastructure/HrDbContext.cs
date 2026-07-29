@@ -17,7 +17,7 @@ public class HrDbContext(DbContextOptions<HrDbContext> options, ICurrentUserServ
     public DbSet<Designation> Designations => Set<Designation>();
     public DbSet<DocumentSequence> DocumentSequences => Set<DocumentSequence>();
 
-    public DbSet<BiometricDevice> BiometricDevices => Set<BiometricDevice>();
+    public DbSet<AttendanceStation> AttendanceStations => Set<AttendanceStation>();
     public DbSet<AttendancePunch> AttendancePunches => Set<AttendancePunch>();
     public DbSet<AttendanceDay> AttendanceDays => Set<AttendanceDay>();
     public DbSet<Shift> Shifts => Set<Shift>();
@@ -71,8 +71,9 @@ public class HrDbContext(DbContextOptions<HrDbContext> options, ICurrentUserServ
                 .HasForeignKey(x => x.DesignationId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Shift).WithMany()
                 .HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Restrict);
-            e.Property(x => x.DeviceUserId).HasMaxLength(64);
-            e.HasIndex(x => x.DeviceUserId);
+            e.Property(x => x.CardNumber).HasMaxLength(64);
+            e.HasIndex(x => x.CardNumber).IsUnique();
+            e.Property(x => x.QrSecret).HasMaxLength(64);
             e.HasQueryFilter(x => !x.IsDeleted);
         });
 
@@ -105,30 +106,28 @@ public class HrDbContext(DbContextOptions<HrDbContext> options, ICurrentUserServ
             e.HasQueryFilter(x => !x.IsDeleted);
         });
 
-        b.Entity<BiometricDevice>(e =>
+        b.Entity<AttendanceStation>(e =>
         {
             e.Property(x => x.Name).HasMaxLength(150);
-            e.Property(x => x.Host).HasMaxLength(255);
-            e.Property(x => x.SerialNumber).HasMaxLength(100);
             e.Property(x => x.Location).HasMaxLength(150);
-            e.Property(x => x.LastSyncResult).HasMaxLength(500);
-            e.HasIndex(x => new { x.Host, x.Port }).IsUnique();
+            e.Property(x => x.AccessToken).HasMaxLength(64);
+            e.Property(x => x.LastPunchDescription).HasMaxLength(300);
+            e.HasIndex(x => x.AccessToken).IsUnique();
             e.HasQueryFilter(x => !x.IsDeleted);
         });
 
         b.Entity<AttendancePunch>(e =>
         {
-            // The natural key of a read. Re-pulling the device log is the normal
-            // case, so the unique index is what makes sync idempotent.
-            e.HasIndex(x => new { x.DeviceUserId, x.PunchedAt, x.BiometricDeviceId })
+            // One person cannot be in two places at the same instant, and the kiosk
+            // debounce means a genuine second punch is always later than this.
+            e.HasIndex(x => new { x.EmployeeId, x.PunchedAt })
                 .IsUnique()
                 .HasDatabaseName("IX_AttendancePunches_Natural");
-            e.HasIndex(x => new { x.EmployeeId, x.PunchedAt });
-            e.Property(x => x.DeviceUserId).HasMaxLength(64);
-            e.HasOne(x => x.BiometricDevice).WithMany()
-                .HasForeignKey(x => x.BiometricDeviceId).OnDelete(DeleteBehavior.SetNull);
+            e.Property(x => x.Evidence).HasMaxLength(200);
+            e.HasOne(x => x.AttendanceStation).WithMany()
+                .HasForeignKey(x => x.AttendanceStationId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(x => x.Employee).WithMany()
-                .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.SetNull);
+                .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Cascade);
         });
 
         b.Entity<AttendanceDay>(e =>

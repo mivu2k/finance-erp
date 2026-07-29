@@ -178,8 +178,8 @@
                     {
                         <tr>
                             <td>@p.PunchedAt.ToString("HH:mm:ss")</td>
-                            <td>@p.VerifyMode</td>
-                            <td>@(p.BiometricDevice?.Name ?? "—")</td>
+                            <td>@p.Method</td>
+                            <td>@(p.AttendanceStation?.Name ?? "—")</td>
                         </tr>
                     }
                     @if (_punches.Count == 0)

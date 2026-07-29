@@ -98,17 +98,17 @@ public class EmployeeService(HrDbContext db, IPlatformUserDirectory directory) :
         if (codeTaken)
             throw new InvalidOperationException($"Employee code {employee.EmployeeCode} is already in use.");
 
-        // Two people on one terminal ID would silently merge their attendance.
-        employee.DeviceUserId = string.IsNullOrWhiteSpace(employee.DeviceUserId)
+        // Two people on one card would silently merge their attendance.
+        employee.CardNumber = string.IsNullOrWhiteSpace(employee.CardNumber)
             ? null
-            : employee.DeviceUserId.Trim();
-        if (employee.DeviceUserId is not null)
+            : employee.CardNumber.Trim();
+        if (employee.CardNumber is not null)
         {
-            var deviceIdTaken = await db.Employees.AnyAsync(
-                e => e.DeviceUserId == employee.DeviceUserId && e.Id != employee.Id, ct);
-            if (deviceIdTaken)
+            var cardTaken = await db.Employees.AnyAsync(
+                e => e.CardNumber == employee.CardNumber && e.Id != employee.Id, ct);
+            if (cardTaken)
                 throw new InvalidOperationException(
-                    $"Device user ID {employee.DeviceUserId} is already assigned to another employee.");
+                    $"Card {employee.CardNumber} is already assigned to another employee.");
         }
 
         // One employee record per login, so payroll and attendance can't double up.

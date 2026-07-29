@@ -1,0 +1,140 @@
+@page "/hr/kiosk/{Token}"
+@layout EmptyKioskLayout
+@rendermode InteractiveServer
+@using Hr.Domain
+@using Hr.Infrastructure.Attendance
+@inject IServiceScopeFactory ScopeFactory
+@inject IJSRuntime JS
+
+@* Deliberately unauthenticated: this runs on a PC by the door that nobody logs
+   into. The token in the URL is what proves it is a real station. *@
+@attribute [AllowAnonymous]
+
+<PageTitle>Clock in / out</PageTitle>
+
+<div class="kiosk">
+    @if (_station is null)
+    {
+        <div class="kiosk-panel kiosk-bad">
+            <MudIcon Icon="@Icons.Material.Filled.Block" Style="font-size:5rem" />
+            <h1>Station not recognised</h1>
+            <p>Ask an administrator for a current kiosk link.</p>
+        </div>
+    }
+    else
+    {
+        <div class="kiosk-head">
+            <span>@_station.Name</span>
+            <span>@_clock.ToString("dddd d MMMM · HH:mm:ss")</span>
+        </div>
+
+        <div class="kiosk-panel @StateClass">
+            @if (_result is null)
+            {
+                <MudIcon Icon="@Icons.Material.Filled.Contactless" Style="font-size:6rem" />
+                <h1>Tap your card or show your code</h1>
+                <p>Hold the card to the reader, or open Attendance on your phone.</p>
+            }
+            else
+            {
+                <MudIcon Icon="@(_result.Accepted ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.ErrorOutline)"
+                         Style="font-size:6rem" />
+                <h1>@(_result.EmployeeName ?? "Not recognised")</h1>
+                <p>
+                    @_result.Message
+                    @if (_result.At is { } at)
+                    {
+                        <text> · @at.ToString("HH:mm")</text>
+                    }
+                </p>
+            }
+        </div>
+
+        @* The readers behave as keyboards. This input holds focus permanently and
+           receives whatever they type; it is off-screen because the kiosk is
+           unattended and nobody should be typing into it by hand. *@
+        <input @ref="_input" @bind="_scan" @bind:event="oninput" @onkeydown="OnKey"
+               class="kiosk-capture" autocomplete="off" />
+    }
+</div>
+
+<style>
+    .kiosk { position:fixed; inset:0; display:flex; flex-direction:column;
+             background:#0f1115; color:#fff; font-family:system-ui, sans-serif; }
+    .kiosk-head { display:flex; justify-content:space-between; padding:1.5rem 2rem;
+                  font-size:1.5rem; opacity:.7; }
+    .kiosk-panel { flex:1; display:flex; flex-direction:column; align-items:center;
+                   justify-content:center; gap:1rem; transition:background .2s; }
+    .kiosk-panel h1 { font-size:3.5rem; margin:0; text-align:center; }
+    .kiosk-panel p  { font-size:1.6rem; margin:0; opacity:.85; text-align:center; }
+    .kiosk-ok  { background:#0f3d24; }
+    .kiosk-bad { background:#4a1420; }
+    .kiosk-capture { position:absolute; opacity:0; pointer-events:none; height:0; width:0; }
+</style>
+
+@code {
+    [Parameter] public string Token { get; set; } = "";
+
+    private AttendanceStation? _station;
+    private KioskResult? _result;
+    private ElementReference _input;
+    private string? _scan;
+    private DateTime _clock = DateTime.Now;
+
+    /// <summary>How long a result stays up before the screen returns to idle.</summary>
+    private static readonly TimeSpan ResultLinger = TimeSpan.FromSeconds(4);
+    private DateTime _resultShownAt;
+
+    private string StateClass => _result is null ? "" : _result.Accepted ? "kiosk-ok" : "kiosk-bad";
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _station = await scope.ServiceProvider.GetRequiredService<IKioskService>()
+            .ResolveStationAsync(Token);
+
+        _ = TickAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Focus is the whole mechanism: lose it and scans go nowhere.
+        if (_station is not null) await _input.FocusAsync();
+    }
+
+    /// <summary>
+    /// Drives the clock and clears a stale result. A kiosk that keeps the last
+    /// person's name on screen invites the next one to walk away without scanning.
+    /// </summary>
+    private async Task TickAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        while (await timer.WaitForNextTickAsync())
+        {
+            _clock = DateTime.Now;
+            if (_result is not null && DateTime.Now - _resultShownAt > ResultLinger)
+                _result = null;
+
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>
+    /// Both readers end their transmission with Enter, which is the only reliable
+    /// signal that a full code has arrived — they type fast enough that watching
+    /// for a pause is unreliable.
+    /// </summary>
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key is not ("Enter" or "NumpadEnter")) return;
+
+        var scanned = _scan ?? "";
+        _scan = "";
+        if (string.IsNullOrWhiteSpace(scanned)) return;
+
+        using var scope = ScopeFactory.CreateScope();
+        _result = await scope.ServiceProvider.GetRequiredService<IKioskService>()
+            .ScanAsync(Token, scanned);
+        _resultShownAt = DateTime.Now;
+    }
+}

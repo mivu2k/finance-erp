@@ -1,63 +1,30 @@
 namespace Hr.Domain;
 
 /// <summary>
-/// A biometric terminal on the network. Targets ZKTeco devices speaking the
-/// standard protocol on TCP 4370 (uFace 800, K40, F18 and similar).
+/// A place people clock in and out: a PC with an NFC reader and a QR scanner
+/// attached, running the kiosk page.
 /// </summary>
-public class BiometricDevice : AuditableEntity
+/// <remarks>
+/// Both readers behave as keyboards — they type what they read and press Enter —
+/// so the kiosk needs no driver and no device protocol. A station exists only so
+/// punches can be attributed to a door, and so a lost or unattended PC can be
+/// switched off centrally.
+/// </remarks>
+public class AttendanceStation : AuditableEntity
 {
     public string Name { get; set; } = string.Empty;
-    public string Host { get; set; } = string.Empty;
-    public int Port { get; set; } = 4370;
-    /// <summary>Comm key set on the device (0 when left at default). Pull mode only.</summary>
-    public int CommKey { get; set; }
-    /// <summary>
-    /// Reported by the terminal itself. In push mode this is the only thing that
-    /// identifies it — the device connects to us, so its address is irrelevant and
-    /// may change.
-    /// </summary>
-    public string? SerialNumber { get; set; }
-
-    /// <summary>How punches get here: we fetch them, or the terminal sends them.</summary>
-    public DeviceMode Mode { get; set; } = DeviceMode.Pull;
-    /// <summary>Push mode: last time the terminal contacted us, for a liveness view.</summary>
-    public DateTime? LastContactAtUtc { get; set; }
-    /// <summary>Push mode: address the terminal last called from, purely diagnostic.</summary>
-    public string? LastContactAddress { get; set; }
-    /// <summary>
-    /// A terminal that announced itself but that nobody has approved yet. Its
-    /// punches are stored — losing attendance is worse than storing some noise —
-    /// but it stays visible as pending until an admin accepts it.
-    /// </summary>
-    public bool IsPendingApproval { get; set; }
     public string? Location { get; set; }
     public bool IsEnabled { get; set; } = true;
 
-    /// <summary>Clear the device's on-board log after a successful pull.</summary>
-    /// <remarks>
-    /// Off by default. These terminals hold tens of thousands of records, and
-    /// keeping them is the only way to re-sync if this database is ever restored
-    /// from an older backup.
-    /// </remarks>
-    public bool ClearLogAfterSync { get; set; }
-
-    public DateTime? LastSyncAtUtc { get; set; }
-    public string? LastSyncResult { get; set; }
-    public int LastSyncPunchCount { get; set; }
-    /// <summary>Newest punch seen from this device — the watermark for the next pull.</summary>
-    public DateTime? LastPunchAtUtc { get; set; }
-}
-
-/// <summary>How a terminal delivers its punches.</summary>
-public enum DeviceMode
-{
-    /// <summary>We connect out to the terminal on TCP 4370 and read its log.</summary>
-    Pull = 0,
     /// <summary>
-    /// ADMS: the terminal posts to us over HTTP. Needed when the firmware refuses
-    /// SDK access, and the only option when the device cannot be reached inbound.
+    /// Secret in the kiosk's URL. The kiosk runs unattended on a PC nobody logs
+    /// into, so this is what proves a punch came from a real station rather than
+    /// anyone who can reach the site.
     /// </summary>
-    Push = 1
+    public string AccessToken { get; set; } = string.Empty;
+
+    public DateTime? LastPunchAtUtc { get; set; }
+    public string? LastPunchDescription { get; set; }
 }
 
 /// <summary>
@@ -67,20 +34,36 @@ public enum DeviceMode
 /// </summary>
 public class AttendancePunch : BaseEntity
 {
-    public int? BiometricDeviceId { get; set; }
-    public BiometricDevice? BiometricDevice { get; set; }
+    public int? AttendanceStationId { get; set; }
+    public AttendanceStation? AttendanceStation { get; set; }
 
-    /// <summary>The user id as enrolled on the terminal — matched to Employee.DeviceUserId.</summary>
-    public string DeviceUserId { get; set; } = string.Empty;
-    /// <summary>Null when the terminal has an enrolment we can't match to anyone.</summary>
-    public int? EmployeeId { get; set; }
-    public Employee? Employee { get; set; }
+    public int EmployeeId { get; set; }
+    public Employee Employee { get; set; } = null!;
 
-    /// <summary>Local time as recorded by the device.</summary>
+    /// <summary>Station-local time the scan happened.</summary>
     public DateTime PunchedAt { get; set; }
     public PunchDirection Direction { get; set; } = PunchDirection.Unspecified;
-    /// <summary>How the person identified: fingerprint, face, card, password.</summary>
-    public VerifyMode VerifyMode { get; set; } = VerifyMode.Unknown;
+    /// <summary>How the person identified themselves.</summary>
+    public PunchMethod Method { get; set; } = PunchMethod.Unknown;
+
+    /// <summary>
+    /// What was actually scanned, kept for auditing a disputed punch. For a card
+    /// this is the UID; for a QR only the code's time-step, never the token — a
+    /// stored token would be a stored credential.
+    /// </summary>
+    public string? Evidence { get; set; }
+}
+
+/// <summary>How someone identified themselves at the kiosk.</summary>
+public enum PunchMethod
+{
+    Unknown = 0,
+    /// <summary>NFC card or fob presented to the reader.</summary>
+    Card = 1,
+    /// <summary>Rotating QR code shown on the employee's own screen.</summary>
+    QrCode = 2,
+    /// <summary>Entered by hand on the kiosk by a supervisor.</summary>
+    Manual = 3
 }
 
 /// <summary>
@@ -224,7 +207,6 @@ public class LeaveBalance : AuditableEntity
 }
 
 public enum PunchDirection { Unspecified = 0, In = 1, Out = 2, BreakOut = 3, BreakIn = 4, OvertimeIn = 5, OvertimeOut = 6 }
-public enum VerifyMode { Unknown = -1, Password = 0, Fingerprint = 1, Card = 2, Face = 15 }
 
 public enum AttendanceStatus
 {

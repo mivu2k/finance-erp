@@ -278,7 +278,6 @@ cfg = {
         "AdminEmail": "admin@yourcompany.com",
         "AdminPassword": "Change-This-Once!1",
     },
-    "Attendance": {"Enabled": True, "IntervalMinutes": 15},
 }
 json.dump(cfg, open("/opt/finance-erp/appsettings.Production.json", "w"), indent=2)
 print("written")
@@ -292,8 +291,6 @@ unset DBPW
 Edit the `Seed` values before first boot — they create the first admin and are read
 **only** while no admin exists.
 
-- **`Attendance`** drives the ZKTeco poller. Harmless with no terminals configured;
-  `"Enabled": false` switches it off entirely.
 - **SMTP is optional** and omitted above. Notifications stay off unless you add an
   `Smtp` block with a non-empty `Host`. Nothing else depends on it.
 - There is **no `DefaultConnection`** any more. The build looks up each of the five
@@ -592,44 +589,25 @@ zcat /var/backups/finance-erp/finance_erp-<stamp>.sql.gz  | mysql finance_erp
 
 ---
 
-## 12. Biometric attendance (optional)
+## 12. Attendance stations
 
-HR polls ZKTeco terminals (uFace 800 and the standalone range) over **TCP 4370**. The
-vendor SDK is 32-bit Windows COM and cannot run here, so the protocol is implemented
-in-process.
+People clock in at a **station**: a PC by a door with a USB NFC reader and a QR
+scanner attached. Both present as keyboards, so there is nothing to install and no
+network path to any device.
 
-- The container must reach each terminal's IP on port 4370. Separate VLAN? Open it.
-- **Turn ADMS / Cloud Server off on the terminal.** This platform *pulls* over the
-  SDK port; a device in ADMS push mode generally refuses direct SDK connections and
-  answers `ACK_UNAUTH` to every authentication attempt — even when the comm key
-  matches what the device's own screen shows. A correct key that is still rejected
-  is the signature of this, not of a wrong key.
-- Set **Comm Key** (Menu → Comm → PC Connection) to `0` for no authentication, or
-  enter the same number under HR → Devices. Some firmware only applies a changed
-  key after a restart.
-- Add terminals under **HR → Devices**, then *Test connection* — it also warns when
-  the terminal clock is more than 5 minutes off, the top cause of wrong attendance.
-- `Attendance:IntervalMinutes` sets the interval (default 15). Sync is idempotent:
-  devices keep their whole log and are re-read in full, deduped.
+1. **HR → Attendance Stations → Add Station.** Name it after the door.
+2. Copy its **kiosk link** and open it on that PC in full-screen browser
+   (F11, or Chrome `--kiosk`). Leave it running; it needs no login.
+3. **Enrol cards**: HR → Employees → an employee → Employment tab → *NFC card
+   number*. Put the cursor in the field and hold the card to the reader — it types
+   the number itself.
+4. **Rotating QR**: employees open **HR → My Attendance Code** on their phone and
+   hold it to the scanner. The code changes every 30 seconds.
 
-### If the terminal refuses the SDK
-
-Some firmware answers `ACK_UNAUTH` to every authentication attempt whatever the
-comm key — including the key shown on its own screen. When that happens, switch
-the device to **push**:
-
-1. On the terminal: **Comm → Cloud Server / ADMS**, server address = this host,
-   port = 80, path `/iclock`. Restart it.
-2. In HR → Devices, either wait for it to appear by itself (it registers on first
-   contact and shows as *pending*, with its punches already being stored) or add it
-   with **Mode = Push** and its serial number, then approve it.
-
-**Keep `/iclock/*` on the LAN.** Those endpoints cannot require a login — a door
-terminal has none, and the protocol offers no authentication beyond a serial number
-in the query string. If this app is published to the internet, block that path at
-the reverse proxy.
-
----
+> **The kiosk link is the station's credential.** That page cannot require a login —
+> nobody signs in to a machine by a door — so anyone holding the URL can record
+> punches. Don't circulate it, and re-issue it from the stations page if a PC goes
+> missing. Keep the kiosk on the LAN.
 
 ## Troubleshooting
 

@@ -2,7 +2,6 @@ using ErpPlatform.Shared.Kernel;
 using Hr.Domain;
 using Hr.Infrastructure;
 using Hr.Infrastructure.Attendance;
-using Hr.Infrastructure.Devices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -74,12 +73,12 @@ public class AttendanceRebuildIntegrationTests : IAsyncLifetime
 
         var kamran = new Employee
         {
-            EmployeeCode = "EMP-1", FullName = "Kamran Ali", DeviceUserId = "1042",
+            EmployeeCode = "EMP-1", FullName = "Kamran Ali", CardNumber = "1042",
             JoinedOn = new DateOnly(2026, 1, 5), Shift = shift
         };
         var sana = new Employee
         {
-            EmployeeCode = "EMP-2", FullName = "Sana Iqbal", DeviceUserId = "1043",
+            EmployeeCode = "EMP-2", FullName = "Sana Iqbal", CardNumber = "1043",
             JoinedOn = new DateOnly(2026, 2, 10), Shift = shift
         };
         _db.Employees.AddRange(kamran, sana);
@@ -90,9 +89,9 @@ public class AttendanceRebuildIntegrationTests : IAsyncLifetime
 
         void Punch(Employee who, string at) => _db.AttendancePunches.Add(new AttendancePunch
         {
-            DeviceUserId = who.DeviceUserId!,
             EmployeeId = who.Id,
-            PunchedAt = DateTime.Parse(at)
+            PunchedAt = DateTime.Parse(at),
+            Method = PunchMethod.Card
         });
 
         // Monday: Kamran in early, lunch, back, out late → present with overtime.
@@ -110,7 +109,7 @@ public class AttendanceRebuildIntegrationTests : IAsyncLifetime
         await _db.SaveChangesAsync();
 
         var sync = new AttendanceSyncService(
-            _db, new UnusedClient(), NullLogger<AttendanceSyncService>.Instance);
+            _db);
 
         await sync.RebuildAsync(new DateOnly(2026, 7, 26), new DateOnly(2026, 7, 29));
 
@@ -177,7 +176,7 @@ public class AttendanceRebuildIntegrationTests : IAsyncLifetime
         await _db.SaveChangesAsync();
 
         var sync = new AttendanceSyncService(
-            _db, new UnusedClient(), NullLogger<AttendanceSyncService>.Instance);
+            _db);
 
         await sync.RebuildAsync(new DateOnly(2026, 7, 27), new DateOnly(2026, 7, 27));
 
@@ -198,18 +197,5 @@ public class AttendanceRebuildIntegrationTests : IAsyncLifetime
         public string? IpAddress => null;
         public string? Browser => null;
         public bool HasPermission(string permission) => true;
-    }
-
-    /// <summary>The rebuild path never reaches the terminal.</summary>
-    private sealed class UnusedClient : IZkDeviceClient
-    {
-        public Task<ZkDeviceInfo> GetInfoAsync(string h, int p, int k, CancellationToken ct = default) =>
-            throw new NotSupportedException();
-        public Task<IReadOnlyList<ZkAttendanceRecord>> GetAttendanceAsync(
-            string h, int p, int k, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<IReadOnlyList<ZkUser>> GetUsersAsync(
-            string h, int p, int k, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task ClearAttendanceAsync(string h, int p, int k, CancellationToken ct = default) =>
-            throw new NotSupportedException();
     }
 }

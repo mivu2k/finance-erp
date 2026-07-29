@@ -176,8 +176,8 @@ These apply to the **Finance** module specifically:
   every device on it.
 - **Delivery captures who collected the device**, not just a status change: the
   delivery note is signed against that name.
-- **Attendance is derived, never raw.** `AttendancePunch` is exactly what the
-  terminal reported and is never edited; `AttendanceDay` is the judged summary and
+- **Attendance is derived, never raw.** `AttendancePunch` is exactly what was
+  scanned and is never edited; `AttendanceDay` is the judged summary and
   is rebuilt from punches. First punch of the day is the arrival, last is the
   departure — staff punch several times a day and the records carry no reliable
   in/out flag, so bracketing is the only defensible reading. One punch alone is
@@ -198,7 +198,7 @@ Four apps behind one login, chosen from the portal at `/`:
 | Finance | `/finance` | `finance_erp` | mature — see below |
 | Repair | `/repair` | `erp_repair` | ported from Laravel, plus purchasing, barcodes and 15 reports |
 | Gate Pass & Demo Goods | `/gatepass` | `erp_gatepass` | complete |
-| HR | `/hr` | `erp_hr` | employee master, biometric attendance, leave |
+| HR | `/hr` | `erp_hr` | employee master, kiosk attendance, leave |
 
 
 Implemented and wired end-to-end (service + page + nav): accounts, vouchers, ledger,
@@ -220,10 +220,10 @@ UI yet. Not ported: the customer-facing tracking page, Excel report exports.
 
 Known gaps, roughly in priority order:
 
-1. **Finance is the untested module.** 97 tests exist —
+1. **Finance is the untested module.** 107 tests exist —
    `tests/ErpPlatform.Shared.Tests` (27, Code 128 and QR round-trip through decoders —
    QR against ZXing, a test-only dependency),
-   `tests/Hr.Tests` (32, ZK wire format and attendance arithmetic) and
+   `tests/Hr.Tests` (42, the rotating attendance token and attendance arithmetic) and
    `tests/Repair.Tests` (38, job workflow, quotation and purchase pricing, plus
    PDF render smoke tests). The
    integration tests create and drop their own throwaway databases and skip when no
@@ -265,73 +265,36 @@ into the same flat table so the screen, the Excel and the PDF can't disagree.
 `repair.reports.financial` is separate from `repair.reports.view` so a supervisor
 can see throughput without seeing margin.
 
-## Biometric attendance (ZKTeco)
+## Attendance: kiosk, card and rotating QR
 
-Targets the uFace 800 and the rest of the standalone ZKTeco range over **TCP 4370**.
+There are no biometric terminals. People clock in at an **attendance station** — a
+PC by a door with an NFC reader and a QR scanner plugged in, showing `/hr/kiosk/{token}`
+in full screen.
 
-The vendor SDK (`zkemkeeper.dll`) is 32-bit Windows COM and cannot run on this
-Linux host, so `Hr.Infrastructure/Devices` implements the protocol directly: an
-8-byte header (command, checksum, session, reply) inside an 8-byte TCP frame.
-`ZkSession` owns the socket; `ZkDeviceClient` parses records.
-
-- **The device is disabled during a read and always re-enabled in a `finally`.**
-  A terminal left disabled won't open the door.
-- Attendance records are 40 bytes on modern firmware, 16 on older; the layout is
-  chosen from the payload length.
-- Timestamps are packed as nested remainders from 2000. Anything decoding past
-  **2099 is corrupt**, not a date — without that check garbage decodes to a
-  plausible future date and gets stored as a real punch.
-- Sync is **idempotent**: the devices keep their whole log and are re-read in full,
-  deduped on `(DeviceUserId, PunchedAt, BiometricDeviceId)`.
-- Employees match terminals on `DeviceUserId`, falling back to `EmployeeCode`.
-  Unmatched ids surface on `/hr/devices` for an admin to assign, which backfills.
-- Polling interval is `Attendance:IntervalMinutes` in appsettings (default 15).
-
-**First contact with real hardware happened on 2026-07-29** against a uFace at
-192.168.19.231, and it found a bug the tests could not: the outbound checksum
-folded carries with `0xFFFF` instead of `0x10000`, landing exactly one short. The
-terminal discards a packet with a bad checksum **without replying**, so every
-read hung until it timed out — it presented as "connected but no data", never as
-an error. `ZkFraming.Checksum` is now pinned in `ZkProtocolTests` against bytes
-the device actually accepted.
-
-The lesson worth keeping: the wire-format tests covered **decoding only**. Every
-encode-side defect was invisible, because the tests generated their inputs with
-the same assumptions the parser used. Anything that only fails on a real device
-needs a pinned capture, not a round-trip.
-
-Connect is verified; **auth and reading are still unproven**. The test terminal
-answers `ACK_UNAUTH` (2005) to every `CMD_AUTH`, including with the comm key its
-own screen displays. Ruled out from this end: `MakeCommKey` matches the reference
-algorithm byte for byte, and a raw reference implementation is rejected too —
-across four reply-id sequences, eight `ticks` values, four key-derivation
-variants and ten candidate keys.
-
-**Prime suspect: ADMS.** That terminal has Cloud Server / ADMS settings. ZK
-firmware in push mode generally considers itself owned by its ADMS server and
-stops honouring direct SDK connections on 4370, refusing auth regardless of the
-key — which matches exactly what we see. **This platform pulls**, so ADMS must be
-off. Confirm before assuming a comm key is wrong: a key that is correct on screen
-and still rejected is the signature.
-
-**ADMS push is implemented** as the way round this. `BiometricDevice.Mode` picks
-between `Pull` (we poll 4370) and `Push` (the terminal POSTs to `/iclock/*`).
-`AdmsEndpoints` in Hr.Web speaks the device's side of the conversation and
-`AdmsService` parses it; both routes end in the same
-`AttendanceSyncService.IngestAsync`, so matching, dedupe and day-rebuilding are
-identical however a punch arrived.
-
-- **The `/iclock/*` endpoints are necessarily anonymous** — a door terminal cannot
-  hold a login and the protocol has no auth. The serial number in the query string
-  is the only identity and is trivially forged. Keep it LAN-only; block the path at
-  the reverse proxy if the app is ever published.
-- **The firmware is fussy about replies.** It wants bare `text/plain`, and it counts
-  what it sent: answer `OK: n` with the wrong `n`, or return an unexpected status,
-  and it discards the batch and retries the same records forever.
-- An unrecognised serial is **stored, not rejected**, and the device is flagged
-  `IsPendingApproval` on `/hr/devices`. Losing attendance while somebody gets round
-  to approving a terminal is worse than holding records from one that turns out to
-  be unwanted.
+- **Both readers are keyboards.** They type what they read and press Enter, so
+  there is no driver, no SDK and no device protocol. The kiosk is one permanently
+  focused off-screen input; lose focus and scans go nowhere.
+- **What arrived is decided by looking at it**, not by which reader sent it: a
+  payload that parses as a rotating token is a QR, anything else is a card UID.
+- **The kiosk is unauthenticated** — nobody logs into a machine by a door. The
+  token in the URL is the station's credential, so it is re-issuable from
+  `/hr/stations` when a link leaks or a PC walks.
+- **`Employee.CardNumber` is unique.** Two people on one card would merge their
+  attendance, which is worse than no attendance.
+- **The QR rotates every 30 seconds** — HMAC over (employee, half-minute) against a
+  per-employee secret, like an authenticator app. A photograph of someone's screen
+  is worthless a minute later, which is the entire point of not using a static
+  badge. Verification accepts ±1 step for the walk to the scanner. The secret is
+  created on first view, so an employee who never uses the QR never has one stored;
+  re-issuing it kills every code already on screen, which is the answer to a lost
+  phone.
+- **A punch stores the QR's time-step, never the token.** A stored token is a
+  stored credential.
+- **Repeat scans inside 45 seconds are ignored.** Card readers fire twice on a slow
+  swipe and people re-present when unsure; a stray second punch changes a derived day.
+- Everything still ends at `AttendanceSyncService.RebuildAsync`, so the derivation
+  rules are unchanged: first punch in, last punch out, approved leave outranking
+  both, manual corrections never overwritten.
 
 ## Gotchas
 
