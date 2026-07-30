@@ -65,11 +65,15 @@ public class GatePassPrintService : IGatePassPrintService
                         ? $"Yes — due {pass.ExpectedReturnOn:yyyy-MM-dd}"
                         : "No")
                 ],
-                ["#", "Description", "Serial", "Qty", "Remarks"],
+                // Qty and Unit are separate columns: a single "Qty" heading over
+                // "5 pcs" put two different facts under one label, and the figures
+                // wouldn't line up down the column.
+                [("#", 0.6f, false), ("Description", 4f, false), ("Serial", 2f, false),
+                 ("Qty", 1f, true), ("Unit", 1f, false), ("Remarks", 2f, false)],
                 pass.Items.Select((i, n) => new[]
                 {
                     (n + 1).ToString(), i.Description, i.SerialNumber ?? "-",
-                    $"{i.Quantity:0.##} {i.Unit}".Trim(), i.Remarks ?? ""
+                    i.Quantity.ToString("0.##"), i.Unit ?? "-", i.Remarks ?? ""
                 }).ToList(),
                 pass.Notes,
                 ["Carried by", "Authorised by", "Security / Gate"]);
@@ -98,7 +102,8 @@ public class GatePassPrintService : IGatePassPrintService
                     ("Expected return", issuance.ExpectedReturnOn?.ToString("yyyy-MM-dd") ?? "-"),
                     ("Status", issuance.Status.ToString())
                 ],
-                ["#", "Description", "Serial", "Qty", "Accessories"],
+                [("#", 0.6f, false), ("Description", 4f, false), ("Serial", 2f, false),
+                 ("Qty", 1f, true), ("Accessories", 2f, false)],
                 issuance.Items.Select((i, n) => new[]
                 {
                     (n + 1).ToString(), i.Description, i.SerialNumber ?? "-",
@@ -110,7 +115,7 @@ public class GatePassPrintService : IGatePassPrintService
     private static byte[] RenderA4(
         CompanyBranding company, string title, string number,
         List<(string Label, string Value)> fields,
-        string[] columns, List<string[]> rows,
+        (string Name, float Width, bool Right)[] columns, List<string[]> rows,
         string? notes, string[] signatures) =>
         Document.Create(doc =>
         {
@@ -151,25 +156,33 @@ public class GatePassPrintService : IGatePassPrintService
 
                     col.Item().PaddingTop(12).Table(t =>
                     {
+                        // Built from the headers rather than a fixed five: a caller
+                        // adding a column used to leave more cells than columns, which
+                        // QuestPDF only discovers at render time.
                         t.ColumnsDefinition(c =>
                         {
-                            c.ConstantColumn(28);
-                            c.RelativeColumn(4);
-                            c.RelativeColumn(2);
-                            c.ConstantColumn(60);
-                            c.RelativeColumn(2);
+                            foreach (var col in columns) c.RelativeColumn(col.Width);
                         });
 
                         t.Header(h =>
                         {
-                            foreach (var name in columns)
-                                h.Cell().Background(Colors.Grey.Lighten3).Padding(4).Text(name).SemiBold();
+                            foreach (var col in columns)
+                            {
+                                var cell = h.Cell().Background(Colors.Grey.Lighten3).Padding(4);
+                                (col.Right ? cell.AlignRight() : cell.AlignLeft())
+                                    .Text(col.Name).SemiBold();
+                            }
                         });
 
                         foreach (var row in rows)
-                            foreach (var cell in row)
-                                t.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2)
-                                    .Padding(4).Text(cell);
+                            for (var i = 0; i < row.Length; i++)
+                            {
+                                var cell = t.Cell().BorderBottom(0.5f)
+                                    .BorderColor(Colors.Grey.Lighten2).Padding(4);
+                                // Figures right, text left, so a column reads as a column.
+                                (i < columns.Length && columns[i].Right
+                                    ? cell.AlignRight() : cell.AlignLeft()).Text(row[i]);
+                            }
                     });
 
                     if (!string.IsNullOrWhiteSpace(notes))

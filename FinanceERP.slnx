@@ -49,6 +49,7 @@
     <Project Path="tests/Inventory.Tests/Inventory.Tests.csproj" />
     <Project Path="tests/Ledger.Tests/Ledger.Tests.csproj" />
     <Project Path="tests/Finance.Tests/Finance.Tests.csproj" />
+    <Project Path="tests/GatePass.Tests/GatePass.Tests.csproj" />
   </Folder>
   <Folder Name="/apps/">
     <Project Path="src/FinanceERP.Web/FinanceERP.Web.csproj" />

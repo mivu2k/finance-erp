@@ -262,9 +262,20 @@ public class RepairPrintService : IRepairPrintService
                             c.ConstantColumn(68);
                         });
 
-                        foreach (var header in new[] { "Kind", "Description", "Qty", "Unit", "Total" })
-                            table.Cell().BorderBottom(0.8f).PaddingVertical(3)
-                                .AlignRight().Text(header).SemiBold().FontSize(9);
+                        // "Unit price", not "Unit": this column carries w.UnitPrice, and
+                        // labelling it "Unit" read as a unit of measure. Alignment now
+                        // follows the body — text columns left, figures right — instead
+                        // of right-aligning every heading.
+                        foreach (var (header, right) in new[]
+                                 {
+                                     ("Kind", false), ("Description", false), ("Qty", true),
+                                     ("Unit price", true), ("Total", true)
+                                 })
+                        {
+                            var cell = table.Cell().BorderBottom(0.8f).PaddingVertical(3);
+                            (right ? cell.AlignRight() : cell.AlignLeft())
+                                .Text(header).SemiBold().FontSize(9);
+                        }
 
                         foreach (var w in job.WorkItems)
                         {
