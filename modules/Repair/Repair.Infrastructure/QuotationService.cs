@@ -106,6 +106,20 @@ public class QuotationService(RepairDbContext db) : IQuotationService
             quotation.PreparedById = preparerId;
             quotation.PreparedByName = preparerName;
             if (quotation.Date == default) quotation.Date = DateOnly.FromDateTime(DateTime.UtcNow);
+
+            // BuildForJobAsync/BuildForIntakeAsync populate these navigations from
+            // a loaded, graph-connected object (e.g. Customer still carries its
+            // Intakes back-reference, which still carries Jobs -> WorkItems ->
+            // Part). Only the scalar *Id columns are ever persisted, but Add()
+            // cascades through any attached navigation and, when two jobs share
+            // the same part, walks two separate untracked Part instances for the
+            // same key and throws "already being tracked". Detach the display-only
+            // navigations before Add() so nothing is reachable to cascade into.
+            quotation.Customer = null;
+            quotation.RepairJob = null;
+            quotation.Intake = null;
+            foreach (var item in quotation.Items) item.Part = null;
+
             db.Quotations.Add(quotation);
             await db.SaveChangesAsync(ct);
             return quotation;
