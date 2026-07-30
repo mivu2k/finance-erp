@@ -1,0 +1,150 @@
+@page "/finance/third-parties/{Id:int}"
+@attribute [Authorize(Policy = Permissions.ThirdPartiesView)]
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_party?.Name ?? "Party")</PageTitle>
+
+@if (_party is null)
+{
+    <MudText>Loading…</MudText>
+}
+else
+{
+    <div class="d-flex align-center mb-4 flex-wrap gap-2">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/finance/third-parties" />
+        <MudText Typo="Typo.h5">@_party.Name</MudText>
+        <MudChip T="string" Size="Size.Small"
+                 Color="@(_party.Type == ThirdPartyType.Receivable ? Color.Success : Color.Error)">
+            @(_party.Type == ThirdPartyType.Receivable ? "They owe us" : "We owe them")
+        </MudChip>
+        <MudSpacer />
+        @if (_party.AccountId is not null)
+        {
+            <AuthorizeView Policy="@Permissions.ReportsExport">
+                <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                           StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                           Href="@($"/export/ledger?format=pdf&accountId={_party.AccountId}&from={_from:yyyy-MM-dd}&to={_to:yyyy-MM-dd}")"
+                           Target="_blank">Statement PDF</MudButton>
+            </AuthorizeView>
+        }
+    </div>
+
+    <MudGrid Spacing="3" Class="mb-2">
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-3">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Balance</MudText>
+                <MudText Typo="Typo.h6">@_balance.ToString("N2")</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@BalanceMeaning()</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-3">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Total debit</MudText>
+                <MudText Typo="Typo.h6">@_rows.Sum(r => r.Debit).ToString("N2")</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-3">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Total credit</MudText>
+                <MudText Typo="Typo.h6">@_rows.Sum(r => r.Credit).ToString("N2")</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-3">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Contact</MudText>
+                <MudText Typo="Typo.body2">@_party.Phone</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@_party.Email</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudPaper Class="pa-4 mb-4">
+        <div class="d-flex align-center gap-2 flex-wrap">
+            <MudDatePicker Date="_fromDate" DateChanged="OnFromChanged" Label="From"
+                           Margin="Margin.Dense" Style="max-width:180px" />
+            <MudDatePicker Date="_toDate" DateChanged="OnToChanged" Label="To"
+                           Margin="Margin.Dense" Style="max-width:180px" />
+        </div>
+    </MudPaper>
+
+    <MudPaper Class="pa-2" Style="overflow-x:auto">
+        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+            <thead>
+                <tr>
+                    <th>Date</th><th>Voucher</th><th>Description</th>
+                    <th style="text-align:right">Debit</th><th style="text-align:right">Credit</th>
+                    <th style="text-align:right">Balance</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _rows)
+                {
+                    <tr>
+                        <td>@r.Date.ToString("yyyy-MM-dd")</td>
+                        <td><MudLink Href="@($"/finance/vouchers/{r.VoucherId}")">@r.VoucherNo</MudLink></td>
+                        <td>@r.Description</td>
+                        <td style="text-align:right">@(r.Debit == 0 ? "" : r.Debit.ToString("N2"))</td>
+                        <td style="text-align:right">@(r.Credit == 0 ? "" : r.Credit.ToString("N2"))</td>
+                        <td style="text-align:right">@r.RunningBalance.ToString("N2")</td>
+                    </tr>
+                }
+                @if (_rows.Count == 0)
+                {
+                    <tr><td colspan="6" class="mud-text-secondary pa-4">
+                        Nothing recorded in this period. Use the up/down arrows on the parties
+                        list to record money paid to or received from them.
+                    </td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private ThirdParty? _party;
+    private List<LedgerRowDto> _rows = [];
+    private decimal _balance;
+
+    private DateTime? _fromDate = DateTime.Today.AddYears(-1);
+    private DateTime? _toDate = DateTime.Today;
+    private DateOnly _from => DateOnly.FromDateTime(_fromDate ?? DateTime.Today.AddYears(-1));
+    private DateOnly _to => DateOnly.FromDateTime(_toDate ?? DateTime.Today);
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task OnFromChanged(DateTime? d) { _fromDate = d; await LoadAsync(); }
+    private async Task OnToChanged(DateTime? d) { _toDate = d; await LoadAsync(); }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<IThirdPartyService>();
+
+            _party = await svc.GetAsync(Id);
+            if (_party is null) return;
+
+            _rows = await svc.GetStatementAsync(Id, _from, _to);
+            _balance = await svc.GetBalanceAsync(Id);
+            StateHasChanged();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    /// <summary>
+    /// A debit balance on a receivable party means they still owe; on a payable party
+    /// the sign reads the other way round, so spell it out rather than leave a number.
+    /// </summary>
+    private string BalanceMeaning() => _party is null ? "" : (_party.Type, _balance) switch
+    {
+        (_, 0) => "settled",
+        (ThirdPartyType.Receivable, > 0) => "they owe us this",
+        (ThirdPartyType.Receivable, _) => "we are ahead with them",
+        (ThirdPartyType.Payable, > 0) => "we owe them this",
+        (ThirdPartyType.Payable, _) => "we have overpaid them"
+    };
+}

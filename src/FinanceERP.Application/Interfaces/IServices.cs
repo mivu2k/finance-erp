@@ -191,11 +191,35 @@ public interface IPettyCashService
     Task<(decimal Opening, decimal Received, decimal Paid, decimal Closing)> GetDayBookAsync(int pettyCashAccountId, DateOnly date);
 }
 
+/// <summary>Which way money moved between us and the party.</summary>
+public enum PartyMovement
+{
+    /// <summary>Money out to them — debits their account, credits cash/bank.</summary>
+    Debit = 0,
+    /// <summary>Money in from them — credits their account, debits cash/bank.</summary>
+    Credit = 1
+}
+
 public interface IThirdPartyService
 {
     Task<PagedResult<ThirdParty>> ListAsync(ReportFilter filter);
+    Task<ThirdParty?> GetAsync(int id);
     Task<ThirdParty> SaveAsync(ThirdParty thirdParty);
     Task DeleteAsync(int id);
+
+    /// <summary>
+    /// Records money moved with a party in one step, posting a real voucher against
+    /// their account and the chosen cash/bank account. This is the whole point of the
+    /// party screen — no schedules, no instalments, just what was paid or received.
+    /// </summary>
+    Task<Voucher> RecordAsync(int partyId, PartyMovement movement, decimal amount,
+        int cashAccountId, DateOnly date, string? narration = null);
+
+    /// <summary>The party's account statement, with a running balance.</summary>
+    Task<List<LedgerRowDto>> GetStatementAsync(int partyId, DateOnly? from = null, DateOnly? to = null);
+
+    /// <summary>Current balance on the party's account. Zero when they have none yet.</summary>
+    Task<decimal> GetBalanceAsync(int partyId);
 }
 
 public class UtilityBillFilter

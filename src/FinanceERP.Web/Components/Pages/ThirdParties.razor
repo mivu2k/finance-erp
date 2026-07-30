@@ -22,12 +22,17 @@
 
 <MudTable @ref="_table" T="ThirdParty" ServerData="LoadData" Dense="true" Hover="true" Striped="true">
     <HeaderContent>
-        <MudTh>Name</MudTh><MudTh>Type</MudTh><MudTh>Phone</MudTh><MudTh>Email</MudTh>
-        <MudTh>Tax No</MudTh><MudTh Style="text-align:right">Ledger Balance</MudTh><MudTh></MudTh>
+        <MudTh>Name</MudTh><MudTh>Side</MudTh><MudTh>Phone</MudTh><MudTh>Email</MudTh>
+        <MudTh>Tax No</MudTh><MudTh Style="text-align:right">Balance</MudTh><MudTh></MudTh>
     </HeaderContent>
     <RowTemplate>
         <MudTd>@context.Name</MudTd>
-        <MudTd>@context.Type</MudTd>
+        <MudTd>
+            <MudChip T="string" Size="Size.Small"
+                     Color="@(context.Type == ThirdPartyType.Receivable ? Color.Success : Color.Error)">
+                @(context.Type == ThirdPartyType.Receivable ? "They owe us" : "We owe them")
+            </MudChip>
+        </MudTd>
         <MudTd>@context.Phone</MudTd>
         <MudTd>@context.Email</MudTd>
         <MudTd>@context.TaxNumber</MudTd>
@@ -37,13 +42,28 @@
             {
                 <MudTooltip Text="View statement">
                     <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.MenuBook"
-                                   Href="@($"/finance/ledger?accountId={context.AccountId}")" />
+                                   Href="@($"/finance/third-parties/{context.Id}")" />
                 </MudTooltip>
                 <AuthorizeView Policy="@Permissions.ReportsExport" Context="x">
                     <MudTooltip Text="Statement PDF (last 12 months)">
                         <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.PictureAsPdf"
                                        Href="@($"/export/ledger?format=pdf&accountId={context.AccountId}&from={DateOnly.FromDateTime(DateTime.Today.AddYears(-1)):yyyy-MM-dd}&to={DateOnly.FromDateTime(DateTime.Today):yyyy-MM-dd}")"
                                        Target="_blank" />
+                    </MudTooltip>
+                </AuthorizeView>
+            }
+            @if (context.AccountId is not null)
+            {
+                <AuthorizeView Policy="@Permissions.VouchersCreate" Context="r">
+                    <MudTooltip Text="Money out to them">
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.ArrowUpward"
+                                       Color="Color.Error"
+                                       OnClick="@(() => OpenRecord(context, PartyMovement.Debit))" />
+                    </MudTooltip>
+                    <MudTooltip Text="Money in from them">
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.ArrowDownward"
+                                       Color="Color.Success"
+                                       OnClick="@(() => OpenRecord(context, PartyMovement.Credit))" />
                     </MudTooltip>
                 </AuthorizeView>
             }
@@ -61,11 +81,11 @@
         <MudPaper Class="pa-6" Style="width:480px;max-width:95vw">
             <MudText Typo="Typo.h6" Class="mb-3">@(_editing.Id == 0 ? "New Third Party" : _editing.Name)</MudText>
             <MudTextField @bind-Value="_editing.Name" Label="Name" Class="mb-2" />
-            <MudSelect T="ThirdPartyType" @bind-Value="_editing.Type" Label="Type" Class="mb-2">
-                @foreach (ThirdPartyType t in Enum.GetValues<ThirdPartyType>())
-                {
-                    <MudSelectItem Value="@t">@t</MudSelectItem>
-                }
+            <MudSelect T="ThirdPartyType" @bind-Value="_editing.Type" Class="mb-2"
+                       Label="Which way does the money run?"
+                       HelperText="@(_editing.Id == 0 ? "Decides whether their account sits under Receivables or Payables" : "Changing this doesn't move an account already created")">
+                <MudSelectItem Value="@ThirdPartyType.Receivable">They owe us — receivable</MudSelectItem>
+                <MudSelectItem Value="@ThirdPartyType.Payable">We owe them — payable</MudSelectItem>
             </MudSelect>
             <MudTextField @bind-Value="_editing.Phone" Label="Phone" Class="mb-2" />
             <MudTextField @bind-Value="_editing.Email" Label="Email" Class="mb-2" />
@@ -80,11 +100,82 @@
     </MudOverlay>
 }
 
+@if (_recordParty is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:480px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-1">
+                @(_movement == PartyMovement.Debit ? "Paid to" : "Received from") @_recordParty.Name
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                Posts a voucher against their account and the cash or bank account you pick,
+                so it shows in the ledger and the trial balance.
+            </MudText>
+
+            <MudDatePicker Date="_recordDate" DateChanged="@(d => _recordDate = d)"
+                           Label="Date" Class="mb-2" />
+            <MudNumericField T="decimal" @bind-Value="_recordAmount" Label="Amount"
+                             Min="0.01M" Class="mb-2" />
+            <MudSelect T="int?" @bind-Value="_cashAccountId" Class="mb-2"
+                       Label="@(_movement == PartyMovement.Debit ? "Paid from" : "Received into")">
+                @foreach (var a in _cashAccounts)
+                {
+                    <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField @bind-Value="_recordNarration" Label="Narration"
+                          HelperText="Optional — a default is used if left blank" />
+
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _recordParty = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled"
+                           Color="@(_movement == PartyMovement.Debit ? Color.Error : Color.Success)"
+                           OnClick="Record" Disabled="@(_cashAccountId is null)">Post</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
 @code {
     private MudTable<ThirdParty>? _table;
     private string _search = "";
     private ThirdParty? _editing;
     private Dictionary<int, decimal> _balances = [];
+
+    private ThirdParty? _recordParty;
+    private PartyMovement _movement = PartyMovement.Debit;
+    private decimal _recordAmount;
+    private DateTime? _recordDate = DateTime.Today;
+    private string? _recordNarration;
+    private int? _cashAccountId;
+    private List<Account> _cashAccounts = [];
+
+    private void OpenRecord(ThirdParty party, PartyMovement movement)
+    {
+        _recordParty = party;
+        _movement = movement;
+        _recordAmount = 0;
+        _recordDate = DateTime.Today;
+        _recordNarration = null;
+        _cashAccountId = _cashAccounts.FirstOrDefault()?.Id;
+    }
+
+    private async Task Record()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IThirdPartyService>().RecordAsync(
+                _recordParty!.Id, _movement, _recordAmount, _cashAccountId!.Value,
+                _recordDate is { } d ? DateOnly.FromDateTime(d) : DateOnly.FromDateTime(DateTime.Today),
+                _recordNarration);
+
+            Snackbar.Add("Posted.", Severity.Success);
+            _recordParty = null;
+            await _table!.ReloadServerData();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
 
     private async Task<TableData<ThirdParty>> LoadData(TableState state, CancellationToken ct)
     {
@@ -92,6 +183,17 @@
         var result = await scope.ServiceProvider.GetRequiredService<IThirdPartyService>()
             .ListAsync(new ReportFilter { Search = _search, Page = state.Page + 1, PageSize = state.PageSize });
         var accounts = scope.ServiceProvider.GetRequiredService<IAccountService>();
+
+        // Cash, bank and petty cash (1100 / 12xx / 1300) are the only sensible other
+        // side of these postings, and GetPostableAsync has already dropped the
+        // non-postable parent headings like 1200 Bank Accounts.
+        if (_cashAccounts.Count == 0)
+            _cashAccounts = (await accounts.GetPostableAsync())
+                .Where(a => a.Type == AccountType.Asset
+                            && (a.Code.StartsWith("11") || a.Code.StartsWith("12")
+                                || a.Code.StartsWith("13")))
+                .OrderBy(a => a.Code).ToList();
+
         _balances = [];
         foreach (var tp in result.Items.Where(t => t.AccountId is not null))
             _balances[tp.Id] = await accounts.GetBalanceAsync(tp.AccountId!.Value);

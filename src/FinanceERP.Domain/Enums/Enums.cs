@@ -114,16 +114,22 @@ public enum InvestmentTxnType
     Withdrawal = 4
 }
 
+/// <summary>
+/// Which side of the books a party sits on, and the only thing the code ever needed
+/// from the old seven-way list: it decides whether their auto-created account hangs
+/// under Receivables or Payables.
+/// </summary>
+/// <remarks>
+/// Values are deliberately 1 and 2 so the old <c>Customer = 1</c> rows keep their
+/// number; everything else was remapped to <see cref="Payable"/> by the migration
+/// that introduced this, matching how the old code placed those accounts.
+/// </remarks>
 public enum ThirdPartyType
 {
-    Customer = 1,
-    Supplier = 2,
-    Vendor = 3,
-    Contractor = 4,
-    Investor = 5,
-    Lender = 6,
-    Borrower = 7,
-    Other = 99
+    /// <summary>They owe us — the party's account sits under Receivables.</summary>
+    Receivable = 1,
+    /// <summary>We owe them — the party's account sits under Payables.</summary>
+    Payable = 2
 }
 
 public enum PayComponentKind

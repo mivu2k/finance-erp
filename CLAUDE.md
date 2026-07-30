@@ -102,6 +102,17 @@ These apply to the **Finance** module specifically:
   on startup by `DbSeeder.SyncEmployeeProfilesAsync`. Payroll queries it rather than
   reaching into the identity database. Department and ledger account are owned here
   and never overwritten by the sync.
+- **A third party is just a name and a side.** `ThirdPartyType` is only
+  `Receivable`/`Payable`, and the single thing it decides is whether the party's
+  auto-created account hangs under Receivables (`1600`) or Payables (`2100`) — it
+  used to be a seven-way list whose extra values nothing read. Money is recorded
+  straight from `/finance/third-parties` via
+  `IThirdPartyService.RecordAsync(partyId, Debit|Credit, amount, cashAccountId, ...)`,
+  which posts a real voucher (their account against cash/bank) rather than writing
+  state directly; the statement comes from `GeneralLedgerAsync` so it can't disagree
+  with the ledger page. Deliberately no schedules, instalments or interest — those
+  belong to Loans and Investments. Note `Loan.ThirdPartyId` still points here, so the
+  entity itself can't be simplified away.
 - Every page, nav item and action is permission-gated — match that when adding UI.
 
 ## Non-obvious flows
@@ -253,7 +264,7 @@ UI yet. Not ported: the customer-facing tracking page, Excel report exports.
 
 Known gaps, roughly in priority order:
 
-1. **Finance is the untested module.** 135 tests exist —
+1. **Finance is barely tested.** 142 tests exist —
    `tests/ErpPlatform.Shared.Tests` (27, Code 128 and QR round-trip through decoders —
    QR against ZXing, a test-only dependency),
    `tests/Hr.Tests` (42, the rotating attendance token and attendance arithmetic),
@@ -262,11 +273,14 @@ Known gaps, roughly in priority order:
    `tests/Inventory.Tests` (10, stock ledger arithmetic, cache rebuild and the
    delete-while-holding-stock guards), and
    `tests/Ledger.Tests` (17, the worked 1-lac-to-two-people scenario: transfer
-   pairing, tree rollup, re-parent cycle guard, head rollup and head deletion). The
+   pairing, tree rollup, re-parent cycle guard, head rollup and head deletion), and
+   `tests/Finance.Tests` (7, third-party account placement and the debit/credit
+   posting sides). The
    integration tests create and drop their own throwaway databases and skip when no
-   server is reachable. Nothing covers Finance or Auto: `VoucherService`,
-   `PaymentRequestService.SettleAsync`, `PayrollService.GenerateAsync`/`PayRunAsync`
-   and `CloseFiscalYearAsync` remain subtle and unverified.
+   server is reachable. Most of Finance is still uncovered, and Auto entirely:
+   `VoucherService`, `PaymentRequestService.SettleAsync`,
+   `PayrollService.GenerateAsync`/`PayRunAsync` and `CloseFiscalYearAsync` remain
+   subtle and unverified.
 2. **Receipt endpoint is auth-only** (`Program.cs`, `/files/receipts/{name}`) — any
    logged-in user can fetch any receipt by filename; no ownership or permission check.
 3. `README.md` predates year-close, reconciliation, utilities, projects, the
