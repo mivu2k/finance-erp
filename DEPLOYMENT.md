@@ -400,18 +400,26 @@ nginx -t && systemctl reload nginx
 whatever `Host` an upstream proxy passes. Pinning the container's IP instead buys
 nothing with a single server block, and breaks the day its DHCP lease changes.
 
-The supplied config carries two things that are not optional:
+The supplied config carries three things that are not optional:
 
 - **WebSocket headers** (`Upgrade`/`Connection`) plus a 100s read timeout. Blazor
   Server runs over a websocket; without these the UI disconnects every few seconds
   in a way that looks like an application bug.
-- **32k proxy buffers.** The auth cookie holds every permission the user has — a
-  Super Admin has 124 — which ASP.NET encrypts and chunks across several
-  `Set-Cookie` headers. nginx's 4–8k default cannot hold that header block and
-  answers **502 immediately after a login the application logged as successful**.
+- **32k proxy buffers** (`proxy_buffer_size`/`proxy_buffers`/`proxy_busy_buffers_size`).
+  The auth cookie holds every permission the user has — a Super Admin holds one
+  claim per permission across every module — which ASP.NET encrypts and chunks
+  across several `Set-Cookie` headers. nginx's 4–8k default cannot hold that
+  header block and answers **502 immediately after a login the application
+  logged as successful**. This governs the *response* nginx reads from Kestrel.
+- **32k `large_client_header_buffers`.** The same oversized cookie comes back
+  from the browser on every request *after* login. This is a separate,
+  request-side limit — nginx rejects it with **`400 Bad Request: Request Header
+  Or Cookie Too Large`** before the request ever reaches Kestrel, so the
+  application log shows nothing at all. Both directives are needed; one without
+  the other still fails, just at a different point in the request.
 
 **If you put another reverse proxy in front of this container** (NPM, Traefik,
-Caddy), it needs *both* of those too, or you get the same two failures one hop out.
+Caddy), it needs *all three* too, or you get the same failures one hop out.
 
 **Check** — in the container, then from your desktop browser:
 
@@ -690,6 +698,7 @@ network path to any device.
 | Service `active`, `curl` returns `000` | Read `journalctl -u finance-erp -n 50` — almost always a database connection failure |
 | UI connects then drops every few seconds | WebSockets not proxied — check nginx **and** any upstream proxy (§8) |
 | `502 Bad Gateway` right after a successful login | nginx proxy buffers too small for the auth cookie. `tail /var/log/nginx/error.log` shows `upstream sent too big header`. The supplied config sets 32k; an upstream proxy in front needs the same |
+| `400 Bad Request: Request Header Or Cookie Too Large` on login | nginx's *request-side* header buffer, not the proxy buffers above — the browser is sending the oversized auth cookie back and nginx rejects it before Kestrel ever sees the request (nothing appears in the app's own log). Add `large_client_header_buffers 4 32k;` inside the `server {}` block and reload nginx. The supplied configs already have this; an existing install predating it, or an upstream proxy in front, needs the line added by hand |
 | `Assets file project.assets.json not found` | `dotnet restore` in the checkout first (path B) |
 | Login works but an app tile is missing | App access applies at **next sign-in** — sign out and back in (§9) |
 | `mysql -u root -p` fails on a fresh box | MariaDB root uses socket auth on Ubuntu — run `mysql` as root, no `-u root -p` |
