@@ -6,10 +6,17 @@ public static class InventoryPermissions
     public const string ProductsManage = "inventory.products.manage";
     public const string StockAdjust = "inventory.stock.adjust";
     public const string ReportsView = "inventory.reports.view";
+    /// <summary>
+    /// Seeing cost, sale price and stock valuation. Separate from viewing stock so a
+    /// storeman can count what is on the shelf without seeing what it is worth.
+    /// </summary>
+    public const string CostsView = "inventory.costs.view";
+    /// <summary>Running a stock take and posting its variances.</summary>
+    public const string CountManage = "inventory.count.manage";
 
     public static IReadOnlyList<string> All =>
     [
-        ProductsView, ProductsManage, StockAdjust, ReportsView
+        ProductsView, ProductsManage, StockAdjust, ReportsView, CostsView, CountManage
     ];
 }
 

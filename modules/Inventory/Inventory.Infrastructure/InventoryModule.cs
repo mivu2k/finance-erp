@@ -18,15 +18,19 @@ public static class InventoryModule
             P(InventoryPermissions.ProductsView, "Products", "View products, models and accessories"),
             P(InventoryPermissions.ProductsManage, "Products", "Create and edit products, models and accessories"),
             P(InventoryPermissions.StockAdjust, "Stock", "Adjust stock quantities in or out"),
-            P(InventoryPermissions.ReportsView, "Reports", "Stock levels and low-stock reports")
+            P(InventoryPermissions.ReportsView, "Reports", "Stock levels and low-stock reports"),
+            P(InventoryPermissions.CostsView, "Reports", "See cost, sale price and stock valuation"),
+            P(InventoryPermissions.CountManage, "Stock", "Run a stock take and post its variances")
         ],
         [
             new(InventoryRoles.Manager, "Full control of products and stock.", InventoryPermissions.All),
 
-            new(InventoryRoles.StockClerk, "Adjusts stock but doesn't edit the product catalog.",
+            // Counts and moves stock, but money stays hidden: a storeman needs to know
+            // what is on the shelf, not what it is worth.
+            new(InventoryRoles.StockClerk, "Adjusts stock and counts it, without seeing costs.",
             [
                 InventoryPermissions.ProductsView, InventoryPermissions.StockAdjust,
-                InventoryPermissions.ReportsView
+                InventoryPermissions.ReportsView, InventoryPermissions.CountManage
             ]),
 
             new(InventoryRoles.Viewer, "Read-only.",
@@ -47,6 +51,8 @@ public static class InventoryModule
 
         services.AddScoped<IProductService, ProductService>();
         services.AddScoped<IStockService, StockService>();
+        services.AddScoped<IStockTrackingService, StockTrackingService>();
+        services.AddScoped<IStockCountService, StockCountService>();
 
         ModuleRegistry.Register(Registration);
         return services;

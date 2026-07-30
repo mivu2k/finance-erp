@@ -29,9 +29,44 @@ public class ProductModel : AuditableEntity
     public string? ModelNumber { get; set; }
     public string? Sku { get; set; }
     public string Unit { get; set; } = "pcs";
-    public decimal ReorderThreshold { get; set; }
+    /// <summary>Manufacturer/supplier part number, distinct from our own SKU.</summary>
+    public string? Barcode { get; set; }
     public decimal CurrentQuantity { get; set; }
     public bool IsActive { get; set; } = true;
+
+    // --- stock control ---
+
+    /// <summary>
+    /// Track every unit individually with its own serial. Set per item rather than
+    /// globally: a laptop is worth following one-by-one, a box of screws is not, and
+    /// forcing either rule on everything makes the other unusable.
+    /// </summary>
+    public bool IsSerialised { get; set; }
+
+    /// <summary>Group receipts into batches/lots, for goods with an expiry or a recall trail.</summary>
+    public bool IsBatchTracked { get; set; }
+
+    /// <summary>Reorder level — at or below this the item shows as low.</summary>
+    public decimal ReorderThreshold { get; set; }
+    /// <summary>How much to buy when reordering. Zero means nobody has decided yet.</summary>
+    public decimal ReorderQuantity { get; set; }
+
+    // --- money ---
+
+    /// <summary>What it sells for. Visible only with the cost permission.</summary>
+    public decimal SalePrice { get; set; }
+    /// <summary>Unit cost on the most recent receipt.</summary>
+    public decimal? LastPurchaseCost { get; set; }
+    /// <summary>
+    /// Quantity-weighted mean cost across every receipt — the figure stock is valued
+    /// at. Weighted, so 100 at 50 then 1 at 500 doesn't drag the average to 275.
+    /// </summary>
+    public decimal? AverageCost { get; set; }
+    /// <summary>Total quantity ever received; the denominator behind the average.</summary>
+    public decimal PurchasedQuantity { get; set; }
+
+    /// <summary>Stock on hand at what it cost, not what it sells for.</summary>
+    public decimal StockValue => CurrentQuantity * (AverageCost ?? 0);
 
     public List<Accessory> Accessories { get; set; } = [];
 }
@@ -48,9 +83,43 @@ public class Accessory : AuditableEntity
     public string Name { get; set; } = string.Empty;
     public string? Sku { get; set; }
     public string Unit { get; set; } = "pcs";
-    public decimal ReorderThreshold { get; set; }
+    public string? Barcode { get; set; }
     public decimal CurrentQuantity { get; set; }
     public bool IsActive { get; set; } = true;
+
+    // --- stock control ---
+
+    /// <summary>
+    /// Track every unit individually with its own serial. Set per item rather than
+    /// globally: a laptop is worth following one-by-one, a box of screws is not, and
+    /// forcing either rule on everything makes the other unusable.
+    /// </summary>
+    public bool IsSerialised { get; set; }
+
+    /// <summary>Group receipts into batches/lots, for goods with an expiry or a recall trail.</summary>
+    public bool IsBatchTracked { get; set; }
+
+    /// <summary>Reorder level — at or below this the item shows as low.</summary>
+    public decimal ReorderThreshold { get; set; }
+    /// <summary>How much to buy when reordering. Zero means nobody has decided yet.</summary>
+    public decimal ReorderQuantity { get; set; }
+
+    // --- money ---
+
+    /// <summary>What it sells for. Visible only with the cost permission.</summary>
+    public decimal SalePrice { get; set; }
+    /// <summary>Unit cost on the most recent receipt.</summary>
+    public decimal? LastPurchaseCost { get; set; }
+    /// <summary>
+    /// Quantity-weighted mean cost across every receipt — the figure stock is valued
+    /// at. Weighted, so 100 at 50 then 1 at 500 doesn't drag the average to 275.
+    /// </summary>
+    public decimal? AverageCost { get; set; }
+    /// <summary>Total quantity ever received; the denominator behind the average.</summary>
+    public decimal PurchasedQuantity { get; set; }
+
+    /// <summary>Stock on hand at what it cost, not what it sells for.</summary>
+    public decimal StockValue => CurrentQuantity * (AverageCost ?? 0);
 }
 
 public enum StockItemType { Model = 0, Accessory = 1 }
