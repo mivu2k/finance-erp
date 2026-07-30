@@ -13,10 +13,15 @@ public static class InventoryPermissions
     public const string CostsView = "inventory.costs.view";
     /// <summary>Running a stock take and posting its variances.</summary>
     public const string CountManage = "inventory.count.manage";
+    /// <summary>Maintaining warehouses and transferring stock between them.</summary>
+    public const string WarehouseManage = "inventory.warehouses.manage";
+    /// <summary>Suppliers, purchase orders and goods received notes.</summary>
+    public const string PurchaseManage = "inventory.purchasing.manage";
 
     public static IReadOnlyList<string> All =>
     [
-        ProductsView, ProductsManage, StockAdjust, ReportsView, CostsView, CountManage
+        ProductsView, ProductsManage, StockAdjust, ReportsView, CostsView, CountManage,
+        WarehouseManage, PurchaseManage
     ];
 }
 

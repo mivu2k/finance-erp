@@ -20,7 +20,9 @@ public static class InventoryModule
             P(InventoryPermissions.StockAdjust, "Stock", "Adjust stock quantities in or out"),
             P(InventoryPermissions.ReportsView, "Reports", "Stock levels and low-stock reports"),
             P(InventoryPermissions.CostsView, "Reports", "See cost, sale price and stock valuation"),
-            P(InventoryPermissions.CountManage, "Stock", "Run a stock take and post its variances")
+            P(InventoryPermissions.CountManage, "Stock", "Run a stock take and post its variances"),
+            P(InventoryPermissions.WarehouseManage, "Warehouses", "Maintain warehouses and move stock between them"),
+            P(InventoryPermissions.PurchaseManage, "Purchasing", "Suppliers, purchase orders and goods received")
         ],
         [
             new(InventoryRoles.Manager, "Full control of products and stock.", InventoryPermissions.All),
@@ -55,6 +57,9 @@ public static class InventoryModule
         services.AddScoped<IStockCountService, StockCountService>();
         services.AddScoped<IWarehouseService, WarehouseService>();
         services.AddScoped<IStockTransferService, StockTransferService>();
+        services.AddScoped<ISupplierService, SupplierService>();
+        services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
+        services.AddScoped<IGoodsReceiptService, GoodsReceiptService>();
 
         ModuleRegistry.Register(Registration);
         return services;

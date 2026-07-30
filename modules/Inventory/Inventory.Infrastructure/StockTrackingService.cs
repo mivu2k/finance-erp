@@ -34,7 +34,7 @@ public interface IStockTrackingService
     /// serialised.
     /// </summary>
     Task ReceiveAsync(StockReceipt receipt, string userId, string userName,
-        CancellationToken ct = default);
+        int? warehouseId = null, CancellationToken ct = default);
 
     /// <summary>Issues named serialised units out of stock.</summary>
     Task IssueSerialsAsync(StockItemType type, int itemId, IReadOnlyList<string> serials,
@@ -57,7 +57,8 @@ public interface IStockTrackingService
 public class StockTrackingService(InventoryDbContext db, IStockService stock) : IStockTrackingService
 {
     public async Task ReceiveAsync(
-        StockReceipt receipt, string userId, string userName, CancellationToken ct = default)
+        StockReceipt receipt, string userId, string userName, int? warehouseId = null,
+        CancellationToken ct = default)
     {
         if (receipt.Quantity <= 0)
             throw new InvalidOperationException("Quantity must be positive.");
@@ -114,6 +115,7 @@ public class StockTrackingService(InventoryDbContext db, IStockService stock) : 
                 ItemType = receipt.ItemType, ItemId = receipt.ItemId,
                 SerialNumber = serial.Trim(), Status = StockUnitStatus.InStock,
                 StockBatchId = batch?.Id, UnitCost = receipt.UnitCost,
+                WarehouseId = warehouseId,
                 ReceivedOn = today, Reference = receipt.Reference
             });
 
@@ -123,7 +125,7 @@ public class StockTrackingService(InventoryDbContext db, IStockService stock) : 
         // traceable as any other movement and the balance stays rebuildable.
         await stock.AdjustAsync(receipt.ItemType, receipt.ItemId, StockDirection.In,
             receipt.Quantity, StockReason.Purchase, receipt.Reference, receipt.Notes,
-            userId, userName, ct: ct);
+            userId, userName, warehouseId, ct);
 
         await ApplyCostAsync(receipt.ItemType, receipt.ItemId, receipt.Quantity, receipt.UnitCost, ct);
     }
