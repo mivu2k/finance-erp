@@ -137,9 +137,12 @@
 
             @* The same barcode as the label and the job card, so the screen can be
                scanned straight off a phone if the paperwork has gone missing. *@
-            <div class="d-flex justify-center mt-3">
-                <img src="@Barcode.ToDataUri(_job.JobNumber, 44, 2)" alt="@_job.JobNumber" />
-            </div>
+            @if (!string.IsNullOrEmpty(_job.JobNumber))
+            {
+                <div class="d-flex justify-center mt-3">
+                    <img src="@Barcode.ToDataUri(_job.JobNumber, 44, 2)" alt="@_job.JobNumber" />
+                </div>
+            }
         </MudPaper>
     </MudItem>
 
