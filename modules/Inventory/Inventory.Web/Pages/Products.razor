@@ -1,0 +1,68 @@
+@page "/inventory/products"
+@attribute [Authorize(Policy = InventoryPermissions.ProductsView)]
+@layout InventoryLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>Products</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Products</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@InventoryPermissions.ProductsManage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.AddBox"
+                   Href="/inventory/products/new">New Product</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudTextField @bind-Value="_search" Label="Search products, models or SKU" Margin="Margin.Dense"
+                  Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="LoadAsync"
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr><th>Product</th><th>Category</th><th>Models</th><th>Accessories</th><th>Total stock</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var p in _products)
+            {
+                var totalStock = p.Models.Sum(m => m.CurrentQuantity) + p.Models.Sum(m => m.Accessories.Sum(a => a.CurrentQuantity));
+                <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/inventory/products/{p.Id}"))">
+                    <td>@p.Name</td>
+                    <td>@p.Category</td>
+                    <td>@p.Models.Count</td>
+                    <td>@p.Models.Sum(m => m.Accessories.Count)</td>
+                    <td>@totalStock</td>
+                    <td>
+                        <MudChip T="string" Size="Size.Small" Color="@(p.IsActive ? Color.Success : Color.Default)">
+                            @(p.IsActive ? "Active" : "Inactive")
+                        </MudChip>
+                    </td>
+                </tr>
+            }
+            @if (_products.Count == 0)
+            {
+                <tr><td colspan="6" class="mud-text-secondary pa-4">No products match this filter.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private List<Product> _products = [];
+    private string? _search;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _products = await scope.ServiceProvider.GetRequiredService<IProductService>().ListAsync(_search);
+        StateHasChanged();
+    }
+}

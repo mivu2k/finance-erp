@@ -1,0 +1,62 @@
+@page "/inventory/reports"
+@attribute [Authorize(Policy = InventoryPermissions.ReportsView)]
+@layout InventoryLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Inventory Reports</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Stock Levels</MudText>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr><th>Product</th><th>Model</th><th>Accessory</th><th>Quantity</th><th>Reorder at</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var p in _products)
+            {
+                @foreach (var m in p.Models)
+                {
+                    <tr>
+                        <td>@p.Name</td>
+                        <td>@m.Name</td>
+                        <td></td>
+                        <td>@m.CurrentQuantity @m.Unit</td>
+                        <td>@m.ReorderThreshold</td>
+                        <td>
+                            <MudChip T="string" Size="Size.Small" Color="@(m.CurrentQuantity <= m.ReorderThreshold ? Color.Warning : Color.Success)">
+                                @(m.CurrentQuantity <= m.ReorderThreshold ? "Low" : "OK")
+                            </MudChip>
+                        </td>
+                    </tr>
+                    @foreach (var a in m.Accessories)
+                    {
+                        <tr>
+                            <td>@p.Name</td>
+                            <td>@m.Name</td>
+                            <td>@a.Name</td>
+                            <td>@a.CurrentQuantity @a.Unit</td>
+                            <td>@a.ReorderThreshold</td>
+                            <td>
+                                <MudChip T="string" Size="Size.Small" Color="@(a.CurrentQuantity <= a.ReorderThreshold ? Color.Warning : Color.Success)">
+                                    @(a.CurrentQuantity <= a.ReorderThreshold ? "Low" : "OK")
+                                </MudChip>
+                            </td>
+                        </tr>
+                    }
+                }
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private List<Product> _products = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _products = await scope.ServiceProvider.GetRequiredService<IProductService>().ListAsync();
+    }
+}

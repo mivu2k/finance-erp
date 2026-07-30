@@ -1,0 +1,43 @@
+@page "/auto/reports"
+@attribute [Authorize(Policy = AutoPermissions.ReportsView)]
+@layout AutoLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Auto Reports</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Maintenance Cost by Vehicle</MudText>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr><th>Vehicle</th><th>Status</th><th>Records</th><th>Total cost</th><th>Next due</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var v in _vehicles)
+            {
+                <tr>
+                    <td>@v.RegistrationNumber — @v.Make @v.Model</td>
+                    <td>@v.Status</td>
+                    <td>@v.MaintenanceRecords.Count</td>
+                    <td>@v.MaintenanceRecords.Sum(m => m.Cost).ToString("N2")</td>
+                    <td>@v.MaintenanceRecords.Where(m => m.NextDueDate != null).OrderBy(m => m.NextDueDate).FirstOrDefault()?.NextDueDate?.ToString("yyyy-MM-dd")</td>
+                </tr>
+            }
+            @if (_vehicles.Count == 0)
+            {
+                <tr><td colspan="5" class="mud-text-secondary pa-4">No vehicles yet.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private List<Vehicle> _vehicles = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _vehicles = await scope.ServiceProvider.GetRequiredService<IVehicleService>().ListAsync();
+    }
+}

@@ -1,0 +1,80 @@
+@page "/inventory"
+@attribute [Authorize(Policy = "module:inventory")]
+@layout InventoryLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Inventory</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Inventory</MudText>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Products</MudText>
+            <MudText Typo="Typo.h4">@_productCount</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Models</MudText>
+            <MudText Typo="Typo.h4">@_modelCount</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Accessories</MudText>
+            <MudText Typo="Typo.h4">@_accessoryCount</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Low stock</MudText>
+            <MudText Typo="Typo.h4" Color="@(_lowStock.Count > 0 ? Color.Warning : Color.Default)">
+                @_lowStock.Count
+            </MudText>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Low stock items</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead>
+                    <tr><th>Type</th><th>Item</th><th>Quantity</th><th>Reorder at</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in _lowStock)
+                    {
+                        <tr>
+                            <td>@item.Type</td>
+                            <td>@item.Name</td>
+                            <td>@item.Quantity</td>
+                            <td>@item.Threshold</td>
+                        </tr>
+                    }
+                    @if (_lowStock.Count == 0)
+                    {
+                        <tr><td colspan="4" class="mud-text-secondary pa-4">Nothing below its reorder threshold.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private int _productCount, _modelCount, _accessoryCount;
+    private List<(StockItemType Type, int ItemId, string Name, decimal Quantity, decimal Threshold)> _lowStock = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var products = await scope.ServiceProvider.GetRequiredService<IProductService>().ListAsync();
+        _productCount = products.Count;
+        _modelCount = products.Sum(p => p.Models.Count);
+        _accessoryCount = products.Sum(p => p.Models.Sum(m => m.Accessories.Count));
+
+        _lowStock = await scope.ServiceProvider.GetRequiredService<IStockService>().ListLowStockAsync();
+    }
+}

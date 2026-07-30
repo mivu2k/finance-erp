@@ -1,0 +1,66 @@
+@page "/inventory/transactions"
+@attribute [Authorize(Policy = InventoryPermissions.ProductsView)]
+@layout InventoryLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Stock Ledger</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Stock Ledger</MudText>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr>
+                <th>When</th><th>Type</th><th>Item</th><th>Direction</th><th>Qty</th>
+                <th>Balance after</th><th>Reason</th><th>Reference</th><th>By</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var t in _transactions)
+            {
+                <tr>
+                    <td>@t.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                    <td>@t.ItemType</td>
+                    <td>@ItemName(t)</td>
+                    <td>
+                        <MudIcon Size="Size.Small"
+                                 Icon="@(t.Direction == StockDirection.In ? Icons.Material.Filled.ArrowUpward : Icons.Material.Filled.ArrowDownward)"
+                                 Color="@(t.Direction == StockDirection.In ? Color.Success : Color.Error)" />
+                    </td>
+                    <td>@t.Quantity</td>
+                    <td>@t.BalanceAfter</td>
+                    <td>@t.Reason</td>
+                    <td>@t.Reference</td>
+                    <td>@t.PerformedByName</td>
+                </tr>
+            }
+            @if (_transactions.Count == 0)
+            {
+                <tr><td colspan="9" class="mud-text-secondary pa-4">No stock movements yet.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private List<StockTransaction> _transactions = [];
+    private Dictionary<int, string> _modelNames = [];
+    private Dictionary<int, string> _accessoryNames = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _transactions = await scope.ServiceProvider.GetRequiredService<IStockService>()
+            .ListTransactionsAsync(new StockFilter());
+
+        var products = await scope.ServiceProvider.GetRequiredService<IProductService>().ListAsync();
+        _modelNames = products.SelectMany(p => p.Models).ToDictionary(m => m.Id, m => m.Name);
+        _accessoryNames = products.SelectMany(p => p.Models).SelectMany(m => m.Accessories)
+            .ToDictionary(a => a.Id, a => a.Name);
+    }
+
+    private string ItemName(StockTransaction t) => t.ItemType == StockItemType.Model
+        ? _modelNames.GetValueOrDefault(t.ItemId, $"#{t.ItemId}")
+        : _accessoryNames.GetValueOrDefault(t.ItemId, $"#{t.ItemId}");
+}

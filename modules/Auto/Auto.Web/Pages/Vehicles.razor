@@ -1,0 +1,68 @@
+@page "/auto/vehicles"
+@attribute [Authorize(Policy = AutoPermissions.VehiclesView)]
+@layout AutoLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>Vehicles</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Vehicles</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@AutoPermissions.VehiclesManage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.AddBox"
+                   Href="/auto/vehicles/new">New Vehicle</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudTextField @bind-Value="_search" Label="Search make, model, registration or VIN" Margin="Margin.Dense"
+                  Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="LoadAsync"
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr><th>Registration</th><th>Make</th><th>Model</th><th>Year</th><th>Odometer</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var v in _vehicles)
+            {
+                <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/auto/vehicles/{v.Id}"))">
+                    <td>@v.RegistrationNumber</td>
+                    <td>@v.Make</td>
+                    <td>@v.Model</td>
+                    <td>@v.Year</td>
+                    <td>@v.CurrentOdometer</td>
+                    <td>
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(v.Status == VehicleStatus.Active ? Color.Success : Color.Default)">
+                            @v.Status
+                        </MudChip>
+                    </td>
+                </tr>
+            }
+            @if (_vehicles.Count == 0)
+            {
+                <tr><td colspan="6" class="mud-text-secondary pa-4">No vehicles match this filter.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private List<Vehicle> _vehicles = [];
+    private string? _search;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _vehicles = await scope.ServiceProvider.GetRequiredService<IVehicleService>().ListAsync(_search);
+        StateHasChanged();
+    }
+}

@@ -1,0 +1,187 @@
+@page "/inventory/products/{Id:int}"
+@attribute [Authorize(Policy = InventoryPermissions.ProductsView)]
+@layout InventoryLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject AuthenticationStateProvider AuthState
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_product?.Name ?? "Product")</PageTitle>
+
+@if (_product is null)
+{
+    <MudText>Loading…</MudText>
+}
+else
+{
+    <div class="d-flex align-center mb-4 flex-wrap gap-2">
+        <MudText Typo="Typo.h5">@_product.Name</MudText>
+        <MudChip T="string" Size="Size.Small">@_product.Category</MudChip>
+        <MudSpacer />
+    </div>
+
+    @foreach (var model in _product.Models)
+    {
+        <MudPaper Class="pa-4 mb-4">
+            <div class="d-flex align-center flex-wrap gap-2 mb-2">
+                <MudText Typo="Typo.subtitle1">@model.Name</MudText>
+                @if (!string.IsNullOrWhiteSpace(model.ModelNumber))
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">(@model.ModelNumber)</MudText>
+                }
+                <MudSpacer />
+                <MudText Typo="Typo.h6" Color="@(model.CurrentQuantity <= model.ReorderThreshold ? Color.Warning : Color.Default)">
+                    @model.CurrentQuantity @model.Unit
+                </MudText>
+            </div>
+
+            <AuthorizeView Policy="@InventoryPermissions.StockAdjust" Context="stockCtx">
+                <div class="d-flex align-center gap-2 flex-wrap mb-3">
+                    <MudNumericField T="decimal" @bind-Value="_modelQty[model.Id]" Label="Qty" Min="0.01M"
+                                     Style="width:100px" Margin="Margin.Dense" />
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success"
+                               StartIcon="@Icons.Material.Filled.Add"
+                               OnClick="@(() => AdjustAsync(StockItemType.Model, model.Id, StockDirection.In, _modelQty[model.Id]))">
+                        In
+                    </MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
+                               StartIcon="@Icons.Material.Filled.Remove"
+                               OnClick="@(() => AdjustAsync(StockItemType.Model, model.Id, StockDirection.Out, _modelQty[model.Id]))">
+                        Out
+                    </MudButton>
+                </div>
+            </AuthorizeView>
+
+            @if (model.Accessories.Count > 0)
+            {
+                <MudSimpleTable Dense="true">
+                    <thead><tr><th>Accessory</th><th>Quantity</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var accessory in model.Accessories)
+                        {
+                            <tr>
+                                <td>@accessory.Name</td>
+                                <td>
+                                    <span style="@(accessory.CurrentQuantity <= accessory.ReorderThreshold ? "color:var(--mud-palette-warning)" : "")">
+                                        @accessory.CurrentQuantity @accessory.Unit
+                                    </span>
+                                </td>
+                                <td>
+                                    <AuthorizeView Policy="@InventoryPermissions.StockAdjust" Context="accCtx">
+                                        <div class="d-flex align-center gap-2">
+                                            <MudNumericField T="decimal" @bind-Value="_accessoryQty[accessory.Id]" Min="0.01M"
+                                                             Style="width:90px" Margin="Margin.Dense" />
+                                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Add" Color="Color.Success"
+                                                           OnClick="@(() => AdjustAsync(StockItemType.Accessory, accessory.Id, StockDirection.In, _accessoryQty[accessory.Id]))" />
+                                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Remove" Color="Color.Error"
+                                                           OnClick="@(() => AdjustAsync(StockItemType.Accessory, accessory.Id, StockDirection.Out, _accessoryQty[accessory.Id]))" />
+                                        </div>
+                                    </AuthorizeView>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+
+            <AuthorizeView Policy="@InventoryPermissions.ProductsManage" Context="addAccCtx">
+                <div class="d-flex align-center gap-2 mt-3 flex-wrap">
+                    <MudTextField @bind-Value="_newAccessoryName[model.Id]" Label="New accessory name"
+                                  Margin="Margin.Dense" Style="max-width:260px" />
+                    <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Add"
+                               OnClick="@(() => AddAccessoryAsync(model.Id))">Add accessory</MudButton>
+                </div>
+            </AuthorizeView>
+        </MudPaper>
+    }
+
+    <AuthorizeView Policy="@InventoryPermissions.ProductsManage">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Add model</MudText>
+            <div class="d-flex align-center gap-2 flex-wrap">
+                <MudTextField @bind-Value="_newModel.Name" Label="Model name" Margin="Margin.Dense" Style="max-width:220px" />
+                <MudTextField @bind-Value="_newModel.ModelNumber" Label="Model number" Margin="Margin.Dense" Style="max-width:180px" />
+                <MudTextField @bind-Value="_newModel.Sku" Label="SKU" Margin="Margin.Dense" Style="max-width:160px" />
+                <MudNumericField T="decimal" @bind-Value="_newModel.ReorderThreshold" Label="Reorder at"
+                                 Margin="Margin.Dense" Style="max-width:120px" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddModelAsync">Add</MudButton>
+            </div>
+        </MudPaper>
+    </AuthorizeView>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private Product? _product;
+    private readonly Dictionary<int, decimal> _modelQty = [];
+    private readonly Dictionary<int, decimal> _accessoryQty = [];
+    private readonly Dictionary<int, string> _newAccessoryName = [];
+    private ProductModel _newModel = new();
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _product = await scope.ServiceProvider.GetRequiredService<IProductService>().GetAsync(Id);
+        if (_product is null) return;
+
+        foreach (var model in _product.Models)
+        {
+            _modelQty.TryAdd(model.Id, 1);
+            _newAccessoryName.TryAdd(model.Id, "");
+            foreach (var accessory in model.Accessories)
+                _accessoryQty.TryAdd(accessory.Id, 1);
+        }
+    }
+
+    private async Task<(string Id, string Name)> CurrentUserAsync()
+    {
+        var user = (await AuthState.GetAuthenticationStateAsync()).User;
+        var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+        var name = user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown";
+        return (userId, name);
+    }
+
+    private async Task AdjustAsync(StockItemType type, int itemId, StockDirection direction, decimal quantity)
+    {
+        try
+        {
+            var (userId, name) = await CurrentUserAsync();
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IStockService>()
+                .AdjustAsync(type, itemId, direction, quantity, StockReason.Adjustment, null, null, userId, name);
+            Snackbar.Add("Stock updated.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AddModelAsync()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IProductService>().AddModelAsync(Id, _newModel);
+            _newModel = new();
+            Snackbar.Add("Model added.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task AddAccessoryAsync(int modelId)
+    {
+        try
+        {
+            var name = _newAccessoryName.GetValueOrDefault(modelId, "");
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IProductService>()
+                .AddAccessoryAsync(modelId, new Accessory { Name = name });
+            _newAccessoryName[modelId] = "";
+            Snackbar.Add("Accessory added.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

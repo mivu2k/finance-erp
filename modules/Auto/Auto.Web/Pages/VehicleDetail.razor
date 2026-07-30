@@ -1,0 +1,126 @@
+@page "/auto/vehicles/{Id:int}"
+@attribute [Authorize(Policy = AutoPermissions.VehiclesView)]
+@layout AutoLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject AuthenticationStateProvider AuthState
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_vehicle?.RegistrationNumber ?? "Vehicle")</PageTitle>
+
+@if (_vehicle is null)
+{
+    <MudText>Loading…</MudText>
+}
+else
+{
+    <div class="d-flex align-center mb-4 flex-wrap gap-2">
+        <MudText Typo="Typo.h5">@_vehicle.RegistrationNumber — @_vehicle.Make @_vehicle.Model</MudText>
+        <MudChip T="string" Size="Size.Small" Color="@(_vehicle.Status == VehicleStatus.Active ? Color.Success : Color.Default)">
+            @_vehicle.Status
+        </MudChip>
+        <MudSpacer />
+        <MudText Typo="Typo.subtitle2">Odometer: @_vehicle.CurrentOdometer</MudText>
+    </div>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.body2">Year: @_vehicle.Year</MudText>
+            <MudText Typo="Typo.body2">VIN: @_vehicle.Vin</MudText>
+            <MudText Typo="Typo.body2">Color: @_vehicle.Color</MudText>
+            <MudText Typo="Typo.body2">Purchased: @_vehicle.PurchaseDate?.ToString("yyyy-MM-dd")</MudText>
+        </MudItem>
+    </MudGrid>
+
+    <MudPaper Class="pa-4 mt-4 mb-4">
+        <MudText Typo="Typo.subtitle1" Class="mb-2">Maintenance history</MudText>
+        <MudSimpleTable Dense="true">
+            <thead>
+                <tr><th>Date</th><th>Type</th><th>Description</th><th>Odometer</th><th>Cost</th><th>Vendor</th><th>Next due</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var m in _vehicle.MaintenanceRecords)
+                {
+                    <tr>
+                        <td>@m.Date.ToString("yyyy-MM-dd")</td>
+                        <td>@m.Type</td>
+                        <td>@m.Description</td>
+                        <td>@m.OdometerAtService</td>
+                        <td>@m.Cost.ToString("N2")</td>
+                        <td>@m.VendorName</td>
+                        <td>@m.NextDueDate?.ToString("yyyy-MM-dd") @(m.NextDueOdometer is { } o ? $"/ {o}" : "")</td>
+                    </tr>
+                }
+                @if (_vehicle.MaintenanceRecords.Count == 0)
+                {
+                    <tr><td colspan="7" class="mud-text-secondary pa-4">No maintenance logged yet.</td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+
+    <AuthorizeView Policy="@AutoPermissions.MaintenanceRecord">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Log maintenance</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="6" md="3"><MudDatePicker @bind-Date="_date" Label="Date" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3">
+                    <MudSelect T="MaintenanceType" @bind-Value="_newRecord.Type" Label="Type" Margin="Margin.Dense">
+                        @foreach (var t in Enum.GetValues<MaintenanceType>())
+                        {
+                            <MudSelectItem T="MaintenanceType" Value="@t">@t</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="3"><MudNumericField T="decimal?" @bind-Value="_newRecord.OdometerAtService" Label="Odometer" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"><MudNumericField T="decimal" @bind-Value="_newRecord.Cost" Label="Cost" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" md="6"><MudTextField @bind-Value="_newRecord.Description" Label="Description" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"><MudTextField @bind-Value="_newRecord.VendorName" Label="Vendor" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"></MudItem>
+                <MudItem xs="6" md="3"><MudDatePicker @bind-Date="_nextDueDate" Label="Next due date" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"><MudNumericField T="decimal?" @bind-Value="_newRecord.NextDueOdometer" Label="Next due odometer" Margin="Margin.Dense" /></MudItem>
+            </MudGrid>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LogAsync" Class="mt-3">Log</MudButton>
+        </MudPaper>
+    </AuthorizeView>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private Vehicle? _vehicle;
+    private MaintenanceRecord _newRecord = new();
+    private DateTime? _date = DateTime.Today;
+    private DateTime? _nextDueDate;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _vehicle = await scope.ServiceProvider.GetRequiredService<IVehicleService>().GetAsync(Id);
+    }
+
+    private async Task LogAsync()
+    {
+        try
+        {
+            _newRecord.Date = _date is { } d ? DateOnly.FromDateTime(d) : DateOnly.FromDateTime(DateTime.UtcNow);
+            _newRecord.NextDueDate = _nextDueDate is { } nd ? DateOnly.FromDateTime(nd) : null;
+
+            var user = (await AuthState.GetAuthenticationStateAsync()).User;
+            var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+            var name = user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown";
+
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IVehicleService>()
+                .LogMaintenanceAsync(Id, _newRecord, userId, name);
+
+            _newRecord = new();
+            _date = DateTime.Today;
+            _nextDueDate = null;
+            Snackbar.Add("Maintenance logged.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

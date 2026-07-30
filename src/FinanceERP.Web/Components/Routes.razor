@@ -5,7 +5,9 @@
             typeof(ErpPlatform.Shared.Web.Portal.Portal).Assembly,
             typeof(Hr.Web.Layout.HrLayout).Assembly,
             typeof(GatePass.Web.Layout.GatePassLayout).Assembly,
-            typeof(Repair.Web.Layout.RepairLayout).Assembly }" NotFoundPage="typeof(Pages.NotFound)">
+            typeof(Repair.Web.Layout.RepairLayout).Assembly,
+            typeof(Inventory.Web.Layout.InventoryLayout).Assembly,
+            typeof(Auto.Web.Layout.AutoLayout).Assembly }" NotFoundPage="typeof(Pages.NotFound)">
     <Found Context="routeData">
         <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
             <NotAuthorized>

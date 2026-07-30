@@ -5,6 +5,8 @@ using FinanceERP.Infrastructure;
 using GatePass.Infrastructure;
 using Hr.Infrastructure;
 using Repair.Infrastructure;
+using Inventory.Infrastructure;
+using Auto.Infrastructure;
 using FinanceERP.Infrastructure.Persistence;
 using FinanceERP.Web.Components;
 using FinanceERP.Web.Components.Account;
@@ -12,6 +14,8 @@ using FinanceERP.Web.Endpoints;
 using GatePass.Web;
 using Hr.Web;
 using Repair.Web;
+using Inventory.Web;
+using Auto.Web;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -63,6 +67,8 @@ builder.Services.AddFinanceModule(builder.Configuration);
 builder.Services.AddHrModule(builder.Configuration);
 builder.Services.AddGatePassModule(builder.Configuration);
 builder.Services.AddRepairModule(builder.Configuration);
+builder.Services.AddInventoryModule(builder.Configuration);
+builder.Services.AddAutoModule(builder.Configuration);
 
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
 
@@ -104,6 +110,8 @@ using (var scope = app.Services.CreateScope())
     await HrModule.SeedAsync(sp.GetRequiredService<HrDbContext>(), logger);
     await GatePassModule.SeedAsync(sp.GetRequiredService<GatePassDbContext>(), logger);
     await RepairModule.SeedAsync(sp.GetRequiredService<RepairDbContext>(), logger);
+    await InventoryModule.SeedAsync(sp.GetRequiredService<InventoryDbContext>(), logger);
+    await AutoModule.SeedAsync(sp.GetRequiredService<AutoDbContext>(), logger);
 }
 
 if (app.Environment.IsDevelopment())
@@ -129,7 +137,9 @@ app.MapRazorComponents<App>()
         typeof(ErpPlatform.Shared.Web.Portal.Portal).Assembly,
         typeof(Hr.Web.Layout.HrLayout).Assembly,
         typeof(GatePass.Web.Layout.GatePassLayout).Assembly,
-        typeof(Repair.Web.Layout.RepairLayout).Assembly);
+        typeof(Repair.Web.Layout.RepairLayout).Assembly,
+        typeof(Inventory.Web.Layout.InventoryLayout).Assembly,
+        typeof(Auto.Web.Layout.AutoLayout).Assembly);
 
 app.MapAdditionalIdentityEndpoints();
 app.MapExportEndpoints();

@@ -23,6 +23,8 @@
     <ProjectReference Include="..\..\modules\Hr\Hr.Web\Hr.Web.csproj" />
     <ProjectReference Include="..\..\modules\GatePass\GatePass.Web\GatePass.Web.csproj" />
     <ProjectReference Include="..\..\modules\Repair\Repair.Web\Repair.Web.csproj" />
+    <ProjectReference Include="..\..\modules\Inventory\Inventory.Web\Inventory.Web.csproj" />
+    <ProjectReference Include="..\..\modules\Auto\Auto.Web\Auto.Web.csproj" />
   </ItemGroup>
 
 </Project>

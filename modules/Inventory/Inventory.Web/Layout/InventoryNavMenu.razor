@@ -1,0 +1,26 @@
+<MudNavMenu>
+    <MudNavLink Href="/inventory" Icon="@Icons.Material.Filled.Dashboard" Match="NavLinkMatch.All">
+        Dashboard
+    </MudNavLink>
+
+    <AuthorizeView Policy="@InventoryPermissions.ProductsView">
+        <MudNavGroup Title="Products" Icon="@Icons.Material.Filled.Inventory2" Expanded="true">
+            <MudNavLink Href="/inventory/products" Icon="@Icons.Material.Filled.List">All Products</MudNavLink>
+            <AuthorizeView Policy="@InventoryPermissions.ProductsManage" Context="c">
+                <MudNavLink Href="/inventory/products/new" Icon="@Icons.Material.Filled.AddBox">New Product</MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@InventoryPermissions.ProductsView" Context="t">
+        <MudNavLink Href="/inventory/transactions" Icon="@Icons.Material.Filled.History">
+            Stock Ledger
+        </MudNavLink>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@InventoryPermissions.ReportsView" Context="r">
+        <MudNavLink Href="/inventory/reports" Icon="@Icons.Material.Filled.Assessment">
+            Reports
+        </MudNavLink>
+    </AuthorizeView>
+</MudNavMenu>

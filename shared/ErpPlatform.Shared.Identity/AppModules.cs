@@ -11,6 +11,8 @@ public static class AppModules
     public const string Repair = "repair";
     public const string GatePass = "gatepass";
     public const string Hr = "hr";
+    public const string Inventory = "inventory";
+    public const string Auto = "auto";
 
     /// <summary>Every module tile the portal can show, in display order.</summary>
     public static readonly IReadOnlyList<ModuleDefinition> All =
@@ -22,7 +24,11 @@ public static class AppModules
         new(GatePass, "Gate Pass & Demo Goods", "Inward/outward gate passes and demo issuances.",
             "/gatepass", "LocalShipping", "#388e3c", 3),
         new(Hr, "HR", "Employee master data, departments and documents.",
-            "/hr", "Badge", "#7b1fa2", 4)
+            "/hr", "Badge", "#7b1fa2", 4),
+        new(Inventory, "Inventory", "Products, models, accessories and stock tracking.",
+            "/inventory", "Inventory2", "#00897b", 5),
+        new(Auto, "Auto", "Company vehicle fleet and maintenance tracking.",
+            "/auto", "DirectionsCar", "#5d4037", 6)
     ];
 
     public static ModuleDefinition? Find(string key) =>

@@ -1,0 +1,79 @@
+@page "/auto"
+@attribute [Authorize(Policy = "module:auto")]
+@layout AutoLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Auto</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Fleet Overview</MudText>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Active vehicles</MudText>
+            <MudText Typo="Typo.h4">@_activeCount</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Total vehicles</MudText>
+            <MudText Typo="Typo.h4">@_totalCount</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Upcoming maintenance</MudText>
+            <MudText Typo="Typo.h4" Color="@(_upcoming.Count > 0 ? Color.Warning : Color.Default)">
+                @_upcoming.Count
+            </MudText>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Maintenance due within 30 days</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead>
+                    <tr><th>Vehicle</th><th>Type</th><th>Due date</th><th>Due odometer</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var m in _upcoming)
+                    {
+                        var overdue = m.NextDueDate is { } due && due < DateOnly.FromDateTime(DateTime.UtcNow);
+                        <tr>
+                            <td><MudLink Href="@($"/auto/vehicles/{m.VehicleId}")">@m.Vehicle.RegistrationNumber — @m.Vehicle.Make @m.Vehicle.Model</MudLink></td>
+                            <td>@m.Type</td>
+                            <td>
+                                <span style="@(overdue ? "color:var(--mud-palette-error);font-weight:600" : "")">
+                                    @m.NextDueDate?.ToString("yyyy-MM-dd")
+                                </span>
+                            </td>
+                            <td>@m.NextDueOdometer</td>
+                        </tr>
+                    }
+                    @if (_upcoming.Count == 0)
+                    {
+                        <tr><td colspan="4" class="mud-text-secondary pa-4">Nothing due soon.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private int _activeCount, _totalCount;
+    private List<MaintenanceRecord> _upcoming = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var vehicles = await scope.ServiceProvider.GetRequiredService<IVehicleService>().ListAsync();
+        _totalCount = vehicles.Count;
+        _activeCount = vehicles.Count(v => v.Status == VehicleStatus.Active);
+
+        _upcoming = await scope.ServiceProvider.GetRequiredService<IVehicleService>()
+            .ListUpcomingMaintenanceAsync();
+    }
+}

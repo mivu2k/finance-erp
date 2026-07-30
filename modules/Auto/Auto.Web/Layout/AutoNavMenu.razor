@@ -1,0 +1,20 @@
+<MudNavMenu>
+    <MudNavLink Href="/auto" Icon="@Icons.Material.Filled.Dashboard" Match="NavLinkMatch.All">
+        Dashboard
+    </MudNavLink>
+
+    <AuthorizeView Policy="@AutoPermissions.VehiclesView">
+        <MudNavGroup Title="Vehicles" Icon="@Icons.Material.Filled.DirectionsCar" Expanded="true">
+            <MudNavLink Href="/auto/vehicles" Icon="@Icons.Material.Filled.List">All Vehicles</MudNavLink>
+            <AuthorizeView Policy="@AutoPermissions.VehiclesManage" Context="c">
+                <MudNavLink Href="/auto/vehicles/new" Icon="@Icons.Material.Filled.AddBox">New Vehicle</MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@AutoPermissions.ReportsView" Context="r">
+        <MudNavLink Href="/auto/reports" Icon="@Icons.Material.Filled.Assessment">
+            Reports
+        </MudNavLink>
+    </AuthorizeView>
+</MudNavMenu>
