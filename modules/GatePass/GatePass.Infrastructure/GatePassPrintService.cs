@@ -217,23 +217,24 @@ public class GatePassPrintService : IGatePassPrintService
                 // Continuous roll: fixed width, height grows with content.
                 page.ContinuousSize(PosWidthMm, Unit.Millimetre);
                 page.Margin(4, Unit.Millimetre);
-                page.DefaultTextStyle(t => t.FontSize(8));
+                // Bold and black throughout — see Letterhead.Thermal for why.
+                page.DefaultTextStyle(t => Letterhead.Thermal(t).FontSize(Letterhead.ThermalBodySize));
 
                 page.Content().Column(col =>
                 {
                     col.PosCompanyHeader(company, title, PosWidthPoints);
                     col.Item().AlignCenter().Text(number).FontSize(9);
-                    col.Item().PaddingVertical(3).LineHorizontal(0.5f);
+                    col.Item().PaddingVertical(3).LineHorizontal(1f).LineColor(Colors.Black);
 
                     foreach (var (label, value) in fields)
                         col.Item().Row(r =>
                         {
-                            r.ConstantItem(58).Text(label).SemiBold();
+                            r.ConstantItem(58).Text(label).Bold();
                             r.RelativeItem().Text(value);
                         });
 
-                    col.Item().PaddingVertical(3).LineHorizontal(0.5f);
-                    col.Item().Text("ITEMS").SemiBold();
+                    col.Item().PaddingVertical(3).LineHorizontal(1f).LineColor(Colors.Black);
+                    col.Item().Text("ITEMS").Bold();
 
                     foreach (var (description, qty) in items)
                         col.Item().Row(r =>
@@ -242,8 +243,8 @@ public class GatePassPrintService : IGatePassPrintService
                             r.ConstantItem(40).AlignRight().Text(qty);
                         });
 
-                    col.Item().PaddingVertical(3).LineHorizontal(0.5f);
-                    col.Item().PaddingTop(18).Text("Signature: ______________").FontSize(8);
+                    col.Item().PaddingVertical(3).LineHorizontal(1f).LineColor(Colors.Black);
+                    col.Item().PaddingTop(18).Text("Signature: ______________");
                     col.PosCompanyFooter(company);
                 });
             });

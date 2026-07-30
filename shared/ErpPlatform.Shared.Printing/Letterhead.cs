@@ -106,6 +106,21 @@ public static class Letterhead
     /// Centred branding for a narrow thermal roll: logo above the name, then the
     /// bare essentials. Address and tax number only — a receipt has no room for more.
     /// </summary>
+    /// <remarks>
+    /// Everything on a roll is bold and pure black. Thermal heads burn a fainter
+    /// mark than a laser lays down toner, and a thin regular-weight glyph at 6.5pt
+    /// comes out grey and hard to read — worse once the paper has aged or the head
+    /// is dirty. Weight and size are the only levers available, so both are pushed:
+    /// there is no "darker ink" to ask for.
+    /// </remarks>
+    public static TextStyle Thermal(TextStyle t) => t.Bold().FontColor(Colors.Black);
+
+    /// <summary>Body size on a roll. Small enough for 80mm, large enough to burn cleanly.</summary>
+    public const float ThermalBodySize = 9f;
+
+    /// <summary>Small print on a roll — still bold, never below this.</summary>
+    public const float ThermalSmallSize = 7.5f;
+
     public static void PosCompanyHeader(
         this ColumnDescriptor col, CompanyBranding company, string title, float rollWidthPoints)
     {
@@ -113,27 +128,33 @@ public static class Letterhead
             col.Item().AlignCenter().MaxHeight(34).MaxWidth(rollWidthPoints * 0.7f)
                 .Image(company.Logo!).FitArea();
 
-        col.Item().AlignCenter().Text(company.Name).Bold().FontSize(10);
+        col.Item().AlignCenter().Text(company.Name).Bold().FontSize(11).FontColor(Colors.Black);
 
         if (!string.IsNullOrWhiteSpace(company.Address))
-            col.Item().AlignCenter().Text(company.Address!).FontSize(6.5f);
+            col.Item().AlignCenter().Text(company.Address!)
+                .Bold().FontSize(ThermalSmallSize).FontColor(Colors.Black);
 
         if (!string.IsNullOrWhiteSpace(company.Contact))
-            col.Item().AlignCenter().Text(company.Contact!).FontSize(6.5f);
+            col.Item().AlignCenter().Text(company.Contact!)
+                .Bold().FontSize(ThermalSmallSize).FontColor(Colors.Black);
 
         if (!string.IsNullOrWhiteSpace(company.TaxNumber))
-            col.Item().AlignCenter().Text($"Tax No. {company.TaxNumber}").FontSize(6.5f);
+            col.Item().AlignCenter().Text($"Tax No. {company.TaxNumber}")
+                .Bold().FontSize(ThermalSmallSize).FontColor(Colors.Black);
 
-        col.Item().PaddingTop(2).AlignCenter().Text(title).Bold().FontSize(9);
+        col.Item().PaddingTop(2).AlignCenter().Text(title)
+            .Bold().FontSize(10).FontColor(Colors.Black);
     }
 
     /// <summary>Closing small print on a thermal roll.</summary>
     public static void PosCompanyFooter(this ColumnDescriptor col, CompanyBranding company)
     {
         if (!string.IsNullOrWhiteSpace(company.FooterNote))
-            col.Item().PaddingTop(4).AlignCenter().Text(company.FooterNote).FontSize(6.5f);
+            col.Item().PaddingTop(4).AlignCenter().Text(company.FooterNote)
+                .Bold().FontSize(ThermalSmallSize).FontColor(Colors.Black);
 
         col.Item().PaddingTop(4).AlignCenter()
-            .Text(DateTime.Now.ToString("yyyy-MM-dd HH:mm")).FontSize(7);
+            .Text(DateTime.Now.ToString("yyyy-MM-dd HH:mm"))
+            .Bold().FontSize(ThermalSmallSize).FontColor(Colors.Black);
     }
 }

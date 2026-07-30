@@ -152,7 +152,8 @@ public class RepairPrintService : IRepairPrintService
     {
         page.ContinuousSize(62, Unit.Millimetre);
         page.Margin(3, Unit.Millimetre);
-        page.DefaultTextStyle(t => t.FontSize(7));
+        // Labels go on the same thermal head as the receipts.
+        page.DefaultTextStyle(t => Letterhead.Thermal(t).FontSize(8));
 
         page.Content().Column(col =>
         {
