@@ -27,10 +27,21 @@
     <Project Path="modules/Repair/Repair.Infrastructure/Repair.Infrastructure.csproj" />
     <Project Path="modules/Repair/Repair.Web/Repair.Web.csproj" />
   </Folder>
+  <Folder Name="/modules/inventory/">
+    <Project Path="modules/Inventory/Inventory.Domain/Inventory.Domain.csproj" />
+    <Project Path="modules/Inventory/Inventory.Infrastructure/Inventory.Infrastructure.csproj" />
+    <Project Path="modules/Inventory/Inventory.Web/Inventory.Web.csproj" />
+  </Folder>
+  <Folder Name="/modules/auto/">
+    <Project Path="modules/Auto/Auto.Domain/Auto.Domain.csproj" />
+    <Project Path="modules/Auto/Auto.Infrastructure/Auto.Infrastructure.csproj" />
+    <Project Path="modules/Auto/Auto.Web/Auto.Web.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ErpPlatform.Shared.Tests/ErpPlatform.Shared.Tests.csproj" />
     <Project Path="tests/Hr.Tests/Hr.Tests.csproj" />
     <Project Path="tests/Repair.Tests/Repair.Tests.csproj" />
+    <Project Path="tests/Inventory.Tests/Inventory.Tests.csproj" />
   </Folder>
   <Folder Name="/apps/">
     <Project Path="src/FinanceERP.Web/FinanceERP.Web.csproj" />

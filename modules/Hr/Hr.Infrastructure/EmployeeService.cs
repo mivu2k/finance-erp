@@ -26,6 +26,16 @@ public interface IEmployeeService
     Task SaveDepartmentAsync(Department department, CancellationToken ct = default);
     Task SaveDesignationAsync(Designation designation, CancellationToken ct = default);
 
+    /// <summary>
+    /// Soft-deletes a department. Refused while any employee still sits in it —
+    /// employees carry a real foreign key, so removing it out from under them
+    /// would leave their record pointing at a row the UI can no longer resolve.
+    /// </summary>
+    Task DeleteDepartmentAsync(int id, CancellationToken ct = default);
+
+    /// <summary>Soft-deletes a designation. Refused while any employee still holds it.</summary>
+    Task DeleteDesignationAsync(int id, CancellationToken ct = default);
+
     Task<List<EmployeeDocument>> ListDocumentsAsync(int employeeId, CancellationToken ct = default);
     Task AddDocumentAsync(EmployeeDocument document, CancellationToken ct = default);
     Task DeleteDocumentAsync(int documentId, CancellationToken ct = default);
@@ -195,6 +205,34 @@ public class EmployeeService(HrDbContext db, IPlatformUserDirectory directory) :
             // Detached: the page loaded it in a different scope, so without this
             // SaveChanges finds nothing to do and the edit is silently lost.
         else db.Entry(designation).State = EntityState.Modified;
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task DeleteDepartmentAsync(int id, CancellationToken ct = default)
+    {
+        var department = await db.Departments.FirstOrDefaultAsync(d => d.Id == id, ct);
+        if (department is null) return;
+
+        var inUse = await db.Employees.CountAsync(e => e.DepartmentId == id, ct);
+        if (inUse > 0)
+            throw new InvalidOperationException(
+                $"{department.Name} still has {inUse} employee(s). Move them first.");
+
+        db.Departments.Remove(department);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task DeleteDesignationAsync(int id, CancellationToken ct = default)
+    {
+        var designation = await db.Designations.FirstOrDefaultAsync(d => d.Id == id, ct);
+        if (designation is null) return;
+
+        var inUse = await db.Employees.CountAsync(e => e.DesignationId == id, ct);
+        if (inUse > 0)
+            throw new InvalidOperationException(
+                $"{designation.Title} is held by {inUse} employee(s). Reassign them first.");
+
+        db.Designations.Remove(designation);
         await db.SaveChangesAsync(ct);
     }
 

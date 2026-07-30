@@ -10,8 +10,18 @@ public interface IVehicleService
     Task<Vehicle> CreateAsync(Vehicle vehicle, CancellationToken ct = default);
     Task<Vehicle> UpdateAsync(Vehicle vehicle, CancellationToken ct = default);
 
+    /// <summary>
+    /// Soft-deletes a vehicle and its maintenance history. The history goes with it
+    /// because a maintenance record only means anything against a vehicle.
+    /// </summary>
+    Task DeleteAsync(int id, CancellationToken ct = default);
+
     Task<MaintenanceRecord> LogMaintenanceAsync(int vehicleId, MaintenanceRecord record,
         string performedById, string performedByName, CancellationToken ct = default);
+
+    Task<MaintenanceRecord?> GetMaintenanceAsync(int id, CancellationToken ct = default);
+    Task<MaintenanceRecord> UpdateMaintenanceAsync(MaintenanceRecord record, CancellationToken ct = default);
+    Task DeleteMaintenanceAsync(int id, CancellationToken ct = default);
 
     Task<List<MaintenanceRecord>> ListUpcomingMaintenanceAsync(int withinDays = 30, CancellationToken ct = default);
 }
@@ -57,6 +67,19 @@ public class VehicleService(AutoDbContext db) : IVehicleService
         var existing = await db.Vehicles.FirstOrDefaultAsync(v => v.Id == vehicle.Id, ct)
             ?? throw new InvalidOperationException("Vehicle not found.");
 
+        if (string.IsNullOrWhiteSpace(vehicle.RegistrationNumber))
+            throw new InvalidOperationException("Registration number is required.");
+        if (string.IsNullOrWhiteSpace(vehicle.Make) || string.IsNullOrWhiteSpace(vehicle.Model))
+            throw new InvalidOperationException("Make and model are required.");
+
+        // Registration is unique across the fleet, so a rename has to check the
+        // rest of the fleet — excluding this vehicle, or saving it unchanged fails.
+        if (await db.Vehicles.AnyAsync(
+                v => v.RegistrationNumber == vehicle.RegistrationNumber && v.Id != vehicle.Id, ct))
+            throw new InvalidOperationException(
+                $"{vehicle.RegistrationNumber} is already on another vehicle.");
+
+        existing.RegistrationNumber = vehicle.RegistrationNumber;
         existing.Make = vehicle.Make;
         existing.Model = vehicle.Model;
         existing.Year = vehicle.Year;
@@ -69,6 +92,51 @@ public class VehicleService(AutoDbContext db) : IVehicleService
 
         await db.SaveChangesAsync(ct);
         return existing;
+    }
+
+    public async Task DeleteAsync(int id, CancellationToken ct = default)
+    {
+        var vehicle = await db.Vehicles.Include(v => v.MaintenanceRecords)
+            .FirstOrDefaultAsync(v => v.Id == id, ct);
+        if (vehicle is null) return;
+
+        // Soft delete — ModuleDbContext turns Remove into a flag update.
+        db.MaintenanceRecords.RemoveRange(vehicle.MaintenanceRecords);
+        db.Vehicles.Remove(vehicle);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public Task<MaintenanceRecord?> GetMaintenanceAsync(int id, CancellationToken ct = default) =>
+        db.MaintenanceRecords.FirstOrDefaultAsync(m => m.Id == id, ct);
+
+    public async Task<MaintenanceRecord> UpdateMaintenanceAsync(
+        MaintenanceRecord record, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(record.Description))
+            throw new InvalidOperationException("Description is required.");
+
+        var existing = await db.MaintenanceRecords.FirstOrDefaultAsync(m => m.Id == record.Id, ct)
+            ?? throw new InvalidOperationException("Maintenance record not found.");
+
+        existing.Date = record.Date;
+        existing.Type = record.Type;
+        existing.OdometerAtService = record.OdometerAtService;
+        existing.Description = record.Description;
+        existing.Cost = record.Cost;
+        existing.VendorName = record.VendorName;
+        existing.NextDueDate = record.NextDueDate;
+        existing.NextDueOdometer = record.NextDueOdometer;
+
+        await db.SaveChangesAsync(ct);
+        return existing;
+    }
+
+    public async Task DeleteMaintenanceAsync(int id, CancellationToken ct = default)
+    {
+        var record = await db.MaintenanceRecords.FirstOrDefaultAsync(m => m.Id == id, ct);
+        if (record is null) return;
+        db.MaintenanceRecords.Remove(record);
+        await db.SaveChangesAsync(ct);
     }
 
     public async Task<MaintenanceRecord> LogMaintenanceAsync(int vehicleId, MaintenanceRecord record,

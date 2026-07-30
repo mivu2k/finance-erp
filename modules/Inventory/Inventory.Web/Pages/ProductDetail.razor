@@ -4,6 +4,7 @@
 @rendermode InteractiveServer
 @inject IServiceScopeFactory ScopeFactory
 @inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
 @inject ISnackbar Snackbar
 
 <PageTitle>@(_product?.Name ?? "Product")</PageTitle>
@@ -15,10 +16,31 @@
 else
 {
     <div class="d-flex align-center mb-4 flex-wrap gap-2">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/inventory/products" />
         <MudText Typo="Typo.h5">@_product.Name</MudText>
-        <MudChip T="string" Size="Size.Small">@_product.Category</MudChip>
+        @if (!string.IsNullOrWhiteSpace(_product.Category))
+        {
+            <MudChip T="string" Size="Size.Small">@_product.Category</MudChip>
+        }
+        @if (!_product.IsActive)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Default">Inactive</MudChip>
+        }
         <MudSpacer />
+        <AuthorizeView Policy="@InventoryPermissions.ProductsManage">
+            <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.Edit"
+                       Href="@($"/inventory/products/{Id}/edit")">Edit</MudButton>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Error"
+                       StartIcon="@Icons.Material.Filled.Delete"
+                       OnClick="@(() => _confirmDeleteProduct = true)">Delete</MudButton>
+        </AuthorizeView>
     </div>
+
+    @if (!string.IsNullOrWhiteSpace(_product.Description))
+    {
+        <MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">@_product.Description</MudText>
+    }
 
     @foreach (var model in _product.Models)
     {
@@ -29,24 +51,45 @@ else
                 {
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">(@model.ModelNumber)</MudText>
                 }
+                @if (!string.IsNullOrWhiteSpace(model.Sku))
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@model.Sku</MudChip>
+                }
+                @if (!model.IsActive)
+                {
+                    <MudChip T="string" Size="Size.Small">Inactive</MudChip>
+                }
                 <MudSpacer />
                 <MudText Typo="Typo.h6" Color="@(model.CurrentQuantity <= model.ReorderThreshold ? Color.Warning : Color.Default)">
                     @model.CurrentQuantity @model.Unit
                 </MudText>
+                <AuthorizeView Policy="@InventoryPermissions.ProductsManage" Context="mgr">
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                   OnClick="@(() => OpenModelEditor(model))" />
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                   OnClick="@(() => { _deleteModel = model; })" />
+                </AuthorizeView>
             </div>
 
             <AuthorizeView Policy="@InventoryPermissions.StockAdjust" Context="stockCtx">
                 <div class="d-flex align-center gap-2 flex-wrap mb-3">
                     <MudNumericField T="decimal" @bind-Value="_modelQty[model.Id]" Label="Qty" Min="0.01M"
                                      Style="width:100px" Margin="Margin.Dense" />
+                    <MudSelect T="StockReason" @bind-Value="_modelReason[model.Id]" Label="Reason"
+                               Margin="Margin.Dense" Style="width:150px">
+                        @foreach (var r in Enum.GetValues<StockReason>())
+                        {
+                            <MudSelectItem T="StockReason" Value="@r">@r</MudSelectItem>
+                        }
+                    </MudSelect>
                     <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success"
                                StartIcon="@Icons.Material.Filled.Add"
-                               OnClick="@(() => AdjustAsync(StockItemType.Model, model.Id, StockDirection.In, _modelQty[model.Id]))">
+                               OnClick="@(() => AdjustAsync(StockItemType.Model, model.Id, StockDirection.In, _modelQty[model.Id], _modelReason[model.Id]))">
                         In
                     </MudButton>
                     <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
                                StartIcon="@Icons.Material.Filled.Remove"
-                               OnClick="@(() => AdjustAsync(StockItemType.Model, model.Id, StockDirection.Out, _modelQty[model.Id]))">
+                               OnClick="@(() => AdjustAsync(StockItemType.Model, model.Id, StockDirection.Out, _modelQty[model.Id], _modelReason[model.Id]))">
                         Out
                     </MudButton>
                 </div>
@@ -55,12 +98,18 @@ else
             @if (model.Accessories.Count > 0)
             {
                 <MudSimpleTable Dense="true">
-                    <thead><tr><th>Accessory</th><th>Quantity</th><th></th></tr></thead>
+                    <thead><tr><th>Accessory</th><th>Quantity</th><th>Adjust</th><th style="width:96px"></th></tr></thead>
                     <tbody>
                         @foreach (var accessory in model.Accessories)
                         {
                             <tr>
-                                <td>@accessory.Name</td>
+                                <td>
+                                    @accessory.Name
+                                    @if (!string.IsNullOrWhiteSpace(accessory.Sku))
+                                    {
+                                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">@accessory.Sku</MudText>
+                                    }
+                                </td>
                                 <td>
                                     <span style="@(accessory.CurrentQuantity <= accessory.ReorderThreshold ? "color:var(--mud-palette-warning)" : "")">
                                         @accessory.CurrentQuantity @accessory.Unit
@@ -72,10 +121,18 @@ else
                                             <MudNumericField T="decimal" @bind-Value="_accessoryQty[accessory.Id]" Min="0.01M"
                                                              Style="width:90px" Margin="Margin.Dense" />
                                             <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Add" Color="Color.Success"
-                                                           OnClick="@(() => AdjustAsync(StockItemType.Accessory, accessory.Id, StockDirection.In, _accessoryQty[accessory.Id]))" />
+                                                           OnClick="@(() => AdjustAsync(StockItemType.Accessory, accessory.Id, StockDirection.In, _accessoryQty[accessory.Id], StockReason.Adjustment))" />
                                             <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Remove" Color="Color.Error"
-                                                           OnClick="@(() => AdjustAsync(StockItemType.Accessory, accessory.Id, StockDirection.Out, _accessoryQty[accessory.Id]))" />
+                                                           OnClick="@(() => AdjustAsync(StockItemType.Accessory, accessory.Id, StockDirection.Out, _accessoryQty[accessory.Id], StockReason.Adjustment))" />
                                         </div>
+                                    </AuthorizeView>
+                                </td>
+                                <td>
+                                    <AuthorizeView Policy="@InventoryPermissions.ProductsManage" Context="accMgr">
+                                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                                       OnClick="@(() => OpenAccessoryEditor(accessory))" />
+                                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                                       OnClick="@(() => { _deleteAccessory = accessory; })" />
                                     </AuthorizeView>
                                 </td>
                             </tr>
@@ -95,6 +152,13 @@ else
         </MudPaper>
     }
 
+    @if (_product.Models.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4">
+            No models yet. Add one below — models and their accessories are what stock is counted against.
+        </MudAlert>
+    }
+
     <AuthorizeView Policy="@InventoryPermissions.ProductsManage">
         <MudPaper Class="pa-4">
             <MudText Typo="Typo.subtitle1" Class="mb-2">Add model</MudText>
@@ -102,6 +166,7 @@ else
                 <MudTextField @bind-Value="_newModel.Name" Label="Model name" Margin="Margin.Dense" Style="max-width:220px" />
                 <MudTextField @bind-Value="_newModel.ModelNumber" Label="Model number" Margin="Margin.Dense" Style="max-width:180px" />
                 <MudTextField @bind-Value="_newModel.Sku" Label="SKU" Margin="Margin.Dense" Style="max-width:160px" />
+                <MudTextField @bind-Value="_newModel.Unit" Label="Unit" Margin="Margin.Dense" Style="max-width:100px" />
                 <MudNumericField T="decimal" @bind-Value="_newModel.ReorderThreshold" Label="Reorder at"
                                  Margin="Margin.Dense" Style="max-width:120px" />
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddModelAsync">Add</MudButton>
@@ -110,13 +175,107 @@ else
     </AuthorizeView>
 }
 
+@* --- edit model --- *@
+@if (_editModel is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:520px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">Edit Model</MudText>
+            <MudTextField @bind-Value="_editModel.Name" Label="Name" Class="mb-2" />
+            <MudTextField @bind-Value="_editModel.ModelNumber" Label="Model number" Class="mb-2" />
+            <MudTextField @bind-Value="_editModel.Sku" Label="SKU" Class="mb-2" />
+            <MudTextField @bind-Value="_editModel.Unit" Label="Unit" Class="mb-2" />
+            <MudNumericField T="decimal" @bind-Value="_editModel.ReorderThreshold" Label="Reorder at" Class="mb-2" />
+            <MudSwitch T="bool" @bind-Value="_editModel.IsActive" Label="Active" Color="Color.Primary" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _editModel = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveModelAsync">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@* --- edit accessory --- *@
+@if (_editAccessory is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:520px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">Edit Accessory</MudText>
+            <MudTextField @bind-Value="_editAccessory.Name" Label="Name" Class="mb-2" />
+            <MudTextField @bind-Value="_editAccessory.Sku" Label="SKU" Class="mb-2" />
+            <MudTextField @bind-Value="_editAccessory.Unit" Label="Unit" Class="mb-2" />
+            <MudNumericField T="decimal" @bind-Value="_editAccessory.ReorderThreshold" Label="Reorder at" Class="mb-2" />
+            <MudSwitch T="bool" @bind-Value="_editAccessory.IsActive" Label="Active" Color="Color.Primary" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _editAccessory = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAccessoryAsync">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@* --- delete confirmations --- *@
+@if (_confirmDeleteProduct)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-2">Delete this product?</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                @_product?.Name and all its models and accessories will be removed. Stock history is kept.
+            </MudText>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _confirmDeleteProduct = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="DeleteProductAsync">Delete</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_deleteModel is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-2">Delete @_deleteModel.Name?</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                Its accessories go too. Stock history is kept.
+            </MudText>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _deleteModel = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="DeleteModelAsync">Delete</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_deleteAccessory is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-2">Delete @_deleteAccessory.Name?</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">Stock history is kept.</MudText>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _deleteAccessory = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="DeleteAccessoryAsync">Delete</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
 @code {
     [Parameter] public int Id { get; set; }
+
     private Product? _product;
     private readonly Dictionary<int, decimal> _modelQty = [];
+    private readonly Dictionary<int, StockReason> _modelReason = [];
     private readonly Dictionary<int, decimal> _accessoryQty = [];
     private readonly Dictionary<int, string> _newAccessoryName = [];
-    private ProductModel _newModel = new();
+    private ProductModel _newModel = new() { Unit = "pcs" };
+
+    private ProductModel? _editModel;
+    private Accessory? _editAccessory;
+    private bool _confirmDeleteProduct;
+    private ProductModel? _deleteModel;
+    private Accessory? _deleteAccessory;
 
     protected override async Task OnParametersSetAsync() => await LoadAsync();
 
@@ -129,6 +288,7 @@ else
         foreach (var model in _product.Models)
         {
             _modelQty.TryAdd(model.Id, 1);
+            _modelReason.TryAdd(model.Id, StockReason.Adjustment);
             _newAccessoryName.TryAdd(model.Id, "");
             foreach (var accessory in model.Accessories)
                 _accessoryQty.TryAdd(accessory.Id, 1);
@@ -143,14 +303,15 @@ else
         return (userId, name);
     }
 
-    private async Task AdjustAsync(StockItemType type, int itemId, StockDirection direction, decimal quantity)
+    private async Task AdjustAsync(
+        StockItemType type, int itemId, StockDirection direction, decimal quantity, StockReason reason)
     {
         try
         {
             var (userId, name) = await CurrentUserAsync();
             using var scope = ScopeFactory.CreateScope();
             await scope.ServiceProvider.GetRequiredService<IStockService>()
-                .AdjustAsync(type, itemId, direction, quantity, StockReason.Adjustment, null, null, userId, name);
+                .AdjustAsync(type, itemId, direction, quantity, reason, null, null, userId, name);
             Snackbar.Add("Stock updated.", Severity.Success);
             await LoadAsync();
         }
@@ -163,7 +324,7 @@ else
         {
             using var scope = ScopeFactory.CreateScope();
             await scope.ServiceProvider.GetRequiredService<IProductService>().AddModelAsync(Id, _newModel);
-            _newModel = new();
+            _newModel = new ProductModel { Unit = "pcs" };
             Snackbar.Add("Model added.", Severity.Success);
             await LoadAsync();
         }
@@ -183,5 +344,97 @@ else
             await LoadAsync();
         }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    // Editors work on a copy so cancelling doesn't leave edited values on screen.
+    private void OpenModelEditor(ProductModel model) => _editModel = new ProductModel
+    {
+        Id = model.Id, ProductId = model.ProductId, Name = model.Name,
+        ModelNumber = model.ModelNumber, Sku = model.Sku, Unit = model.Unit,
+        ReorderThreshold = model.ReorderThreshold, IsActive = model.IsActive
+    };
+
+    private void OpenAccessoryEditor(Accessory accessory) => _editAccessory = new Accessory
+    {
+        Id = accessory.Id, ProductModelId = accessory.ProductModelId, Name = accessory.Name,
+        Sku = accessory.Sku, Unit = accessory.Unit,
+        ReorderThreshold = accessory.ReorderThreshold, IsActive = accessory.IsActive
+    };
+
+    private async Task SaveModelAsync()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IProductService>().UpdateModelAsync(_editModel!);
+            _editModel = null;
+            Snackbar.Add("Model saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task SaveAccessoryAsync()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IProductService>().UpdateAccessoryAsync(_editAccessory!);
+            _editAccessory = null;
+            Snackbar.Add("Accessory saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DeleteProductAsync()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IProductService>().DeleteAsync(Id);
+            Snackbar.Add("Product deleted.", Severity.Success);
+            Nav.NavigateTo("/inventory/products");
+        }
+        catch (Exception ex)
+        {
+            _confirmDeleteProduct = false;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DeleteModelAsync()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IProductService>().DeleteModelAsync(_deleteModel!.Id);
+            _deleteModel = null;
+            Snackbar.Add("Model deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _deleteModel = null;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DeleteAccessoryAsync()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IProductService>()
+                .DeleteAccessoryAsync(_deleteAccessory!.Id);
+            _deleteAccessory = null;
+            Snackbar.Add("Accessory deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _deleteAccessory = null;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
     }
 }

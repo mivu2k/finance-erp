@@ -21,11 +21,25 @@
                            Disabled="@(string.IsNullOrWhiteSpace(_newDepartment))">Add</MudButton>
             </div>
             <MudSimpleTable Dense="true" Hover="true">
-                <thead><tr><th>Name</th><th>Code</th></tr></thead>
+                <thead><tr><th>Name</th><th>Code</th><th style="width:96px"></th></tr></thead>
                 <tbody>
                     @foreach (var d in _departments)
                     {
-                        <tr><td>@d.Name</td><td>@d.Code</td></tr>
+                        <tr>
+                            <td>@d.Name</td>
+                            <td>@d.Code</td>
+                            <td>
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                               OnClick="@(() => OpenDepartmentEditor(d))" />
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                               Color="Color.Error"
+                                               OnClick="@(() => { _deleteDepartment = d; })" />
+                            </td>
+                        </tr>
+                    }
+                    @if (_departments.Count == 0)
+                    {
+                        <tr><td colspan="3" class="mud-text-secondary pa-2">No departments yet.</td></tr>
                     }
                 </tbody>
             </MudSimpleTable>
@@ -43,11 +57,25 @@
                            Disabled="@(string.IsNullOrWhiteSpace(_newDesignation))">Add</MudButton>
             </div>
             <MudSimpleTable Dense="true" Hover="true">
-                <thead><tr><th>Title</th><th>Grade</th></tr></thead>
+                <thead><tr><th>Title</th><th>Grade</th><th style="width:96px"></th></tr></thead>
                 <tbody>
                     @foreach (var d in _designations)
                     {
-                        <tr><td>@d.Title</td><td>@d.Grade</td></tr>
+                        <tr>
+                            <td>@d.Title</td>
+                            <td>@d.Grade</td>
+                            <td>
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                               OnClick="@(() => OpenDesignationEditor(d))" />
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                               Color="Color.Error"
+                                               OnClick="@(() => { _deleteDesignation = d; })" />
+                            </td>
+                        </tr>
+                    }
+                    @if (_designations.Count == 0)
+                    {
+                        <tr><td colspan="3" class="mud-text-secondary pa-2">No designations yet.</td></tr>
                     }
                 </tbody>
             </MudSimpleTable>
@@ -55,11 +83,79 @@
     </MudItem>
 </MudGrid>
 
+@if (_editDepartment is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">Edit Department</MudText>
+            <MudTextField @bind-Value="_editDepartment.Name" Label="Name" Class="mb-2" />
+            <MudTextField @bind-Value="_editDepartment.Code" Label="Code" Class="mb-2" />
+            <MudTextField @bind-Value="_editDepartment.HeadEmployeeCode" Label="Head employee code" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _editDepartment = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDepartment">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_editDesignation is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">Edit Designation</MudText>
+            <MudTextField @bind-Value="_editDesignation.Title" Label="Title" Class="mb-2" />
+            <MudTextField @bind-Value="_editDesignation.Grade" Label="Grade" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _editDesignation = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDesignation">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_deleteDepartment is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-2">Delete @_deleteDepartment.Name?</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                Only possible while no employee sits in it.
+            </MudText>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _deleteDepartment = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="DeleteDepartment">Delete</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_deleteDesignation is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-2">Delete @_deleteDesignation.Title?</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                Only possible while no employee holds it.
+            </MudText>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _deleteDesignation = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="DeleteDesignation">Delete</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
 @code {
     private List<Department> _departments = [];
     private List<Designation> _designations = [];
     private string _newDepartment = "", _newDesignation = "";
     private string? _newDepartmentCode, _newGrade;
+
+    private Department? _editDepartment;
+    private Designation? _editDesignation;
+    private Department? _deleteDepartment;
+    private Designation? _deleteDesignation;
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -96,5 +192,80 @@
             await LoadAsync();
         }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    // Editors work on a copy so cancelling doesn't leave edits on the table.
+    private void OpenDepartmentEditor(Department d) => _editDepartment = new Department
+    {
+        Id = d.Id, Name = d.Name, Code = d.Code, HeadEmployeeCode = d.HeadEmployeeCode
+    };
+
+    private void OpenDesignationEditor(Designation d) => _editDesignation = new Designation
+    {
+        Id = d.Id, Title = d.Title, Grade = d.Grade
+    };
+
+    private async Task SaveDepartment()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IEmployeeService>()
+                .SaveDepartmentAsync(_editDepartment!);
+            _editDepartment = null;
+            Snackbar.Add("Department saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task SaveDesignation()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IEmployeeService>()
+                .SaveDesignationAsync(_editDesignation!);
+            _editDesignation = null;
+            Snackbar.Add("Designation saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DeleteDepartment()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IEmployeeService>()
+                .DeleteDepartmentAsync(_deleteDepartment!.Id);
+            _deleteDepartment = null;
+            Snackbar.Add("Department deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _deleteDepartment = null;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DeleteDesignation()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IEmployeeService>()
+                .DeleteDesignationAsync(_deleteDesignation!.Id);
+            _deleteDesignation = null;
+            Snackbar.Add("Designation deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _deleteDesignation = null;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
     }
 }

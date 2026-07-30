@@ -1,4 +1,5 @@
 @page "/auto/vehicles/new"
+@page "/auto/vehicles/{Id:int}/edit"
 @attribute [Authorize(Policy = AutoPermissions.VehiclesManage)]
 @layout AutoLayout
 @rendermode InteractiveServer
@@ -6,20 +7,37 @@
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 
-<PageTitle>New Vehicle</PageTitle>
+<PageTitle>@(_isNew ? "New Vehicle" : $"Edit {_vehicle.RegistrationNumber}")</PageTitle>
 
-<MudText Typo="Typo.h5" Class="mb-4">New Vehicle</MudText>
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack"
+                   Href="@(_isNew ? "/auto/vehicles" : $"/auto/vehicles/{Id}")" />
+    <MudText Typo="Typo.h5">@(_isNew ? "New Vehicle" : "Edit Vehicle")</MudText>
+</div>
 
 <MudPaper Class="pa-4" MaxWidth="600px">
     <MudGrid Spacing="2">
         <MudItem xs="6"><MudTextField @bind-Value="_vehicle.Make" Label="Make" Required="true" Margin="Margin.Dense" /></MudItem>
         <MudItem xs="6"><MudTextField @bind-Value="_vehicle.Model" Label="Model" Required="true" Margin="Margin.Dense" /></MudItem>
-        <MudItem xs="6"><MudTextField @bind-Value="_vehicle.RegistrationNumber" Label="Registration number" Required="true" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="6">
+            @* Registration is the unique key people actually use to refer to a vehicle;
+               changing it on an existing record is allowed but deliberately visible. *@
+            <MudTextField @bind-Value="_vehicle.RegistrationNumber" Label="Registration number"
+                          Required="true" Margin="Margin.Dense" />
+        </MudItem>
         <MudItem xs="6"><MudNumericField T="int?" @bind-Value="_vehicle.Year" Label="Year" Margin="Margin.Dense" /></MudItem>
         <MudItem xs="6"><MudTextField @bind-Value="_vehicle.Vin" Label="VIN" Margin="Margin.Dense" /></MudItem>
         <MudItem xs="6"><MudTextField @bind-Value="_vehicle.Color" Label="Color" Margin="Margin.Dense" /></MudItem>
         <MudItem xs="6"><MudDatePicker @bind-Date="_purchaseDate" Label="Purchase date" Margin="Margin.Dense" /></MudItem>
         <MudItem xs="6"><MudNumericField T="decimal" @bind-Value="_vehicle.CurrentOdometer" Label="Current odometer" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="6">
+            <MudSelect T="VehicleStatus" @bind-Value="_vehicle.Status" Label="Status" Margin="Margin.Dense">
+                @foreach (var s in Enum.GetValues<VehicleStatus>())
+                {
+                    <MudSelectItem T="VehicleStatus" Value="@s">@s</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
         <MudItem xs="12"><MudTextField @bind-Value="_vehicle.Notes" Label="Notes" Lines="2" Margin="Margin.Dense" /></MudItem>
     </MudGrid>
 
@@ -27,8 +45,27 @@
 </MudPaper>
 
 @code {
-    private readonly Vehicle _vehicle = new();
+    [Parameter] public int? Id { get; set; }
+
+    private Vehicle _vehicle = new();
     private DateTime? _purchaseDate;
+    private bool _isNew => Id is null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Id is { } id)
+        {
+            using var scope = ScopeFactory.CreateScope();
+            _vehicle = await scope.ServiceProvider.GetRequiredService<IVehicleService>().GetAsync(id)
+                       ?? throw new InvalidOperationException("Vehicle not found.");
+            _purchaseDate = _vehicle.PurchaseDate?.ToDateTime(TimeOnly.MinValue);
+        }
+        else
+        {
+            _vehicle = new Vehicle();
+            _purchaseDate = null;
+        }
+    }
 
     private async Task Save()
     {
@@ -37,9 +74,20 @@
             _vehicle.PurchaseDate = _purchaseDate is { } d ? DateOnly.FromDateTime(d) : null;
 
             using var scope = ScopeFactory.CreateScope();
-            var saved = await scope.ServiceProvider.GetRequiredService<IVehicleService>().CreateAsync(_vehicle);
-            Snackbar.Add("Vehicle created.", Severity.Success);
-            Nav.NavigateTo($"/auto/vehicles/{saved.Id}");
+            var service = scope.ServiceProvider.GetRequiredService<IVehicleService>();
+
+            if (_isNew)
+            {
+                var saved = await service.CreateAsync(_vehicle);
+                Snackbar.Add("Vehicle created.", Severity.Success);
+                Nav.NavigateTo($"/auto/vehicles/{saved.Id}");
+            }
+            else
+            {
+                await service.UpdateAsync(_vehicle);
+                Snackbar.Add("Vehicle saved.", Severity.Success);
+                Nav.NavigateTo($"/auto/vehicles/{Id}");
+            }
         }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
     }

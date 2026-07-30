@@ -1,4 +1,5 @@
 @page "/inventory/products/new"
+@page "/inventory/products/{Id:int}/edit"
 @attribute [Authorize(Policy = InventoryPermissions.ProductsManage)]
 @layout InventoryLayout
 @rendermode InteractiveServer
@@ -6,30 +7,66 @@
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 
-<PageTitle>New Product</PageTitle>
+<PageTitle>@(_isNew ? "New Product" : $"Edit {_product.Name}")</PageTitle>
 
-<MudText Typo="Typo.h5" Class="mb-4">New Product</MudText>
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack"
+                   Href="@(_isNew ? "/inventory/products" : $"/inventory/products/{Id}")" />
+    <MudText Typo="Typo.h5">@(_isNew ? "New Product" : "Edit Product")</MudText>
+</div>
 
 <MudPaper Class="pa-4" MaxWidth="600px">
     <MudTextField @bind-Value="_product.Name" Label="Name" Required="true" Margin="Margin.Dense" Class="mb-2" />
     <MudTextField @bind-Value="_product.Category" Label="Category" Margin="Margin.Dense" Class="mb-2" />
     <MudTextField @bind-Value="_product.SkuPrefix" Label="SKU prefix" Margin="Margin.Dense" Class="mb-2" />
     <MudTextField @bind-Value="_product.Description" Label="Description" Lines="3" Margin="Margin.Dense" Class="mb-2" />
+    @if (!_isNew)
+    {
+        <MudSwitch T="bool" @bind-Value="_product.IsActive" Label="Active" Color="Color.Primary" Class="mb-2" />
+    }
 
     <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Class="mt-2">Save</MudButton>
 </MudPaper>
 
 @code {
-    private readonly Product _product = new();
+    [Parameter] public int? Id { get; set; }
+
+    private Product _product = new();
+    private bool _isNew => Id is null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Id is { } id)
+        {
+            using var scope = ScopeFactory.CreateScope();
+            _product = await scope.ServiceProvider.GetRequiredService<IProductService>().GetAsync(id)
+                       ?? throw new InvalidOperationException("Product not found.");
+        }
+        else
+        {
+            _product = new Product();
+        }
+    }
 
     private async Task Save()
     {
         try
         {
             using var scope = ScopeFactory.CreateScope();
-            var saved = await scope.ServiceProvider.GetRequiredService<IProductService>().CreateAsync(_product);
-            Snackbar.Add("Product created.", Severity.Success);
-            Nav.NavigateTo($"/inventory/products/{saved.Id}");
+            var service = scope.ServiceProvider.GetRequiredService<IProductService>();
+
+            if (_isNew)
+            {
+                var saved = await service.CreateAsync(_product);
+                Snackbar.Add("Product created.", Severity.Success);
+                Nav.NavigateTo($"/inventory/products/{saved.Id}");
+            }
+            else
+            {
+                await service.UpdateAsync(_product);
+                Snackbar.Add("Product saved.", Severity.Success);
+                Nav.NavigateTo($"/inventory/products/{Id}");
+            }
         }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
     }

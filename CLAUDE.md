@@ -191,7 +191,7 @@ These apply to the **Finance** module specifically:
 
 ## State of the project
 
-Four apps behind one login, chosen from the portal at `/`:
+Six apps behind one login, chosen from the portal at `/`:
 
 | App | Route | Database | State |
 |---|---|---|---|
@@ -199,6 +199,8 @@ Four apps behind one login, chosen from the portal at `/`:
 | Repair | `/repair` | `erp_repair` | ported from Laravel, plus purchasing, barcodes and 15 reports |
 | Gate Pass & Demo Goods | `/gatepass` | `erp_gatepass` | complete |
 | HR | `/hr` | `erp_hr` | employee master, kiosk attendance, leave |
+| Inventory | `/inventory` | `erp_inventory` | products → models → accessories, stock ledger, full CRUD |
+| Auto | `/auto` | `erp_auto` | company vehicle fleet + maintenance history, full CRUD |
 
 
 Implemented and wired end-to-end (service + page + nav): accounts, vouchers, ledger,
@@ -220,14 +222,16 @@ UI yet. Not ported: the customer-facing tracking page, Excel report exports.
 
 Known gaps, roughly in priority order:
 
-1. **Finance is the untested module.** 107 tests exist —
+1. **Finance is the untested module.** 118 tests exist —
    `tests/ErpPlatform.Shared.Tests` (27, Code 128 and QR round-trip through decoders —
    QR against ZXing, a test-only dependency),
-   `tests/Hr.Tests` (42, the rotating attendance token and attendance arithmetic) and
-   `tests/Repair.Tests` (38, job workflow, quotation and purchase pricing, plus
-   PDF render smoke tests). The
+   `tests/Hr.Tests` (42, the rotating attendance token and attendance arithmetic),
+   `tests/Repair.Tests` (39, job workflow, quotation and purchase pricing, the
+   collective-quotation save path, plus PDF render smoke tests) and
+   `tests/Inventory.Tests` (10, stock ledger arithmetic, cache rebuild and the
+   delete-while-holding-stock guards). The
    integration tests create and drop their own throwaway databases and skip when no
-   server is reachable. Nothing covers Finance: `VoucherService`,
+   server is reachable. Nothing covers Finance or Auto: `VoucherService`,
    `PaymentRequestService.SettleAsync`, `PayrollService.GenerateAsync`/`PayRunAsync`
    and `CloseFiscalYearAsync` remain subtle and unverified.
 2. **Receipt endpoint is auth-only** (`Program.cs`, `/files/receipts/{name}`) — any
@@ -317,6 +321,28 @@ in full screen.
   on the monthly report.
 - **`array.Contains(x)` inside an EF predicate binds to the `ReadOnlySpan` overload**
   and throws at query time. Use a `List<T>` — that's why `JobWorkflow.Open` is one.
+- **A manual `BeginTransactionAsync` needs the execution strategy.** Every module
+  registers its DbContext with `EnableRetryOnFailure`, and EF then refuses a
+  user-initiated transaction outright: wrap it in
+  `db.Database.CreateExecutionStrategy().ExecuteAsync(...)` so a retried attempt
+  re-runs the whole unit. `StockService.AdjustAsync`, `IntakeService.ReceiveAsync`
+  and `PurchaseService.ReceiveAsync` all do this.
+- **Don't hand a loaded entity to a navigation property on something you're about
+  to `Add()`.** Query-time fixup leaves that object wired into its own graph
+  (`Customer.Intakes` → `Jobs` → `WorkItems` → `Part`), `Add()` cascades through
+  every reachable navigation, and two rows sharing one lookup row become two
+  untracked instances of the same key — "cannot be tracked because another
+  instance with the same key value is already being tracked", even under
+  `AsNoTracking`. `QuotationService.SaveAsync` nulls `Customer`/`RepairJob`/
+  `Intake`/`Items[].Part` before `Add()` for exactly this reason; only the scalar
+  FK is ever persisted. `AsSplitQuery()` reduces the blast radius on the read side
+  but does not fix the save.
+- **Deletes are soft everywhere** (`ModuleDbContext` turns `Remove` into a flag
+  update), so history keeps resolving. Anything holding a live quantity or a
+  dependent record refuses deletion rather than orphaning it: Inventory won't drop
+  a product/model/accessory with stock on it, Auto takes a vehicle's maintenance
+  history with it, and HR won't drop a department or designation an employee still
+  points at.
 - **Existing installs upgrading past the identity split** must run
   `deploy/migrate-identity-out-of-accounts.sql` before the accounts migration drops
   the old `AspNet*` tables. A fresh database needs nothing.
