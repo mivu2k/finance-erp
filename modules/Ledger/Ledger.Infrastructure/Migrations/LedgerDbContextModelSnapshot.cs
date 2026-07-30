@@ -116,6 +116,9 @@ namespace Ledger.Infrastructure.Migrations
                     b.Property<int>("Direction")
                         .HasColumnType("int");
 
+                    b.Property<int?>("HeadId")
+                        .HasColumnType("int");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("tinyint(1)");
 
@@ -132,9 +135,6 @@ namespace Ledger.Infrastructure.Migrations
                         .HasColumnType("longtext");
 
                     b.Property<int>("PlainLedgerId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("PostedVoucherId")
                         .HasColumnType("int");
 
                     b.Property<string>("RecordedById")
@@ -160,11 +160,70 @@ namespace Ledger.Infrastructure.Migrations
 
                     b.HasIndex("Date");
 
+                    b.HasIndex("HeadId");
+
                     b.HasIndex("PlainLedgerId");
 
                     b.HasIndex("TransferGroup");
 
                     b.ToTable("Entries");
+                });
+
+            modelBuilder.Entity("Ledger.Domain.LedgerHead", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTime?>("DeletedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("longtext");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<DateTime?>("ModifiedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("varchar(1000)");
+
+                    b.Property<int?>("ParentHeadId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name");
+
+                    b.HasIndex("ParentHeadId");
+
+                    b.ToTable("Heads");
                 });
 
             modelBuilder.Entity("Ledger.Domain.PlainLedger", b =>
@@ -200,7 +259,7 @@ namespace Ledger.Infrastructure.Migrations
                     b.Property<string>("DeletedBy")
                         .HasColumnType("longtext");
 
-                    b.Property<int?>("FinanceAccountId")
+                    b.Property<int?>("HeadId")
                         .HasColumnType("int");
 
                     b.Property<bool>("IsDeleted")
@@ -243,6 +302,8 @@ namespace Ledger.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("HeadId");
+
                     b.HasIndex("Name");
 
                     b.HasIndex("ParentLedgerId");
@@ -252,49 +313,17 @@ namespace Ledger.Infrastructure.Migrations
                     b.ToTable("Ledgers");
                 });
 
-            modelBuilder.Entity("Ledger.Infrastructure.LedgerSetting", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("Key")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
-
-                    b.Property<DateTime?>("ModifiedAtUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("ModifiedBy")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("Value")
-                        .HasMaxLength(400)
-                        .HasColumnType("varchar(400)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Key")
-                        .IsUnique();
-
-                    b.ToTable("Settings");
-                });
-
             modelBuilder.Entity("Ledger.Domain.LedgerEntry", b =>
                 {
                     b.HasOne("Ledger.Domain.PlainLedger", "CounterLedger")
                         .WithMany()
                         .HasForeignKey("CounterLedgerId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Ledger.Domain.LedgerHead", "Head")
+                        .WithMany()
+                        .HasForeignKey("HeadId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("Ledger.Domain.PlainLedger", "PlainLedger")
                         .WithMany("Entries")
@@ -304,17 +333,41 @@ namespace Ledger.Infrastructure.Migrations
 
                     b.Navigation("CounterLedger");
 
+                    b.Navigation("Head");
+
                     b.Navigation("PlainLedger");
+                });
+
+            modelBuilder.Entity("Ledger.Domain.LedgerHead", b =>
+                {
+                    b.HasOne("Ledger.Domain.LedgerHead", "ParentHead")
+                        .WithMany("Children")
+                        .HasForeignKey("ParentHeadId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ParentHead");
                 });
 
             modelBuilder.Entity("Ledger.Domain.PlainLedger", b =>
                 {
+                    b.HasOne("Ledger.Domain.LedgerHead", "Head")
+                        .WithMany()
+                        .HasForeignKey("HeadId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Ledger.Domain.PlainLedger", "ParentLedger")
                         .WithMany("Children")
                         .HasForeignKey("ParentLedgerId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.Navigation("Head");
+
                     b.Navigation("ParentLedger");
+                });
+
+            modelBuilder.Entity("Ledger.Domain.LedgerHead", b =>
+                {
+                    b.Navigation("Children");
                 });
 
             modelBuilder.Entity("Ledger.Domain.PlainLedger", b =>

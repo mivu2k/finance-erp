@@ -10,7 +10,7 @@ public class LedgerDbContext(DbContextOptions<LedgerDbContext> options, ICurrent
 {
     public DbSet<PlainLedger> Ledgers => Set<PlainLedger>();
     public DbSet<LedgerEntry> Entries => Set<LedgerEntry>();
-    public DbSet<LedgerSetting> Settings => Set<LedgerSetting>();
+    public DbSet<LedgerHead> Heads => Set<LedgerHead>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -35,6 +35,9 @@ public class LedgerDbContext(DbContextOptions<LedgerDbContext> options, ICurrent
             e.HasOne(x => x.ParentLedger).WithMany(x => x.Children)
                 .HasForeignKey(x => x.ParentLedgerId).OnDelete(DeleteBehavior.Restrict);
 
+            e.HasOne(x => x.Head).WithMany()
+                .HasForeignKey(x => x.HeadId).OnDelete(DeleteBehavior.SetNull);
+
             e.HasQueryFilter(x => !x.IsDeleted);
         });
 
@@ -58,30 +61,27 @@ public class LedgerDbContext(DbContextOptions<LedgerDbContext> options, ICurrent
             e.HasOne(x => x.CounterLedger).WithMany()
                 .HasForeignKey(x => x.CounterLedgerId).OnDelete(DeleteBehavior.Restrict);
 
+            // SetNull, so retiring a head never takes the money with it: the entry
+            // stays and simply reads as unclassified.
+            e.HasOne(x => x.Head).WithMany()
+                .HasForeignKey(x => x.HeadId).OnDelete(DeleteBehavior.SetNull);
+
             e.HasQueryFilter(x => !x.IsDeleted && !x.PlainLedger.IsDeleted);
         });
 
-        b.Entity<LedgerSetting>(e =>
+        b.Entity<LedgerHead>(e =>
         {
-            e.HasIndex(x => x.Key).IsUnique();
-            e.Property(x => x.Key).HasMaxLength(64);
-            e.Property(x => x.Value).HasMaxLength(400);
+            e.HasIndex(x => x.Name);
+            e.HasIndex(x => x.ParentHeadId);
+            e.Property(x => x.Name).HasMaxLength(150);
+            e.Property(x => x.Code).HasMaxLength(32);
+            e.Property(x => x.Notes).HasMaxLength(1000);
+
+            // Restrict: a head with sub-heads must be emptied deliberately.
+            e.HasOne(x => x.ParentHead).WithMany(x => x.Children)
+                .HasForeignKey(x => x.ParentHeadId).OnDelete(DeleteBehavior.Restrict);
+
+            e.HasQueryFilter(x => !x.IsDeleted);
         });
     }
-}
-
-/// <summary>Module-level configuration — currently the cash account used when posting.</summary>
-public class LedgerSetting : BaseEntity
-{
-    public string Key { get; set; } = string.Empty;
-    public string? Value { get; set; }
-}
-
-public static class LedgerSettingKeys
-{
-    /// <summary>
-    /// Finance account representing the money you physically hold. Posting needs a
-    /// second side for every entry, and this is it.
-    /// </summary>
-    public const string CashAccountId = "Finance.CashAccountId";
 }

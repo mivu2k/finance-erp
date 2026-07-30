@@ -17,7 +17,7 @@
         <MudNavLink Href="/ledger/reports" Icon="@Icons.Material.Filled.Assessment">Reports</MudNavLink>
     </AuthorizeView>
 
-    <AuthorizeView Policy="@LedgerPermissions.FinanceLink" Context="f">
-        <MudNavLink Href="/ledger/settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
+    <AuthorizeView Policy="@LedgerPermissions.View" Context="h">
+        <MudNavLink Href="/ledger/heads" Icon="@Icons.Material.Filled.Sell">Heads</MudNavLink>
     </AuthorizeView>
 </MudNavMenu>

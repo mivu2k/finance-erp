@@ -26,6 +26,11 @@ else
         {
             <MudChip T="string" Size="Size.Small">@_ledger.Status</MudChip>
         }
+        @if (_ledger.HeadId is { } lh && _headNames.TryGetValue(lh, out var lhName))
+        {
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                     Icon="@Icons.Material.Filled.Sell">@lhName</MudChip>
+        }
         <MudSpacer />
         <AuthorizeView Policy="@LedgerPermissions.Manage">
             <MudButton Size="Size.Small" Variant="Variant.Outlined"
@@ -122,7 +127,7 @@ else
         <MudSimpleTable Dense="true" Hover="true" Striped="true">
             <thead>
                 <tr>
-                    <th>Date</th><th>Description</th><th>Kind</th><th>Method</th>
+                    <th>Date</th><th>Description</th><th>Head</th><th>Kind</th><th>Method</th>
                     <th style="text-align:right">In</th><th style="text-align:right">Out</th>
                     <th style="text-align:right">Balance</th><th>By</th><th style="width:96px"></th>
                 </tr>
@@ -133,7 +138,7 @@ else
                     <tr>
                         <td>@_ledger.OpenedOn.ToString("yyyy-MM-dd")</td>
                         <td><i>Opening balance</i></td>
-                        <td colspan="4"></td>
+                        <td colspan="5"></td>
                         <td style="text-align:right">@_ledger.OpeningBalance.ToString("N2")</td>
                         <td colspan="2"></td>
                     </tr>
@@ -162,15 +167,16 @@ else
                             }
                         </td>
                         <td>
+                            @if (e.HeadId is { } hid && _headNames.TryGetValue(hid, out var hName))
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@hName</MudChip>
+                            }
+                        </td>
+                        <td>
                             <MudChip T="string" Size="Size.Small"
                                      Variant="@(e.Kind == LedgerEntryKind.Transfer ? Variant.Filled : Variant.Outlined)">
                                 @e.Kind
                             </MudChip>
-                            @if (e.PostedVoucherId is not null)
-                            {
-                                <MudIcon Icon="@Icons.Material.Filled.Book" Size="Size.Small"
-                                         Color="Color.Success" Title="Posted to the books" />
-                            }
                         </td>
                         <td>@e.Method</td>
                         <td style="text-align:right">
@@ -193,7 +199,7 @@ else
                 }
                 @if (_statement.Count == 0 && _ledger.OpeningBalance == 0)
                 {
-                    <tr><td colspan="9" class="mud-text-secondary pa-4">
+                    <tr><td colspan="10" class="mud-text-secondary pa-4">
                         Nothing recorded yet. Add an entry for money received or paid, or transfer
                         to a sub-ledger to pass some of it on.
                     </td></tr>
@@ -251,6 +257,15 @@ else
                 <MudItem xs="6">
                     <MudTextField @bind-Value="_entry.Reference" Label="Reference" Margin="Margin.Dense" />
                 </MudItem>
+                <MudItem xs="12">
+                    <MudSelect T="int?" @bind-Value="_entry.HeadId" Label="Head" Clearable="true"
+                               Margin="Margin.Dense" HelperText="What this movement was for — optional">
+                        @foreach (var h in _heads)
+                        {
+                            <MudSelectItem T="int?" Value="@h.Id">@HeadLabel(h)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
             </MudGrid>
 
             <div class="d-flex justify-end gap-2 mt-4">
@@ -301,6 +316,15 @@ else
                 </MudItem>
                 <MudItem xs="6">
                     <MudTextField @bind-Value="_transferReference" Label="Reference" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudSelect T="int?" @bind-Value="_transferHeadId" Label="Head" Clearable="true"
+                               Margin="Margin.Dense" HelperText="Applied to both halves — optional">
+                        @foreach (var h in _heads)
+                        {
+                            <MudSelectItem T="int?" Value="@h.Id">@HeadLabel(h)</MudSelectItem>
+                        }
+                    </MudSelect>
                 </MudItem>
             </MudGrid>
 
@@ -357,6 +381,8 @@ else
     private PlainLedger? _ledger;
     private List<StatementLine> _statement = [];
     private Dictionary<int, string> _names = [];
+    private List<LedgerHead> _heads = [];
+    private Dictionary<int, string> _headNames = [];
     private Dictionary<int, decimal> _childBalances = [];
     private decimal _own, _rollup;
 
@@ -373,6 +399,7 @@ else
     private string _transferDescription = "";
     private string? _transferReference;
     private LedgerPaymentMethod _transferMethod = LedgerPaymentMethod.Cash;
+    private int? _transferHeadId;
 
     protected override async Task OnParametersSetAsync() => await LoadAsync();
 
@@ -383,6 +410,11 @@ else
 
         _ledger = await svc.GetAsync(Id);
         if (_ledger is null) return;
+
+        _heads = await scope.ServiceProvider.GetRequiredService<ILedgerHeadService>()
+            .ListAsync(activeOnly: true);
+        _headNames = (await scope.ServiceProvider.GetRequiredService<ILedgerHeadService>()
+            .ListAsync()).ToDictionary(h => h.Id, h => h.Name);
 
         _statement = await svc.GetStatementAsync(Id);
         _own = _ledger.OpeningBalance + _ledger.Entries.Sum(e => e.Signed);
@@ -448,7 +480,7 @@ else
                 Direction = existing.Direction, Kind = existing.Kind,
                 Description = existing.Description, Reference = existing.Reference,
                 Method = existing.Method, CounterLedgerId = existing.CounterLedgerId,
-                TransferGroup = existing.TransferGroup
+                TransferGroup = existing.TransferGroup, HeadId = existing.HeadId
             };
             _entryDate = existing.Date.ToDateTime(TimeOnly.MinValue);
         }
@@ -490,6 +522,11 @@ else
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
     }
 
+    private string HeadLabel(LedgerHead h) =>
+        h.ParentHeadId is { } p && _headNames.TryGetValue(p, out var parent)
+            ? $"{parent} › {h.Name}"
+            : h.Name;
+
     private void OpenTransfer()
     {
         _transferOpen = true;
@@ -499,6 +536,7 @@ else
         _transferDescription = "";
         _transferReference = null;
         _transferMethod = LedgerPaymentMethod.Cash;
+        _transferHeadId = null;
     }
 
     private async Task DoTransfer()
@@ -510,7 +548,8 @@ else
             await scope.ServiceProvider.GetRequiredService<ILedgerService>().TransferAsync(
                 Id, _transferTo!.Value, _transferAmount,
                 _transferDate is { } d ? DateOnly.FromDateTime(d) : DateOnly.FromDateTime(DateTime.UtcNow),
-                _transferDescription, _transferReference, _transferMethod, userId, name);
+                _transferDescription, _transferReference, _transferMethod, userId, name,
+                _transferHeadId);
 
             _transferOpen = false;
             Snackbar.Add("Transfer recorded on both ledgers.", Severity.Success);

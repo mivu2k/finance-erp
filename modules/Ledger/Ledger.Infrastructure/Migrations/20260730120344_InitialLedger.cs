@@ -48,6 +48,43 @@ namespace Ledger.Infrastructure.Migrations
                 .Annotation("MySql:CharSet", "utf8mb4");
 
             migrationBuilder.CreateTable(
+                name: "Heads",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
+                    Name = table.Column<string>(type: "varchar(150)", maxLength: 150, nullable: false)
+                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    Code = table.Column<string>(type: "varchar(32)", maxLength: 32, nullable: true)
+                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    ParentHeadId = table.Column<int>(type: "int", nullable: true),
+                    Notes = table.Column<string>(type: "varchar(1000)", maxLength: 1000, nullable: true)
+                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    IsActive = table.Column<bool>(type: "tinyint(1)", nullable: false),
+                    CreatedAtUtc = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    CreatedBy = table.Column<string>(type: "longtext", nullable: true)
+                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    ModifiedAtUtc = table.Column<DateTime>(type: "datetime(6)", nullable: true),
+                    ModifiedBy = table.Column<string>(type: "longtext", nullable: true)
+                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    IsDeleted = table.Column<bool>(type: "tinyint(1)", nullable: false),
+                    DeletedAtUtc = table.Column<DateTime>(type: "datetime(6)", nullable: true),
+                    DeletedBy = table.Column<string>(type: "longtext", nullable: true)
+                        .Annotation("MySql:CharSet", "utf8mb4")
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Heads", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Heads_Heads_ParentHeadId",
+                        column: x => x.ParentHeadId,
+                        principalTable: "Heads",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                })
+                .Annotation("MySql:CharSet", "utf8mb4");
+
+            migrationBuilder.CreateTable(
                 name: "Ledgers",
                 columns: table => new
                 {
@@ -70,7 +107,7 @@ namespace Ledger.Infrastructure.Migrations
                         .Annotation("MySql:CharSet", "utf8mb4"),
                     Notes = table.Column<string>(type: "varchar(2000)", maxLength: 2000, nullable: true)
                         .Annotation("MySql:CharSet", "utf8mb4"),
-                    FinanceAccountId = table.Column<int>(type: "int", nullable: true),
+                    HeadId = table.Column<int>(type: "int", nullable: true),
                     CreatedAtUtc = table.Column<DateTime>(type: "datetime(6)", nullable: false),
                     CreatedBy = table.Column<string>(type: "longtext", nullable: true)
                         .Annotation("MySql:CharSet", "utf8mb4"),
@@ -86,34 +123,17 @@ namespace Ledger.Infrastructure.Migrations
                 {
                     table.PrimaryKey("PK_Ledgers", x => x.Id);
                     table.ForeignKey(
+                        name: "FK_Ledgers_Heads_HeadId",
+                        column: x => x.HeadId,
+                        principalTable: "Heads",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
                         name: "FK_Ledgers_Ledgers_ParentLedgerId",
                         column: x => x.ParentLedgerId,
                         principalTable: "Ledgers",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
-                })
-                .Annotation("MySql:CharSet", "utf8mb4");
-
-            migrationBuilder.CreateTable(
-                name: "Settings",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
-                    Key = table.Column<string>(type: "varchar(64)", maxLength: 64, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    Value = table.Column<string>(type: "varchar(400)", maxLength: 400, nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    CreatedAtUtc = table.Column<DateTime>(type: "datetime(6)", nullable: false),
-                    CreatedBy = table.Column<string>(type: "longtext", nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    ModifiedAtUtc = table.Column<DateTime>(type: "datetime(6)", nullable: true),
-                    ModifiedBy = table.Column<string>(type: "longtext", nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4")
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Settings", x => x.Id);
                 })
                 .Annotation("MySql:CharSet", "utf8mb4");
 
@@ -135,11 +155,11 @@ namespace Ledger.Infrastructure.Migrations
                     Method = table.Column<int>(type: "int", nullable: false),
                     CounterLedgerId = table.Column<int>(type: "int", nullable: true),
                     TransferGroup = table.Column<Guid>(type: "char(36)", nullable: true, collation: "ascii_general_ci"),
+                    HeadId = table.Column<int>(type: "int", nullable: true),
                     RecordedById = table.Column<string>(type: "varchar(450)", maxLength: 450, nullable: false)
                         .Annotation("MySql:CharSet", "utf8mb4"),
                     RecordedByName = table.Column<string>(type: "varchar(200)", maxLength: 200, nullable: false)
                         .Annotation("MySql:CharSet", "utf8mb4"),
-                    PostedVoucherId = table.Column<int>(type: "int", nullable: true),
                     CreatedAtUtc = table.Column<DateTime>(type: "datetime(6)", nullable: false),
                     CreatedBy = table.Column<string>(type: "longtext", nullable: true)
                         .Annotation("MySql:CharSet", "utf8mb4"),
@@ -154,6 +174,12 @@ namespace Ledger.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Entries", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Entries_Heads_HeadId",
+                        column: x => x.HeadId,
+                        principalTable: "Heads",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
                     table.ForeignKey(
                         name: "FK_Entries_Ledgers_CounterLedgerId",
                         column: x => x.CounterLedgerId,
@@ -190,6 +216,11 @@ namespace Ledger.Infrastructure.Migrations
                 column: "Date");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Entries_HeadId",
+                table: "Entries",
+                column: "HeadId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Entries_PlainLedgerId",
                 table: "Entries",
                 column: "PlainLedgerId");
@@ -198,6 +229,21 @@ namespace Ledger.Infrastructure.Migrations
                 name: "IX_Entries_TransferGroup",
                 table: "Entries",
                 column: "TransferGroup");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Heads_Name",
+                table: "Heads",
+                column: "Name");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Heads_ParentHeadId",
+                table: "Heads",
+                column: "ParentHeadId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Ledgers_HeadId",
+                table: "Ledgers",
+                column: "HeadId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Ledgers_Name",
@@ -213,12 +259,6 @@ namespace Ledger.Infrastructure.Migrations
                 name: "IX_Ledgers_Status",
                 table: "Ledgers",
                 column: "Status");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Settings_Key",
-                table: "Settings",
-                column: "Key",
-                unique: true);
         }
 
         /// <inheritdoc />
@@ -231,10 +271,10 @@ namespace Ledger.Infrastructure.Migrations
                 name: "Entries");
 
             migrationBuilder.DropTable(
-                name: "Settings");
+                name: "Ledgers");
 
             migrationBuilder.DropTable(
-                name: "Ledgers");
+                name: "Heads");
         }
     }
 }

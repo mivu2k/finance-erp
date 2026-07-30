@@ -19,15 +19,14 @@ public static class LedgerModule
             P(LedgerPermissions.Manage, "Ledgers", "Open, edit and close ledgers"),
             P(LedgerPermissions.EntryRecord, "Entries", "Record entries and transfers"),
             P(LedgerPermissions.EntryAmend, "Entries", "Amend or remove an entry already written"),
-            P(LedgerPermissions.ReportsView, "Reports", "Outstanding balances and tree reports"),
-            P(LedgerPermissions.FinanceLink, "Accounting",
-                "Map a ledger onto an account so entries post to the books")
+            P(LedgerPermissions.ReportsView, "Reports", "Outstanding balances, tree and head reports"),
+            P(LedgerPermissions.HeadsManage, "Heads", "Maintain the ledger heads")
         ],
         [
-            new(LedgerRoles.Manager, "Full control, including the accounting link.",
+            new(LedgerRoles.Manager, "Full control, including the heads.",
                 LedgerPermissions.All),
 
-            // Writes the day's entries but can't rewrite history or touch the books.
+            // Writes the day's entries but can't rewrite history or change the heads.
             new(LedgerRoles.Clerk, "Records entries and transfers.",
             [
                 LedgerPermissions.View, LedgerPermissions.EntryRecord,
@@ -51,7 +50,7 @@ public static class LedgerModule
             o.UseMySql(cs, ServerVersion.AutoDetect(cs), my => my.EnableRetryOnFailure(3)));
 
         services.AddScoped<ILedgerService, LedgerService>();
-        services.AddScoped<ILedgerSettingsService, LedgerSettingsService>();
+        services.AddScoped<ILedgerHeadService, LedgerHeadService>();
 
         ModuleRegistry.Register(Registration);
         return services;

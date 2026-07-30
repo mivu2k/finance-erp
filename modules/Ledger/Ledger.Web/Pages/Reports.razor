@@ -94,6 +94,57 @@
             </tbody>
         </MudSimpleTable>
     </MudTabPanel>
+
+    <MudTabPanel Text="By head">
+        <MudText Typo="Typo.body2" Class="mb-3 mud-text-secondary">
+            Money grouped under this module's own heads. <b>Own</b> counts only entries tagged
+            with that head; <b>with sub-heads</b> rolls the children up into the parent.
+        </MudText>
+        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+            <thead>
+                <tr>
+                    <th>Head</th><th>Ledgers</th><th>Entries</th>
+                    <th style="text-align:right">Own in</th><th style="text-align:right">Own out</th>
+                    <th style="text-align:right">In (with sub-heads)</th>
+                    <th style="text-align:right">Out (with sub-heads)</th>
+                    <th style="text-align:right">Net</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var node in FlattenHeads(_headRoots))
+                {
+                    var t = _headTotals.GetValueOrDefault(node.Head.Id);
+                    <tr>
+                        <td>
+                            <div style="@($"padding-left:{node.Depth * 22}px")" class="d-flex align-center gap-1">
+                                @if (node.Depth > 0)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.SubdirectoryArrowRight"
+                                             Size="Size.Small" Class="mud-text-secondary" />
+                                }
+                                @node.Head.Name
+                            </div>
+                        </td>
+                        <td>@(t?.LedgerCount ?? 0)</td>
+                        <td>@(t?.OwnEntryCount ?? 0)</td>
+                        <td style="text-align:right">@((t?.OwnIn ?? 0).ToString("N2"))</td>
+                        <td style="text-align:right">@((t?.OwnOut ?? 0).ToString("N2"))</td>
+                        <td style="text-align:right">@((t?.RollupIn ?? 0).ToString("N2"))</td>
+                        <td style="text-align:right">@((t?.RollupOut ?? 0).ToString("N2"))</td>
+                        <td style="text-align:right">
+                            <b>@(((t?.RollupIn ?? 0) - (t?.RollupOut ?? 0)).ToString("N2"))</b>
+                        </td>
+                    </tr>
+                }
+                @if (_headRoots.Count == 0)
+                {
+                    <tr><td colspan="8" class="mud-text-secondary pa-4">
+                        No heads defined yet — add some under Heads.
+                    </td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudTabPanel>
 </MudTabs>
 
 @code {
@@ -101,6 +152,8 @@
     private List<LedgerNode> _roots = [];
     private Dictionary<int, string> _names = [];
     private decimal _receivable, _payable;
+    private List<HeadNode> _headRoots = [];
+    private Dictionary<int, HeadTotals> _headTotals = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -124,6 +177,19 @@
         }
 
         _roots = await svc.GetTreeAsync();
+
+        var heads = scope.ServiceProvider.GetRequiredService<ILedgerHeadService>();
+        _headRoots = await heads.GetTreeAsync();
+        _headTotals = await heads.GetTotalsAsync();
+    }
+
+    private static IEnumerable<HeadNode> FlattenHeads(IEnumerable<HeadNode> nodes)
+    {
+        foreach (var n in nodes)
+        {
+            yield return n;
+            foreach (var c in FlattenHeads(n.Children)) yield return c;
+        }
     }
 
     private static int CountDescendants(LedgerNode n) =>

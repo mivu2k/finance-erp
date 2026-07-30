@@ -83,36 +83,16 @@
             <MudTextField @bind-Value="_ledger.Notes" Label="Notes" Lines="2" Margin="Margin.Dense" />
         </MudItem>
 
-        <AuthorizeView Policy="@LedgerPermissions.FinanceLink" Context="fin">
-            <MudItem xs="12">
-                <MudDivider Class="my-2" />
-                <MudText Typo="Typo.subtitle2" Class="mb-2">Accounting link (optional)</MudText>
-                @if (!_postingAvailable)
+        <MudItem xs="12" md="6">
+            <MudSelect T="int?" @bind-Value="_ledger.HeadId" Label="Head" Clearable="true"
+                       Margin="Margin.Dense"
+                       HelperText="This module's own classification — optional">
+                @foreach (var h in _heads)
                 {
-                    <MudAlert Severity="Severity.Info" Dense="true">
-                        The accounting module isn't available, so entries here stay informal.
-                    </MudAlert>
+                    <MudSelectItem T="int?" Value="@h.Id">@HeadLabel(h)</MudSelectItem>
                 }
-                else
-                {
-                    <MudSelect T="int?" @bind-Value="_ledger.FinanceAccountId" Clearable="true"
-                               Label="Post against this account" Margin="Margin.Dense"
-                               HelperText="Leave empty to keep this ledger out of the formal books">
-                        @foreach (var a in _accounts)
-                        {
-                            <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
-                        }
-                    </MudSelect>
-                    @if (_cashAccountId is null)
-                    {
-                        <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">
-                            No cash account is configured yet, so nothing will post even when mapped.
-                            Set one under Settings.
-                        </MudAlert>
-                    }
-                }
-            </MudItem>
-        </AuthorizeView>
+            </MudSelect>
+        </MudItem>
     </MudGrid>
 
     <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Class="mt-3">Save</MudButton>
@@ -123,10 +103,9 @@
 
     private PlainLedger _ledger = new();
     private List<PlainLedger> _parents = [];
-    private IReadOnlyList<BookkeepingAccount> _accounts = [];
+    private List<LedgerHead> _heads = [];
+    private Dictionary<int, string> _headNames = [];
     private DateTime? _openedOn = DateTime.Today;
-    private bool _postingAvailable;
-    private int? _cashAccountId;
 
     private bool _isNew => Id is null;
 
@@ -134,14 +113,10 @@
     {
         using var scope = ScopeFactory.CreateScope();
         var svc = scope.ServiceProvider.GetRequiredService<ILedgerService>();
-        var settings = scope.ServiceProvider.GetRequiredService<ILedgerSettingsService>();
 
-        _postingAvailable = settings.PostingAvailable;
-        if (_postingAvailable)
-        {
-            _accounts = await settings.ListAccountsAsync();
-            _cashAccountId = await settings.GetCashAccountIdAsync();
-        }
+        _heads = await scope.ServiceProvider.GetRequiredService<ILedgerHeadService>()
+            .ListAsync(activeOnly: true);
+        _headNames = _heads.ToDictionary(h => h.Id, h => h.Name);
 
         if (Id is { } id)
         {
@@ -167,6 +142,12 @@
         _parents = (await svc.ListAsync(new LedgerFilter()))
             .Where(l => l.Id != (Id ?? 0)).ToList();
     }
+
+    /// <summary>Shows a sub-head with its parent, so two same-named heads read apart.</summary>
+    private string HeadLabel(LedgerHead h) =>
+        h.ParentHeadId is { } p && _headNames.TryGetValue(p, out var parent)
+            ? $"{parent} › {h.Name}"
+            : h.Name;
 
     private async Task Save()
     {

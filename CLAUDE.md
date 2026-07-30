@@ -207,22 +207,17 @@ the accounting module.
   destination, sharing a `TransferGroup` guid, written in one transaction.
   Amending or deleting either half moves both; a one-sided transfer would leave
   the two statements permanently disagreeing.
-- **`LedgerNature` (Payable/Receivable) is what makes the accounting
-  unambiguous.** Without it "In" means opposite things on the main and the sub
-  ledgers of one tree: on a Payable ledger money in is cash arriving and a debt
-  building, on a Receivable ledger money in is cash leaving and a claim building.
-  `/ledger/settings` documents the resulting four debit/credit cases.
-- **Posting to the real books is opt-in and per ledger.** It happens only when the
-  ledger has a `FinanceAccountId` *and* a cash account is configured; otherwise the
-  module is purely informal and never touches the trial balance. A **transfer posts
-  once, on the receiving side only** — cash physically moves a single time, and what
-  you do with money after taking it doesn't change what you owe for it. If Finance
-  refuses a journal, the entry still stands with `PostedVoucherId` null so the gap
-  is visible rather than the entry being lost.
-- **Modules reach the books through `IBookkeepingPoster`** (Shared.Kernel), not by
-  referencing `src/FinanceERP.*` — same reasoning as `IPlatformUserDirectory` for
-  users. Finance registers the implementation; `NullBookkeepingPoster` stands in
-  when accounting isn't wired up, so the module builds and runs without it.
+- **`LedgerNature` (Payable/Receivable) is what tells a balance from its
+  opposite.** Money sitting on a Payable ledger is money you owe; the same figure
+  on a Receivable one is money owed to you. Without it the two read identically.
+- **The module keeps its own heads and does not touch accounting.** `LedgerHead` is
+  a nested tree of this module's own classifications; a parent's totals roll its
+  children up. A head applies both to a whole book (`PlainLedger.HeadId`) and to an
+  individual movement (`LedgerEntry.HeadId`), and both are optional so heads can be
+  introduced to existing books without revisiting them. Deleting a head nulls those
+  references rather than taking the money with it — entries just read as
+  unclassified. Nothing here refers to Finance's chart of accounts, and there is no
+  posting into the double-entry books: this module is standalone by design.
 
 ## State of the project
 
@@ -236,7 +231,7 @@ Seven apps behind one login, chosen from the portal at `/`:
 | HR | `/hr` | `erp_hr` | employee master, kiosk attendance, leave |
 | Inventory | `/inventory` | `erp_inventory` | products → models → accessories, stock ledger, full CRUD |
 | Auto | `/auto` | `erp_auto` | company vehicle fleet + maintenance history, full CRUD |
-| Plain Ledger | `/ledger` | `erp_ledger` | hand-ledger tree: main/sub ledgers, paired transfers, optional posting to Finance |
+| Plain Ledger | `/ledger` | `erp_ledger` | hand-ledger tree: main/sub ledgers, paired transfers, own nested heads |
 
 
 Implemented and wired end-to-end (service + page + nav): accounts, vouchers, ledger,
@@ -258,7 +253,7 @@ UI yet. Not ported: the customer-facing tracking page, Excel report exports.
 
 Known gaps, roughly in priority order:
 
-1. **Finance is the untested module.** 132 tests exist —
+1. **Finance is the untested module.** 135 tests exist —
    `tests/ErpPlatform.Shared.Tests` (27, Code 128 and QR round-trip through decoders —
    QR against ZXing, a test-only dependency),
    `tests/Hr.Tests` (42, the rotating attendance token and attendance arithmetic),
@@ -266,8 +261,8 @@ Known gaps, roughly in priority order:
    collective-quotation save path, plus PDF render smoke tests) and
    `tests/Inventory.Tests` (10, stock ledger arithmetic, cache rebuild and the
    delete-while-holding-stock guards), and
-   `tests/Ledger.Tests` (14, the worked 1-lac-to-two-people scenario: transfer
-   pairing, tree rollup, re-parent cycle guard). The
+   `tests/Ledger.Tests` (17, the worked 1-lac-to-two-people scenario: transfer
+   pairing, tree rollup, re-parent cycle guard, head rollup and head deletion). The
    integration tests create and drop their own throwaway databases and skip when no
    server is reachable. Nothing covers Finance or Auto: `VoucherService`,
    `PaymentRequestService.SettleAsync`, `PayrollService.GenerateAsync`/`PayRunAsync`

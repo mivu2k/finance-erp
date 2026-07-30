@@ -9,12 +9,12 @@ public static class LedgerPermissions
     /// <summary>Correcting or removing an entry already written.</summary>
     public const string EntryAmend = "ledger.entries.amend";
     public const string ReportsView = "ledger.reports.view";
-    /// <summary>Mapping a ledger onto a Finance account so entries post to the books.</summary>
-    public const string FinanceLink = "ledger.finance.link";
+    /// <summary>Maintaining the module's own heads.</summary>
+    public const string HeadsManage = "ledger.heads.manage";
 
     public static IReadOnlyList<string> All =>
     [
-        View, Manage, EntryRecord, EntryAmend, ReportsView, FinanceLink
+        View, Manage, EntryRecord, EntryAmend, ReportsView, HeadsManage
     ];
 }
 

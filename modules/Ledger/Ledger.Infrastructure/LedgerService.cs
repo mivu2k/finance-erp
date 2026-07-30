@@ -8,7 +8,8 @@ public record LedgerFilter(
     LedgerStatus? Status = null,
     LedgerNature? Nature = null,
     bool MainOnly = false,
-    bool OutstandingOnly = false);
+    bool OutstandingOnly = false,
+    int? HeadId = null);
 
 /// <summary>
 /// A ledger with its money totalled up. <paramref name="Own"/> is this ledger's own
@@ -55,7 +56,7 @@ public interface ILedgerService
     /// </summary>
     Task TransferAsync(int fromLedgerId, int toLedgerId, decimal amount, DateOnly date,
         string description, string? reference, LedgerPaymentMethod method,
-        string userId, string userName, CancellationToken ct = default);
+        string userId, string userName, int? headId = null, CancellationToken ct = default);
 
     Task<LedgerEntry?> GetEntryAsync(int entryId, CancellationToken ct = default);
     /// <summary>Amends an entry. On a transfer both halves move together.</summary>
@@ -64,7 +65,7 @@ public interface ILedgerService
     Task DeleteEntryAsync(int entryId, CancellationToken ct = default);
 }
 
-public class LedgerService(LedgerDbContext db, IBookkeepingPoster poster) : ILedgerService
+public class LedgerService(LedgerDbContext db) : ILedgerService
 {
     public async Task<List<PlainLedger>> ListAsync(LedgerFilter filter, CancellationToken ct = default)
     {
@@ -73,6 +74,7 @@ public class LedgerService(LedgerDbContext db, IBookkeepingPoster poster) : ILed
         if (filter.Status is { } s) q = q.Where(l => l.Status == s);
         if (filter.Nature is { } n) q = q.Where(l => l.Nature == n);
         if (filter.MainOnly) q = q.Where(l => l.ParentLedgerId == null);
+        if (filter.HeadId is { } headId) q = q.Where(l => l.HeadId == headId);
 
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
@@ -244,7 +246,7 @@ public class LedgerService(LedgerDbContext db, IBookkeepingPoster poster) : ILed
         existing.Status = ledger.Status;
         existing.Reference = ledger.Reference;
         existing.Notes = ledger.Notes;
-        existing.FinanceAccountId = ledger.FinanceAccountId;
+        existing.HeadId = ledger.HeadId;
 
         await db.SaveChangesAsync(ct);
         return existing;
@@ -293,17 +295,13 @@ public class LedgerService(LedgerDbContext db, IBookkeepingPoster poster) : ILed
 
         db.Entries.Add(entry);
         await db.SaveChangesAsync(ct);
-
-        entry.PostedVoucherId = await PostAsync(ledger, entry, ct);
-        if (entry.PostedVoucherId is not null) await db.SaveChangesAsync(ct);
-
         return entry;
     }
 
     public async Task TransferAsync(
         int fromLedgerId, int toLedgerId, decimal amount, DateOnly date,
         string description, string? reference, LedgerPaymentMethod method,
-        string userId, string userName, CancellationToken ct = default)
+        string userId, string userName, int? headId = null, CancellationToken ct = default)
     {
         if (amount <= 0)
             throw new InvalidOperationException("Amount must be positive.");
@@ -330,7 +328,7 @@ public class LedgerService(LedgerDbContext db, IBookkeepingPoster poster) : ILed
             PlainLedgerId = from.Id, Date = date, Direction = LedgerDirection.Out,
             Kind = LedgerEntryKind.Transfer, Amount = amount,
             Description = description, Reference = reference, Method = method,
-            CounterLedgerId = to.Id, TransferGroup = group,
+            CounterLedgerId = to.Id, TransferGroup = group, HeadId = headId,
             RecordedById = userId, RecordedByName = userName
         };
         var inEntry = new LedgerEntry
@@ -338,7 +336,7 @@ public class LedgerService(LedgerDbContext db, IBookkeepingPoster poster) : ILed
             PlainLedgerId = to.Id, Date = date, Direction = LedgerDirection.In,
             Kind = LedgerEntryKind.Transfer, Amount = amount,
             Description = description, Reference = reference, Method = method,
-            CounterLedgerId = from.Id, TransferGroup = group,
+            CounterLedgerId = from.Id, TransferGroup = group, HeadId = headId,
             RecordedById = userId, RecordedByName = userName
         };
 
@@ -352,16 +350,6 @@ public class LedgerService(LedgerDbContext db, IBookkeepingPoster poster) : ILed
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
         });
-
-        // Only the receiving side posts. Cash physically moves once, so posting both
-        // halves would double-count it, and the source counterparty's balance is
-        // unaffected by what you do with money once you hold it.
-        var voucherId = await PostAsync(to, inEntry, ct);
-        if (voucherId is not null)
-        {
-            inEntry.PostedVoucherId = voucherId;
-            await db.SaveChangesAsync(ct);
-        }
     }
 
     public Task<LedgerEntry?> GetEntryAsync(int entryId, CancellationToken ct = default) =>
@@ -391,6 +379,7 @@ public class LedgerService(LedgerDbContext db, IBookkeepingPoster poster) : ILed
             half.Description = entry.Description;
             half.Reference = entry.Reference;
             half.Method = entry.Method;
+            half.HeadId = entry.HeadId;
         }
 
         if (halves.Count == 1) existing.Direction = entry.Direction;
@@ -442,66 +431,4 @@ public class LedgerService(LedgerDbContext db, IBookkeepingPoster poster) : ILed
         return false;
     }
 
-    /// <summary>
-    /// Mirrors an entry into the formal books, when this ledger is mapped to an
-    /// account and a cash account is configured. Silent no-op otherwise — an
-    /// unmapped ledger is a perfectly valid plain ledger.
-    /// </summary>
-    /// <remarks>
-    /// The direction depends on the ledger's <see cref="LedgerNature"/>, because
-    /// "In" means opposite things either side of a tree:
-    /// <list type="bullet">
-    /// <item>Payable, In — you took their money: Dr Cash, Cr them (you owe more).</item>
-    /// <item>Payable, Out — you paid them back: Dr them, Cr Cash.</item>
-    /// <item>Receivable, In — you handed money over: Dr them (they owe more), Cr Cash.</item>
-    /// <item>Receivable, Out — they returned money: Dr Cash, Cr them.</item>
-    /// </list>
-    /// </remarks>
-    private async Task<int?> PostAsync(PlainLedger ledger, LedgerEntry entry, CancellationToken ct)
-    {
-        if (!poster.IsAvailable || ledger.FinanceAccountId is not { } accountId) return null;
-
-        var cashAccountId = await GetCashAccountIdAsync(ct);
-        if (cashAccountId is not { } cash) return null;
-
-        var cashIn = ledger.Nature == LedgerNature.Payable
-            ? entry.Direction == LedgerDirection.In
-            : entry.Direction == LedgerDirection.Out;
-
-        var lines = cashIn
-            ? new[]
-            {
-                new BookkeepingLine(cash, entry.Amount, 0, entry.Description),
-                new BookkeepingLine(accountId, 0, entry.Amount, ledger.CounterpartyName)
-            }
-            :
-            [
-                new BookkeepingLine(accountId, entry.Amount, 0, ledger.CounterpartyName),
-                new BookkeepingLine(cash, 0, entry.Amount, entry.Description)
-            ];
-
-        try
-        {
-            return await poster.PostAsync(
-                entry.Date,
-                $"{ledger.Name}: {entry.Description}",
-                "ledger", entry.Id, lines, ct);
-        }
-        catch (Exception)
-        {
-            // The plain ledger is the record of record here. If accounting refuses
-            // the journal (a locked period, a since-deleted account), the entry
-            // still stands with PostedVoucherId null so the gap is visible and can
-            // be re-posted, rather than the user losing the entry entirely.
-            return null;
-        }
-    }
-
-    private async Task<int?> GetCashAccountIdAsync(CancellationToken ct)
-    {
-        var raw = await db.Settings.AsNoTracking()
-            .Where(s => s.Key == LedgerSettingKeys.CashAccountId)
-            .Select(s => s.Value).FirstOrDefaultAsync(ct);
-        return int.TryParse(raw, out var id) ? id : null;
-    }
 }

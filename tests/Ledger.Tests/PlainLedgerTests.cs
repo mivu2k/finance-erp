@@ -24,7 +24,7 @@ public class PlainLedgerTests : IAsyncLifetime
             .Options;
 
     private LedgerDbContext NewDb() => new(Opts(), new TestUser());
-    private LedgerService NewService(LedgerDbContext db) => new(db, new NullBookkeepingPoster());
+    private LedgerService NewService(LedgerDbContext db) => new(db);
 
     public async Task InitializeAsync()
     {
@@ -363,17 +363,102 @@ public class PlainLedgerTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Nothing_posts_to_the_books_when_accounting_is_unavailable()
+    public async Task Heads_nest_and_roll_child_totals_into_the_parent()
+    {
+        if (!_available) return;
+        var (mainId, bId, _) = await SeedScenarioAsync();
+
+        await using var db = NewDb();
+        var heads = new LedgerHeadService(db);
+        var svc = NewService(db);
+
+        var expenses = await heads.SaveAsync(new LedgerHead { Name = "Expenses" });
+        var rent = await heads.SaveAsync(new LedgerHead { Name = "Rent", ParentHeadId = expenses.Id });
+
+        // One entry under the parent, one under the child.
+        await svc.AddEntryAsync(new LedgerEntry
+        {
+            PlainLedgerId = mainId, Date = new DateOnly(2026, 7, 11),
+            Direction = LedgerDirection.Out, Amount = 1_000,
+            Description = "Sundry", HeadId = expenses.Id
+        }, "u1", "Tester");
+        await svc.AddEntryAsync(new LedgerEntry
+        {
+            PlainLedgerId = bId, Date = new DateOnly(2026, 7, 12),
+            Direction = LedgerDirection.Out, Amount = 4_000,
+            Description = "Office rent", HeadId = rent.Id
+        }, "u1", "Tester");
+
+        var totals = await heads.GetTotalsAsync();
+
+        // The parent counts only its own entry, but its rollup includes the child's.
+        Assert.Equal(1_000, totals[expenses.Id].OwnOut);
+        Assert.Equal(5_000, totals[expenses.Id].RollupOut);
+        Assert.Equal(4_000, totals[rent.Id].OwnOut);
+        Assert.Equal(4_000, totals[rent.Id].RollupOut);
+    }
+
+    [Fact]
+    public async Task Deleting_a_head_leaves_the_money_and_only_drops_the_classification()
     {
         if (!_available) return;
         var (mainId, _, _) = await SeedScenarioAsync();
 
         await using var db = NewDb();
-        // Seeded through NullBookkeepingPoster, so every entry stands on its own
-        // with no voucher behind it — the plain ledger works without accounting.
-        var posted = await db.Entries.AsNoTracking()
-            .CountAsync(e => e.PlainLedgerId == mainId && e.PostedVoucherId != null);
-        Assert.Equal(0, posted);
+        var heads = new LedgerHeadService(db);
+        var svc = NewService(db);
+
+        var head = await heads.SaveAsync(new LedgerHead { Name = "Misc" });
+        var entry = await svc.AddEntryAsync(new LedgerEntry
+        {
+            PlainLedgerId = mainId, Date = new DateOnly(2026, 7, 15),
+            Direction = LedgerDirection.Out, Amount = 700,
+            Description = "Bits and pieces", HeadId = head.Id
+        }, "u1", "Tester");
+
+        await heads.DeleteAsync(head.Id);
+
+        var after = await svc.GetEntryAsync(entry.Id);
+        Assert.NotNull(after);
+        Assert.Equal(700, after!.Amount);   // money untouched
+        Assert.Null(after.HeadId);          // just unclassified now
+    }
+
+    [Fact]
+    public async Task A_head_with_sub_heads_refuses_deletion_and_cannot_sit_under_its_own_child()
+    {
+        if (!_available) return;
+
+        await using var db = NewDb();
+        var heads = new LedgerHeadService(db);
+
+        var parent = await heads.SaveAsync(new LedgerHead { Name = "Top" });
+        var child = await heads.SaveAsync(new LedgerHead { Name = "Under", ParentHeadId = parent.Id });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => heads.DeleteAsync(parent.Id));
+
+        parent.ParentHeadId = child.Id;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => heads.SaveAsync(parent));
+    }
+
+    [Fact]
+    public async Task A_transfer_puts_the_head_on_both_halves()
+    {
+        if (!_available) return;
+        var (mainId, bId, _) = await SeedScenarioAsync();
+
+        await using var db = NewDb();
+        var heads = new LedgerHeadService(db);
+        var svc = NewService(db);
+
+        var head = await heads.SaveAsync(new LedgerHead { Name = "Advances Given" });
+        await svc.TransferAsync(mainId, bId, 5_000, new DateOnly(2026, 7, 20),
+            "Extra advance", null, LedgerPaymentMethod.Cash, "u1", "Tester", head.Id);
+
+        var both = await db.Entries.AsNoTracking()
+            .Where(e => e.Description == "Extra advance").ToListAsync();
+        Assert.Equal(2, both.Count);
+        Assert.All(both, e => Assert.Equal(head.Id, e.HeadId));
     }
 
     private sealed class TestUser : ICurrentUserService

@@ -24,12 +24,10 @@ public class PlainLedger : AuditableEntity
     public string? CounterpartyAddress { get; set; }
 
     /// <summary>
-    /// Which way the relationship runs. This is what makes the accounting
-    /// unambiguous: on a <see cref="LedgerNature.Payable"/> ledger money coming in
-    /// is cash arriving and a debt to them building up, while on a
-    /// <see cref="LedgerNature.Receivable"/> ledger money coming in is cash leaving
-    /// your hands and a claim on them building up. Without it, "In" would mean
-    /// opposite things on the main and the sub ledgers of the same tree.
+    /// Which way the relationship runs, which is what tells a balance apart from
+    /// its opposite: money sitting on a <see cref="LedgerNature.Payable"/> ledger is
+    /// money you owe, the same figure on a <see cref="LedgerNature.Receivable"/> one
+    /// is money owed to you. Without it the two would read identically.
     /// </summary>
     public LedgerNature Nature { get; set; } = LedgerNature.Receivable;
 
@@ -50,12 +48,12 @@ public class PlainLedger : AuditableEntity
     public string? Notes { get; set; }
 
     /// <summary>
-    /// Optional link to an account in the Finance module's chart of accounts. When
-    /// set — and a cash account is configured — entries also post a system voucher
-    /// so the movement reaches the real books. Left null, the ledger stays purely
-    /// informal and nothing touches the trial balance.
+    /// Optional head this whole book is filed under — "Loans Taken", "Advances
+    /// Given". The module keeps its own heads (<see cref="LedgerHead"/>); nothing
+    /// here refers to the accounting module's chart of accounts.
     /// </summary>
-    public int? FinanceAccountId { get; set; }
+    public int? HeadId { get; set; }
+    public LedgerHead? Head { get; set; }
 
     public List<LedgerEntry> Entries { get; set; } = [];
 }
@@ -132,18 +130,44 @@ public class LedgerEntry : AuditableEntity
     /// </summary>
     public Guid? TransferGroup { get; set; }
 
+    /// <summary>
+    /// What this particular movement was for — "Rent", "Salary", "Repayment".
+    /// Independent of the ledger's own head, so a book filed under one head can
+    /// still have entries spread across several.
+    /// </summary>
+    public int? HeadId { get; set; }
+    public LedgerHead? Head { get; set; }
+
     public string RecordedById { get; set; } = string.Empty;
     public string RecordedByName { get; set; } = string.Empty;
-
-    /// <summary>
-    /// The Finance voucher this entry posted, when the ledger is mapped to an
-    /// account. Null means nothing reached the formal books — either the ledger
-    /// isn't mapped, or posting was unavailable when the entry was written.
-    /// </summary>
-    public int? PostedVoucherId { get; set; }
 
     /// <summary>Signed effect on the ledger's balance.</summary>
     public decimal Signed => Direction == LedgerDirection.In ? Amount : -Amount;
 }
 
 public enum LedgerPaymentMethod { Cash = 0, Bank = 1, Cheque = 2, Online = 3, Adjustment = 4, Other = 5 }
+
+/// <summary>
+/// A head money is filed under — this module's own classification, nothing to do
+/// with the accounting module's chart of accounts.
+/// </summary>
+/// <remarks>
+/// Heads nest, so broad groupings can carry detail underneath ("Expenses" over
+/// "Rent" and "Utilities") and reports roll a parent up from its children. A head
+/// applies to a whole book (<see cref="PlainLedger.HeadId"/>) and to individual
+/// movements (<see cref="LedgerEntry.HeadId"/>); both are optional, so heads can be
+/// introduced to an existing set of books without going back over them.
+/// </remarks>
+public class LedgerHead : AuditableEntity
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Code { get; set; }
+
+    /// <summary>Null for a top-level head.</summary>
+    public int? ParentHeadId { get; set; }
+    public LedgerHead? ParentHead { get; set; }
+    public List<LedgerHead> Children { get; set; } = [];
+
+    public string? Notes { get; set; }
+    public bool IsActive { get; set; } = true;
+}
