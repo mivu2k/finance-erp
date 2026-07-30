@@ -16,6 +16,10 @@ public class InventoryDbContext(DbContextOptions<InventoryDbContext> options, IC
     public DbSet<StockBatch> StockBatches => Set<StockBatch>();
     public DbSet<StockCount> StockCounts => Set<StockCount>();
     public DbSet<StockCountLine> StockCountLines => Set<StockCountLine>();
+    public DbSet<Warehouse> Warehouses => Set<Warehouse>();
+    public DbSet<StockBalance> StockBalances => Set<StockBalance>();
+    public DbSet<StockTransfer> StockTransfers => Set<StockTransfer>();
+    public DbSet<StockTransferLine> StockTransferLines => Set<StockTransferLine>();
     public DbSet<DocumentSequence> DocumentSequences => Set<DocumentSequence>();
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -127,6 +131,62 @@ public class InventoryDbContext(DbContextOptions<InventoryDbContext> options, IC
             e.HasOne(x => x.StockCount).WithMany(x => x.Lines)
                 .HasForeignKey(x => x.StockCountId).OnDelete(DeleteBehavior.Cascade);
             e.HasQueryFilter(x => !x.StockCount.IsDeleted);
+        });
+
+        b.Entity<Warehouse>(e =>
+        {
+            e.HasIndex(x => x.Name);
+            e.HasIndex(x => x.Code);
+            e.Property(x => x.Name).HasMaxLength(150);
+            e.Property(x => x.Code).HasMaxLength(32);
+            e.Property(x => x.Address).HasMaxLength(400);
+            e.Property(x => x.Notes).HasMaxLength(1000);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<StockBalance>(e =>
+        {
+            // One row per item per place; the pair is the identity of the balance.
+            e.HasIndex(x => new { x.ItemType, x.ItemId, x.WarehouseId }).IsUnique();
+            e.Property(x => x.Quantity).HasPrecision(14, 2);
+            e.HasOne(x => x.Warehouse).WithMany()
+                .HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<StockTransfer>(e =>
+        {
+            e.HasIndex(x => x.TransferNumber).IsUnique();
+            e.HasIndex(x => x.Status);
+            e.Property(x => x.TransferNumber).HasMaxLength(32);
+            e.Property(x => x.Reference).HasMaxLength(100);
+            e.Property(x => x.Notes).HasMaxLength(2000);
+            e.Property(x => x.RaisedById).HasMaxLength(450);
+            e.Property(x => x.RaisedByName).HasMaxLength(200);
+            e.Property(x => x.DispatchedByName).HasMaxLength(200);
+            e.Property(x => x.ReceivedByName).HasMaxLength(200);
+
+            // Restrict both ends: a warehouse with transfer history can't be deleted
+            // out from under it.
+            e.HasOne(x => x.FromWarehouse).WithMany()
+                .HasForeignKey(x => x.FromWarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.ToWarehouse).WithMany()
+                .HasForeignKey(x => x.ToWarehouseId).OnDelete(DeleteBehavior.Restrict);
+
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<StockTransferLine>(e =>
+        {
+            e.HasIndex(x => new { x.ItemType, x.ItemId });
+            e.Property(x => x.ItemName).HasMaxLength(300);
+            e.Property(x => x.SerialNumbers).HasMaxLength(2000);
+            e.Property(x => x.Note).HasMaxLength(500);
+            e.Property(x => x.Quantity).HasPrecision(14, 2);
+            e.Property(x => x.ReceivedQuantity).HasPrecision(14, 2);
+            e.Ignore(x => x.Shortfall);
+            e.HasOne(x => x.StockTransfer).WithMany(x => x.Lines)
+                .HasForeignKey(x => x.StockTransferId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(x => !x.StockTransfer.IsDeleted);
         });
 
         b.Entity<DocumentSequence>(e =>

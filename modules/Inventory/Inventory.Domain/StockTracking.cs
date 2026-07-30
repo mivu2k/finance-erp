@@ -39,6 +39,9 @@ public class StockUnit : AuditableEntity
     public int? StockBatchId { get; set; }
     public StockBatch? StockBatch { get; set; }
 
+    /// <summary>Which warehouse this unit is sitting in. A unit is only ever in one.</summary>
+    public int? WarehouseId { get; set; }
+
     /// <summary>What this particular unit cost, which may differ from the average.</summary>
     public decimal? UnitCost { get; set; }
 

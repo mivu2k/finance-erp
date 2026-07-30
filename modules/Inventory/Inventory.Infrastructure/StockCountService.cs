@@ -142,7 +142,7 @@ public class StockCountService(InventoryDbContext db, IStockService stock) : ISt
                 count.CountNumber,
                 $"Stock take {count.CountNumber}: counted {line.CountedQuantity:0.##} " +
                 $"against {line.SystemQuantity:0.##}",
-                userId, userName, ct);
+                userId, userName, ct: ct);
         }
 
         count.Status = StockCountStatus.Posted;

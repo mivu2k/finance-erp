@@ -123,7 +123,7 @@ public class StockTrackingService(InventoryDbContext db, IStockService stock) : 
         // traceable as any other movement and the balance stays rebuildable.
         await stock.AdjustAsync(receipt.ItemType, receipt.ItemId, StockDirection.In,
             receipt.Quantity, StockReason.Purchase, receipt.Reference, receipt.Notes,
-            userId, userName, ct);
+            userId, userName, ct: ct);
 
         await ApplyCostAsync(receipt.ItemType, receipt.ItemId, receipt.Quantity, receipt.UnitCost, ct);
     }
@@ -171,7 +171,7 @@ public class StockTrackingService(InventoryDbContext db, IStockService stock) : 
 
         await stock.AdjustAsync(type, itemId, StockDirection.Out, units.Count,
             status == StockUnitStatus.Sold ? StockReason.Sale : StockReason.Adjustment,
-            reference, $"Serials: {string.Join(", ", serials)}", userId, userName, ct);
+            reference, $"Serials: {string.Join(", ", serials)}", userId, userName, ct: ct);
     }
 
     public async Task<List<StockUnit>> ListUnitsAsync(

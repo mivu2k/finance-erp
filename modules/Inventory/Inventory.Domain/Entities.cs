@@ -143,6 +143,12 @@ public class StockTransaction : BaseEntity
     public string? Notes { get; set; }
     public decimal BalanceAfter { get; set; }
 
+    /// <summary>
+    /// Where the movement happened. Nullable because rows written before warehouses
+    /// existed have no location to claim, and inventing one would be a lie.
+    /// </summary>
+    public int? WarehouseId { get; set; }
+
     public string PerformedById { get; set; } = string.Empty;
     public string PerformedByName { get; set; } = string.Empty;
 }

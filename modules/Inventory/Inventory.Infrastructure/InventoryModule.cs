@@ -53,6 +53,8 @@ public static class InventoryModule
         services.AddScoped<IStockService, StockService>();
         services.AddScoped<IStockTrackingService, StockTrackingService>();
         services.AddScoped<IStockCountService, StockCountService>();
+        services.AddScoped<IWarehouseService, WarehouseService>();
+        services.AddScoped<IStockTransferService, StockTransferService>();
 
         ModuleRegistry.Register(Registration);
         return services;
@@ -61,6 +63,22 @@ public static class InventoryModule
     public static async Task SeedAsync(InventoryDbContext db, ILogger logger)
     {
         await db.Database.MigrateAsync();
+
+        // Everything that existed before warehouses needs somewhere to belong, and
+        // an unnamed movement needs a default to land in.
+        if (!await db.Warehouses.AnyAsync())
+        {
+            db.Warehouses.Add(new Warehouse
+            {
+                Name = "Main Store",
+                Code = "MAIN",
+                IsDefault = true,
+                Notes = "Created automatically — rename it to match your actual store."
+            });
+            await db.SaveChangesAsync();
+            logger.LogInformation("Seeded the default inventory warehouse");
+        }
+
         logger.LogInformation("Inventory database is up to date");
     }
 }
