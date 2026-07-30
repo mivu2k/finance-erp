@@ -189,9 +189,44 @@ These apply to the **Finance** module specifically:
 - **Leave balances hold days while a request is open** (`Pending`), so two
   requests can't spend the same entitlement before either is decided.
 
+## Plain Ledger — the hand-ledger module
+
+Single-entry books arranged in a tree, for the informal money-lending case: you
+took 100,000 from Mr A (a main ledger), passed 50,000 each to Mr B and Mr C (two
+sub-ledgers under it), and each of those keeps its own record. Deliberately *not*
+the accounting module.
+
+- **Nesting is unlimited.** `ParentLedgerId` null is what makes a ledger "main";
+  a sub-ledger can split further, because money passed on rarely stops at one hop.
+- **A ledger's balance is a custody figure**, not a relationship figure: opening
+  balance plus every entry's signed amount, i.e. how much of that pot is still
+  accounted for there. `Own` is the ledger alone; `Rollup` adds every descendant,
+  which on a main ledger is how much of the original money is still out in the
+  tree. Fully distributing a main leaves `Own` nil and `Rollup` unchanged.
+- **A transfer is always a linked pair** — `Out` on the source, `In` on the
+  destination, sharing a `TransferGroup` guid, written in one transaction.
+  Amending or deleting either half moves both; a one-sided transfer would leave
+  the two statements permanently disagreeing.
+- **`LedgerNature` (Payable/Receivable) is what makes the accounting
+  unambiguous.** Without it "In" means opposite things on the main and the sub
+  ledgers of one tree: on a Payable ledger money in is cash arriving and a debt
+  building, on a Receivable ledger money in is cash leaving and a claim building.
+  `/ledger/settings` documents the resulting four debit/credit cases.
+- **Posting to the real books is opt-in and per ledger.** It happens only when the
+  ledger has a `FinanceAccountId` *and* a cash account is configured; otherwise the
+  module is purely informal and never touches the trial balance. A **transfer posts
+  once, on the receiving side only** — cash physically moves a single time, and what
+  you do with money after taking it doesn't change what you owe for it. If Finance
+  refuses a journal, the entry still stands with `PostedVoucherId` null so the gap
+  is visible rather than the entry being lost.
+- **Modules reach the books through `IBookkeepingPoster`** (Shared.Kernel), not by
+  referencing `src/FinanceERP.*` — same reasoning as `IPlatformUserDirectory` for
+  users. Finance registers the implementation; `NullBookkeepingPoster` stands in
+  when accounting isn't wired up, so the module builds and runs without it.
+
 ## State of the project
 
-Six apps behind one login, chosen from the portal at `/`:
+Seven apps behind one login, chosen from the portal at `/`:
 
 | App | Route | Database | State |
 |---|---|---|---|
@@ -201,6 +236,7 @@ Six apps behind one login, chosen from the portal at `/`:
 | HR | `/hr` | `erp_hr` | employee master, kiosk attendance, leave |
 | Inventory | `/inventory` | `erp_inventory` | products → models → accessories, stock ledger, full CRUD |
 | Auto | `/auto` | `erp_auto` | company vehicle fleet + maintenance history, full CRUD |
+| Plain Ledger | `/ledger` | `erp_ledger` | hand-ledger tree: main/sub ledgers, paired transfers, optional posting to Finance |
 
 
 Implemented and wired end-to-end (service + page + nav): accounts, vouchers, ledger,
@@ -222,14 +258,16 @@ UI yet. Not ported: the customer-facing tracking page, Excel report exports.
 
 Known gaps, roughly in priority order:
 
-1. **Finance is the untested module.** 118 tests exist —
+1. **Finance is the untested module.** 132 tests exist —
    `tests/ErpPlatform.Shared.Tests` (27, Code 128 and QR round-trip through decoders —
    QR against ZXing, a test-only dependency),
    `tests/Hr.Tests` (42, the rotating attendance token and attendance arithmetic),
    `tests/Repair.Tests` (39, job workflow, quotation and purchase pricing, the
    collective-quotation save path, plus PDF render smoke tests) and
    `tests/Inventory.Tests` (10, stock ledger arithmetic, cache rebuild and the
-   delete-while-holding-stock guards). The
+   delete-while-holding-stock guards), and
+   `tests/Ledger.Tests` (14, the worked 1-lac-to-two-people scenario: transfer
+   pairing, tree rollup, re-parent cycle guard). The
    integration tests create and drop their own throwaway databases and skip when no
    server is reachable. Nothing covers Finance or Auto: `VoucherService`,
    `PaymentRequestService.SettleAsync`, `PayrollService.GenerateAsync`/`PayRunAsync`

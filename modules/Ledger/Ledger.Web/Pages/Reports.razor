@@ -1,0 +1,131 @@
+@page "/ledger/reports"
+@attribute [Authorize(Policy = LedgerPermissions.ReportsView)]
+@layout LedgerLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Ledger Reports</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Reports</MudText>
+
+<MudTabs Elevation="1" Rounded="true" PanelClass="pa-4">
+    <MudTabPanel Text="Outstanding">
+        <MudText Typo="Typo.body2" Class="mb-3 mud-text-secondary">
+            Open ledgers still carrying a balance — who is holding your money, and who you owe.
+        </MudText>
+        <MudGrid Spacing="3" Class="mb-3">
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-3">
+                    <MudText Typo="Typo.overline" Class="mud-text-secondary">They owe you</MudText>
+                    <MudText Typo="Typo.h6" Color="Color.Success">@_receivable.ToString("N2")</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-3">
+                    <MudText Typo="Typo.overline" Class="mud-text-secondary">You owe them</MudText>
+                    <MudText Typo="Typo.h6" Color="Color.Error">@_payable.ToString("N2")</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-3">
+                    <MudText Typo="Typo.overline" Class="mud-text-secondary">Net</MudText>
+                    <MudText Typo="Typo.h6">@((_receivable - _payable).ToString("N2"))</MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+            <thead>
+                <tr><th>Ledger</th><th>Counterparty</th><th>Type</th><th>Under</th>
+                    <th>Entries</th><th style="text-align:right">Balance</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var l in _outstanding)
+                {
+                    var bal = l.OpeningBalance + l.Entries.Sum(e => e.Signed);
+                    <tr>
+                        <td><MudLink Href="@($"/ledger/ledgers/{l.Id}")">@l.Name</MudLink></td>
+                        <td>@l.CounterpartyName</td>
+                        <td>
+                            <MudChip T="string" Size="Size.Small"
+                                     Color="@(l.Nature == LedgerNature.Payable ? Color.Error : Color.Success)">
+                                @l.Nature
+                            </MudChip>
+                        </td>
+                        <td>@(_names.GetValueOrDefault(l.ParentLedgerId ?? 0) ?? "—")</td>
+                        <td>@l.Entries.Count</td>
+                        <td style="text-align:right">@bal.ToString("N2")</td>
+                    </tr>
+                }
+                @if (_outstanding.Count == 0)
+                {
+                    <tr><td colspan="6" class="mud-text-secondary pa-4">Nothing outstanding.</td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudTabPanel>
+
+    <MudTabPanel Text="Tree rollup">
+        <MudText Typo="Typo.body2" Class="mb-3 mud-text-secondary">
+            Each main ledger with everything under it added up. On a ledger you took money
+            against, the tree total is how much of it is still out with sub-ledgers.
+        </MudText>
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead>
+                <tr><th>Main ledger</th><th>Counterparty</th><th>Sub-ledgers</th>
+                    <th style="text-align:right">Unallocated</th>
+                    <th style="text-align:right">Whole tree</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var n in _roots)
+                {
+                    <tr>
+                        <td><MudLink Href="@($"/ledger/ledgers/{n.Ledger.Id}")">@n.Ledger.Name</MudLink></td>
+                        <td>@n.Ledger.CounterpartyName</td>
+                        <td>@CountDescendants(n)</td>
+                        <td style="text-align:right">@n.Balance.Own.ToString("N2")</td>
+                        <td style="text-align:right"><b>@n.Balance.Rollup.ToString("N2")</b></td>
+                    </tr>
+                }
+                @if (_roots.Count == 0)
+                {
+                    <tr><td colspan="5" class="mud-text-secondary pa-4">No ledgers yet.</td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private List<PlainLedger> _outstanding = [];
+    private List<LedgerNode> _roots = [];
+    private Dictionary<int, string> _names = [];
+    private decimal _receivable, _payable;
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<ILedgerService>();
+
+        var all = await svc.ListAsync(new LedgerFilter());
+        _names = all.ToDictionary(l => l.Id, l => l.Name);
+
+        _outstanding = all
+            .Where(l => l.Status == LedgerStatus.Open
+                     && l.OpeningBalance + l.Entries.Sum(e => e.Signed) != 0)
+            .OrderByDescending(l => Math.Abs(l.OpeningBalance + l.Entries.Sum(e => e.Signed)))
+            .ToList();
+
+        foreach (var l in _outstanding)
+        {
+            var bal = l.OpeningBalance + l.Entries.Sum(e => e.Signed);
+            if (l.Nature == LedgerNature.Receivable && bal > 0) _receivable += bal;
+            if (l.Nature == LedgerNature.Payable && bal > 0) _payable += bal;
+        }
+
+        _roots = await svc.GetTreeAsync();
+    }
+
+    private static int CountDescendants(LedgerNode n) =>
+        n.Children.Count + n.Children.Sum(CountDescendants);
+}

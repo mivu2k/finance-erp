@@ -7,6 +7,7 @@ using Hr.Infrastructure;
 using Repair.Infrastructure;
 using Inventory.Infrastructure;
 using Auto.Infrastructure;
+using Ledger.Infrastructure;
 using FinanceERP.Infrastructure.Persistence;
 using FinanceERP.Web.Components;
 using FinanceERP.Web.Components.Account;
@@ -16,6 +17,7 @@ using Hr.Web;
 using Repair.Web;
 using Inventory.Web;
 using Auto.Web;
+using Ledger.Web;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -69,6 +71,7 @@ builder.Services.AddGatePassModule(builder.Configuration);
 builder.Services.AddRepairModule(builder.Configuration);
 builder.Services.AddInventoryModule(builder.Configuration);
 builder.Services.AddAutoModule(builder.Configuration);
+builder.Services.AddLedgerModule(builder.Configuration);
 
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
 
@@ -112,6 +115,7 @@ using (var scope = app.Services.CreateScope())
     await RepairModule.SeedAsync(sp.GetRequiredService<RepairDbContext>(), logger);
     await InventoryModule.SeedAsync(sp.GetRequiredService<InventoryDbContext>(), logger);
     await AutoModule.SeedAsync(sp.GetRequiredService<AutoDbContext>(), logger);
+    await LedgerModule.SeedAsync(sp.GetRequiredService<LedgerDbContext>(), logger);
 }
 
 if (app.Environment.IsDevelopment())
@@ -139,7 +143,8 @@ app.MapRazorComponents<App>()
         typeof(GatePass.Web.Layout.GatePassLayout).Assembly,
         typeof(Repair.Web.Layout.RepairLayout).Assembly,
         typeof(Inventory.Web.Layout.InventoryLayout).Assembly,
-        typeof(Auto.Web.Layout.AutoLayout).Assembly);
+        typeof(Auto.Web.Layout.AutoLayout).Assembly,
+        typeof(Ledger.Web.Layout.LedgerLayout).Assembly);
 
 app.MapAdditionalIdentityEndpoints();
 app.MapExportEndpoints();

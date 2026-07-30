@@ -38,6 +38,12 @@ public interface IEmployeeService
 
     Task<List<EmployeeDocument>> ListDocumentsAsync(int employeeId, CancellationToken ct = default);
     Task AddDocumentAsync(EmployeeDocument document, CancellationToken ct = default);
+    /// <summary>
+    /// Edits a document's metadata — title, kind, expiry, notes. The stored file
+    /// itself is never touched: replacing a file means adding a new document, so
+    /// what was on record at a point in time stays auditable.
+    /// </summary>
+    Task UpdateDocumentAsync(EmployeeDocument document, CancellationToken ct = default);
     Task DeleteDocumentAsync(int documentId, CancellationToken ct = default);
     /// <summary>Documents lapsing within <paramref name="withinDays"/> — the HR dashboard's alert list.</summary>
     Task<List<EmployeeDocument>> ListExpiringDocumentsAsync(int withinDays = 60, CancellationToken ct = default);
@@ -246,6 +252,22 @@ public class EmployeeService(HrDbContext db, IPlatformUserDirectory directory) :
         if (string.IsNullOrWhiteSpace(document.Title))
             throw new InvalidOperationException("Document title is required.");
         db.EmployeeDocuments.Add(document);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task UpdateDocumentAsync(EmployeeDocument document, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(document.Title))
+            throw new InvalidOperationException("Document title is required.");
+
+        var existing = await db.EmployeeDocuments.FirstOrDefaultAsync(d => d.Id == document.Id, ct)
+            ?? throw new InvalidOperationException("Document not found.");
+
+        existing.Title = document.Title;
+        existing.Kind = document.Kind;
+        existing.ExpiresOn = document.ExpiresOn;
+        existing.Notes = document.Notes;
+
         await db.SaveChangesAsync(ct);
     }
 

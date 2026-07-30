@@ -1,0 +1,23 @@
+<MudNavMenu>
+    <MudNavLink Href="/ledger" Icon="@Icons.Material.Filled.Dashboard" Match="NavLinkMatch.All">
+        Dashboard
+    </MudNavLink>
+
+    <AuthorizeView Policy="@LedgerPermissions.View">
+        <MudNavGroup Title="Ledgers" Icon="@Icons.Material.Filled.AccountTree" Expanded="true">
+            <MudNavLink Href="/ledger/tree" Icon="@Icons.Material.Filled.Segment">Ledger Tree</MudNavLink>
+            <MudNavLink Href="/ledger/ledgers" Icon="@Icons.Material.Filled.List">All Ledgers</MudNavLink>
+            <AuthorizeView Policy="@LedgerPermissions.Manage" Context="m">
+                <MudNavLink Href="/ledger/ledgers/new" Icon="@Icons.Material.Filled.AddBox">New Ledger</MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@LedgerPermissions.ReportsView" Context="r">
+        <MudNavLink Href="/ledger/reports" Icon="@Icons.Material.Filled.Assessment">Reports</MudNavLink>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@LedgerPermissions.FinanceLink" Context="f">
+        <MudNavLink Href="/ledger/settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
+    </AuthorizeView>
+</MudNavMenu>

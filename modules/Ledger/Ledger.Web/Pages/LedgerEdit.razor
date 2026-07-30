@@ -1,0 +1,197 @@
+@page "/ledger/ledgers/new"
+@page "/ledger/ledgers/{Id:int}/edit"
+@attribute [Authorize(Policy = LedgerPermissions.Manage)]
+@layout LedgerLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_isNew ? "New Ledger" : $"Edit {_ledger.Name}")</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack"
+                   Href="@(_isNew ? "/ledger/tree" : $"/ledger/ledgers/{Id}")" />
+    <MudText Typo="Typo.h5">@(_isNew ? "New Ledger" : "Edit Ledger")</MudText>
+</div>
+
+<MudPaper Class="pa-4" MaxWidth="720px">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="6">
+            <MudTextField @bind-Value="_ledger.Name" Label="Ledger name" Required="true"
+                          Margin="Margin.Dense" HelperText="e.g. Mr A — 1 lac taken" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudTextField @bind-Value="_ledger.CounterpartyName" Label="Counterparty" Required="true"
+                          Margin="Margin.Dense" HelperText="The person or firm this book is with" />
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudSelect T="LedgerNature" @bind-Value="_ledger.Nature" Label="Type" Margin="Margin.Dense"
+                       HelperText="Which way the money went first">
+                <MudSelectItem T="LedgerNature" Value="@LedgerNature.Payable">
+                    Payable — you took money from them
+                </MudSelectItem>
+                <MudSelectItem T="LedgerNature" Value="@LedgerNature.Receivable">
+                    Receivable — you gave money to them
+                </MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudSelect T="int?" @bind-Value="_ledger.ParentLedgerId" Label="Under (parent ledger)"
+                       Margin="Margin.Dense" Clearable="true"
+                       HelperText="Leave empty for a main ledger">
+                @foreach (var p in _parents)
+                {
+                    <MudSelectItem T="int?" Value="@p.Id">@p.Name — @p.CounterpartyName</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="6" md="3">
+            <MudNumericField T="decimal" @bind-Value="_ledger.OpeningBalance" Label="Opening balance"
+                             Margin="Margin.Dense" HelperText="Carried in from an old book" />
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudDatePicker Date="_openedOn" DateChanged="@(d => _openedOn = d)" Label="Opened on"
+                           Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudTextField @bind-Value="_ledger.CounterpartyPhone" Label="Phone" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudTextField @bind-Value="_ledger.Reference" Label="Reference" Margin="Margin.Dense" />
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudTextField @bind-Value="_ledger.CounterpartyAddress" Label="Address" Margin="Margin.Dense" />
+        </MudItem>
+
+        @if (!_isNew)
+        {
+            <MudItem xs="12" md="6">
+                <MudSelect T="LedgerStatus" @bind-Value="_ledger.Status" Label="Status" Margin="Margin.Dense">
+                    @foreach (var s in Enum.GetValues<LedgerStatus>())
+                    {
+                        <MudSelectItem T="LedgerStatus" Value="@s">@s</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+        }
+
+        <MudItem xs="12">
+            <MudTextField @bind-Value="_ledger.Notes" Label="Notes" Lines="2" Margin="Margin.Dense" />
+        </MudItem>
+
+        <AuthorizeView Policy="@LedgerPermissions.FinanceLink" Context="fin">
+            <MudItem xs="12">
+                <MudDivider Class="my-2" />
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Accounting link (optional)</MudText>
+                @if (!_postingAvailable)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true">
+                        The accounting module isn't available, so entries here stay informal.
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudSelect T="int?" @bind-Value="_ledger.FinanceAccountId" Clearable="true"
+                               Label="Post against this account" Margin="Margin.Dense"
+                               HelperText="Leave empty to keep this ledger out of the formal books">
+                        @foreach (var a in _accounts)
+                        {
+                            <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                    @if (_cashAccountId is null)
+                    {
+                        <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">
+                            No cash account is configured yet, so nothing will post even when mapped.
+                            Set one under Settings.
+                        </MudAlert>
+                    }
+                }
+            </MudItem>
+        </AuthorizeView>
+    </MudGrid>
+
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Class="mt-3">Save</MudButton>
+</MudPaper>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private PlainLedger _ledger = new();
+    private List<PlainLedger> _parents = [];
+    private IReadOnlyList<BookkeepingAccount> _accounts = [];
+    private DateTime? _openedOn = DateTime.Today;
+    private bool _postingAvailable;
+    private int? _cashAccountId;
+
+    private bool _isNew => Id is null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<ILedgerService>();
+        var settings = scope.ServiceProvider.GetRequiredService<ILedgerSettingsService>();
+
+        _postingAvailable = settings.PostingAvailable;
+        if (_postingAvailable)
+        {
+            _accounts = await settings.ListAccountsAsync();
+            _cashAccountId = await settings.GetCashAccountIdAsync();
+        }
+
+        if (Id is { } id)
+        {
+            _ledger = await svc.GetAsync(id) ?? throw new InvalidOperationException("Ledger not found.");
+            _openedOn = _ledger.OpenedOn.ToDateTime(TimeOnly.MinValue);
+        }
+        else
+        {
+            _ledger = new PlainLedger();
+            _openedOn = DateTime.Today;
+
+            // Opening a sub-ledger straight from a parent's page.
+            var query = System.Web.HttpUtility.ParseQueryString(new Uri(Nav.Uri).Query);
+            if (int.TryParse(query["parent"], out var parentId))
+            {
+                _ledger.ParentLedgerId = parentId;
+                _ledger.Nature = LedgerNature.Receivable;
+            }
+        }
+
+        // A ledger can't be its own parent, and the service refuses its own
+        // descendants — keeping itself out of the list covers the obvious case.
+        _parents = (await svc.ListAsync(new LedgerFilter()))
+            .Where(l => l.Id != (Id ?? 0)).ToList();
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            _ledger.OpenedOn = _openedOn is { } d
+                ? DateOnly.FromDateTime(d)
+                : DateOnly.FromDateTime(DateTime.UtcNow);
+
+            using var scope = ScopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<ILedgerService>();
+
+            if (_isNew)
+            {
+                var saved = await svc.CreateAsync(_ledger);
+                Snackbar.Add("Ledger opened.", Severity.Success);
+                Nav.NavigateTo($"/ledger/ledgers/{saved.Id}");
+            }
+            else
+            {
+                await svc.UpdateAsync(_ledger);
+                Snackbar.Add("Ledger saved.", Severity.Success);
+                Nav.NavigateTo($"/ledger/ledgers/{Id}");
+            }
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

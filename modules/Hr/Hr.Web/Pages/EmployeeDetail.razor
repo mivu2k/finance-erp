@@ -226,6 +226,8 @@
                                 <td>@d.CreatedAtUtc.ToString("yyyy-MM-dd")</td>
                                 <td>
                                     <AuthorizeView Policy="@HrPermissions.DocumentsManage" Context="del">
+                                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                                       OnClick="@(() => OpenDocumentEditor(d))" />
                                         <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
                                                        Color="Color.Error"
                                                        OnClick="@(() => DeleteDocument(d.Id))" />
@@ -265,8 +267,37 @@
     </MudOverlay>
 }
 
+@if (_editDocument is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:480px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">Edit Document</MudText>
+            <MudTextField @bind-Value="_editDocument.Title" Label="Title" Class="mb-2" />
+            <MudSelect T="DocumentKind" @bind-Value="_editDocument.Kind" Label="Kind" Class="mb-2">
+                @foreach (var k in Enum.GetValues<DocumentKind>())
+                {
+                    <MudSelectItem T="DocumentKind" Value="@k">@k</MudSelectItem>
+                }
+            </MudSelect>
+            <MudDatePicker Date="_editDocExpires" DateChanged="@(d => _editDocExpires = d)"
+                           Label="Expires on" Clearable="true" Class="mb-2" />
+            <MudTextField @bind-Value="_editDocument.Notes" Label="Notes" Lines="2" />
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">
+                The stored file itself isn't replaced here — upload a new document for that.
+            </MudText>
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _editDocument = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDocument">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
 @code {
     [Parameter] public int? Id { get; set; }
+
+    private EmployeeDocument? _editDocument;
+    private DateTime? _editDocExpires;
 
     private Employee _employee = new() { JoinedOn = DateOnly.FromDateTime(DateTime.Today) };
     private List<Department> _departments = [];
@@ -386,5 +417,34 @@
         await scope.ServiceProvider.GetRequiredService<IEmployeeService>()
             .DeleteDocumentAsync(documentId);
         await LoadAsync();
+    }
+
+    // Edit a copy so cancelling leaves the table as it was.
+    private void OpenDocumentEditor(EmployeeDocument d)
+    {
+        _editDocument = new EmployeeDocument
+        {
+            Id = d.Id, EmployeeId = d.EmployeeId, Title = d.Title, Kind = d.Kind,
+            FilePath = d.FilePath, ContentType = d.ContentType, SizeBytes = d.SizeBytes,
+            ExpiresOn = d.ExpiresOn, Notes = d.Notes
+        };
+        _editDocExpires = d.ExpiresOn?.ToDateTime(TimeOnly.MinValue);
+    }
+
+    private async Task SaveDocument()
+    {
+        try
+        {
+            _editDocument!.ExpiresOn = _editDocExpires is { } e ? DateOnly.FromDateTime(e) : null;
+
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IEmployeeService>()
+                .UpdateDocumentAsync(_editDocument);
+
+            _editDocument = null;
+            Snackbar.Add("Document saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
     }
 }

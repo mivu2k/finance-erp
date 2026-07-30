@@ -84,8 +84,12 @@
                                          Color="Color.Warning" />
                             }
                         </td>
-                        <td><MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
-                                           OnClick="@(() => EditShift(s))" /></td>
+                        <td>
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                           OnClick="@(() => EditShift(s))" />
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Error" OnClick="@(() => _deleteShift = s)" />
+                        </td>
                     </tr>
                 }
             </tbody>
@@ -113,8 +117,12 @@
                         <td>@h.Date.ToString("yyyy-MM-dd")</td>
                         <td>@h.Date.DayOfWeek</td>
                         <td>@h.Name</td>
-                        <td><MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
-                                           Color="Color.Error" OnClick="@(() => RemoveHoliday(h))" /></td>
+                        <td>
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                           OnClick="@(() => EditHoliday(h))" />
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Error" OnClick="@(() => RemoveHoliday(h))" />
+                        </td>
                     </tr>
                 }
                 @if (_holidays.Count == 0)
@@ -167,8 +175,12 @@
                         <td>@(t.AnnualQuota > 0 ? t.AnnualQuota.ToString("0.#") : "unmetered")</td>
                         <td>@(t.IsPaid ? "Yes" : "No")</td>
                         <td>@(t.AllowCarryForward ? $"up to {t.MaxCarryForward:0.#}" : "No")</td>
-                        <td><MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
-                                           OnClick="@(() => EditType(t))" /></td>
+                        <td>
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                           OnClick="@(() => EditType(t))" />
+                            <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Error" OnClick="@(() => _deleteType = t)" />
+                        </td>
                     </tr>
                 }
             </tbody>
@@ -197,6 +209,55 @@
     </MudTabPanel>
 </MudTabs>
 
+@if (_editHoliday is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">Edit Holiday</MudText>
+            <MudDatePicker Date="_editHolidayDate" DateChanged="@(d => _editHolidayDate = d)"
+                           Label="Date" Class="mb-2" />
+            <MudTextField @bind-Value="_editHoliday.Name" Label="Name" Class="mb-2" />
+            <MudSwitch T="bool" @bind-Value="_editHoliday.IsPaid" Label="Paid" Color="Color.Primary" />
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _editHoliday = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveHoliday">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_deleteShift is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-2">Delete @_deleteShift.Name?</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                Only possible while no employee is assigned to it, and never for the default shift.
+            </MudText>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _deleteShift = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="DeleteShift">Delete</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_deleteType is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-2">Delete @_deleteType.Name?</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                Only possible while no leave request or balance uses it — otherwise mark it inactive.
+            </MudText>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _deleteType = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="DeleteType">Delete</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
 @code {
     private List<Shift> _shifts = [];
     private List<Holiday> _holidays = [];
@@ -205,6 +266,11 @@
     private Shift _shift = NewShift();
     private LeaveType _type = new();
     private DateTime? _holidayDate = DateTime.Today;
+
+    private Shift? _deleteShift;
+    private LeaveType? _deleteType;
+    private Holiday? _editHoliday;
+    private DateTime? _editHolidayDate;
     private string _holidayName = "";
     private int _openYear = DateTime.Today.Year;
 
@@ -306,7 +372,83 @@
         var db = scope.ServiceProvider.GetRequiredService<HrDbContext>();
         var row = await db.Holidays.FirstOrDefaultAsync(x => x.Id == h.Id);
         if (row is not null) { db.Holidays.Remove(row); await db.SaveChangesAsync(); }
+        Snackbar.Add("Holiday removed. Rebuild attendance to apply it to past days.", Severity.Success);
         await LoadAsync();
+    }
+
+    private void EditHoliday(Holiday h)
+    {
+        _editHoliday = new Holiday { Id = h.Id, Date = h.Date, Name = h.Name, IsPaid = h.IsPaid };
+        _editHolidayDate = h.Date.ToDateTime(TimeOnly.MinValue);
+    }
+
+    private async Task SaveHoliday()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<HrDbContext>();
+            var row = await db.Holidays.FirstAsync(x => x.Id == _editHoliday!.Id);
+            row.Date = _editHolidayDate is { } d ? DateOnly.FromDateTime(d) : row.Date;
+            row.Name = _editHoliday!.Name;
+            row.IsPaid = _editHoliday.IsPaid;
+            await db.SaveChangesAsync();
+
+            _editHoliday = null;
+            Snackbar.Add("Holiday saved. Rebuild attendance to apply it to past days.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DeleteShift()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<HrDbContext>();
+
+            // A shift decides what counts as late, so pulling one out from under an
+            // employee would silently change how their days are judged on the next
+            // rebuild. The default shift is what employees fall back to, so it stays.
+            var inUse = await db.Employees.CountAsync(e => e.ShiftId == _deleteShift!.Id);
+            if (inUse > 0)
+                throw new InvalidOperationException(
+                    $"{_deleteShift!.Name} is assigned to {inUse} employee(s). Move them first.");
+            if (_deleteShift!.IsDefault)
+                throw new InvalidOperationException(
+                    "The default shift can't be deleted. Make another shift the default first.");
+
+            var row = await db.Shifts.FirstOrDefaultAsync(s => s.Id == _deleteShift.Id);
+            if (row is not null) { db.Shifts.Remove(row); await db.SaveChangesAsync(); }
+
+            _deleteShift = null;
+            Snackbar.Add("Shift deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _deleteShift = null;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DeleteType()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<ILeaveService>()
+                .DeleteTypeAsync(_deleteType!.Id);
+            _deleteType = null;
+            Snackbar.Add("Leave type deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _deleteType = null;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
     }
 
     private void EditType(LeaveType t) => _type = new LeaveType

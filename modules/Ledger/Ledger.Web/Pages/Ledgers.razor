@@ -1,0 +1,116 @@
+@page "/ledger/ledgers"
+@attribute [Authorize(Policy = LedgerPermissions.View)]
+@layout LedgerLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>Ledgers</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">All Ledgers</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@LedgerPermissions.Manage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.AddBox" Href="/ledger/ledgers/new">
+            New Ledger
+        </MudButton>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="5">
+            <MudTextField @bind-Value="_search" Label="Search name, counterparty or reference"
+                          Margin="Margin.Dense" Immediate="true" DebounceInterval="300"
+                          OnDebounceIntervalElapsed="LoadAsync"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudSelect T="LedgerNature?" Value="_nature" ValueChanged="OnNatureChanged"
+                       Label="Type" Margin="Margin.Dense" Clearable="true">
+                <MudSelectItem T="LedgerNature?" Value="@LedgerNature.Payable">Payable — you owe</MudSelectItem>
+                <MudSelectItem T="LedgerNature?" Value="@LedgerNature.Receivable">Receivable — they owe</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" md="2">
+            <MudSelect T="LedgerStatus?" Value="_status" ValueChanged="OnStatusChanged"
+                       Label="Status" Margin="Margin.Dense" Clearable="true">
+                @foreach (var s in Enum.GetValues<LedgerStatus>())
+                {
+                    <MudSelectItem T="LedgerStatus?" Value="@s">@s</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="2" Class="d-flex align-center">
+            <MudSwitch T="bool" Value="_outstandingOnly" ValueChanged="OnOutstandingChanged"
+                       Label="With balance" Color="Color.Primary" />
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr>
+                <th>Ledger</th><th>Counterparty</th><th>Type</th><th>Under</th>
+                <th>Opened</th><th>Status</th><th style="text-align:right">Balance</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var l in _ledgers)
+            {
+                var balance = l.OpeningBalance + l.Entries.Sum(e => e.Signed);
+                <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/ledger/ledgers/{l.Id}"))">
+                    <td>@l.Name</td>
+                    <td>@l.CounterpartyName</td>
+                    <td>
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(l.Nature == LedgerNature.Payable ? Color.Error : Color.Success)">
+                            @l.Nature
+                        </MudChip>
+                    </td>
+                    <td>@(_names.GetValueOrDefault(l.ParentLedgerId ?? 0) ?? "—")</td>
+                    <td>@l.OpenedOn.ToString("yyyy-MM-dd")</td>
+                    <td>@l.Status</td>
+                    <td style="text-align:right">@balance.ToString("N2")</td>
+                </tr>
+            }
+            @if (_ledgers.Count == 0)
+            {
+                <tr><td colspan="7" class="mud-text-secondary pa-4">No ledgers match this filter.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private List<PlainLedger> _ledgers = [];
+    private Dictionary<int, string> _names = [];
+    private string? _search;
+    private LedgerNature? _nature;
+    private LedgerStatus? _status;
+    private bool _outstandingOnly;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task OnNatureChanged(LedgerNature? v) { _nature = v; await LoadAsync(); }
+    private async Task OnStatusChanged(LedgerStatus? v) { _status = v; await LoadAsync(); }
+    private async Task OnOutstandingChanged(bool v) { _outstandingOnly = v; await LoadAsync(); }
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<ILedgerService>();
+
+        _ledgers = await svc.ListAsync(
+            new LedgerFilter(_search, _status, _nature, OutstandingOnly: _outstandingOnly));
+
+        // Parent names come from the unfiltered set, so the "Under" column still
+        // resolves when the parent itself is filtered out of the list.
+        _names = (await svc.ListAsync(new LedgerFilter()))
+            .ToDictionary(l => l.Id, l => l.Name);
+
+        StateHasChanged();
+    }
+}

@@ -1,0 +1,65 @@
+@page "/ledger/tree"
+@attribute [Authorize(Policy = LedgerPermissions.View)]
+@layout LedgerLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Ledger Tree</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Ledger Tree</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@LedgerPermissions.Manage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.AddBox" Href="/ledger/ledgers/new">
+            New Ledger
+        </MudButton>
+    </AuthorizeView>
+</div>
+
+<MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+    <b>Unallocated</b> is what is still sitting on that ledger itself.
+    <b>Whole tree</b> adds every sub-ledger under it — on a main ledger that is how much
+    of the original money is still out somewhere.
+</MudAlert>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudTextField @bind-Value="_search" Label="Search main ledgers by name or counterparty"
+                  Margin="Margin.Dense" Immediate="true" DebounceInterval="300"
+                  OnDebounceIntervalElapsed="LoadAsync"
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true">
+        <thead>
+            <tr>
+                <th>Ledger</th><th>Counterparty</th><th>Type</th><th>Status</th><th>Entries</th>
+                <th style="text-align:right">Unallocated</th>
+                <th style="text-align:right">Whole tree</th>
+            </tr>
+        </thead>
+        <tbody>
+            <LedgerTreeRows Nodes="_roots" />
+            @if (_roots.Count == 0)
+            {
+                <tr><td colspan="7" class="mud-text-secondary pa-4">No ledgers match.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private List<LedgerNode> _roots = [];
+    private string? _search;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _roots = await scope.ServiceProvider.GetRequiredService<ILedgerService>()
+            .GetTreeAsync(new LedgerFilter(_search));
+        StateHasChanged();
+    }
+}

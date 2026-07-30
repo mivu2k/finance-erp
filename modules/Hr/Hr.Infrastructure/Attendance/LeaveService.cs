@@ -16,6 +16,13 @@ public interface ILeaveService
     Task<List<LeaveType>> ListTypesAsync(bool activeOnly = true, CancellationToken ct = default);
     Task SaveTypeAsync(LeaveType type, CancellationToken ct = default);
 
+    /// <summary>
+    /// Soft-deletes a leave type. Refused once any request or balance references it —
+    /// a leave history that can't name the type it was taken under is worse than an
+    /// unused row, so deactivate (<c>IsActive</c>) rather than delete in that case.
+    /// </summary>
+    Task DeleteTypeAsync(int id, CancellationToken ct = default);
+
     Task<List<LeaveRequest>> ListAsync(LeaveFilter filter, CancellationToken ct = default);
     Task<LeaveRequest?> GetAsync(int id, CancellationToken ct = default);
 
@@ -50,6 +57,24 @@ public class LeaveService(HrDbContext db, IAttendanceSyncService sync) : ILeaveS
             // Detached: the page loaded it in a different scope, so without this
             // SaveChanges finds nothing to do and the edit is silently lost.
         else db.Entry(type).State = EntityState.Modified;
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task DeleteTypeAsync(int id, CancellationToken ct = default)
+    {
+        var type = await db.LeaveTypes.FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (type is null) return;
+
+        var requests = await db.LeaveRequests.CountAsync(r => r.LeaveTypeId == id, ct);
+        if (requests > 0)
+            throw new InvalidOperationException(
+                $"{type.Name} is used by {requests} leave request(s). Mark it inactive instead.");
+
+        if (await db.LeaveBalances.AnyAsync(b => b.LeaveTypeId == id, ct))
+            throw new InvalidOperationException(
+                $"{type.Name} has opened balances. Mark it inactive instead.");
+
+        db.LeaveTypes.Remove(type);
         await db.SaveChangesAsync(ct);
     }
 

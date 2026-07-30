@@ -37,11 +37,17 @@
     <Project Path="modules/Auto/Auto.Infrastructure/Auto.Infrastructure.csproj" />
     <Project Path="modules/Auto/Auto.Web/Auto.Web.csproj" />
   </Folder>
+  <Folder Name="/modules/ledger/">
+    <Project Path="modules/Ledger/Ledger.Domain/Ledger.Domain.csproj" />
+    <Project Path="modules/Ledger/Ledger.Infrastructure/Ledger.Infrastructure.csproj" />
+    <Project Path="modules/Ledger/Ledger.Web/Ledger.Web.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ErpPlatform.Shared.Tests/ErpPlatform.Shared.Tests.csproj" />
     <Project Path="tests/Hr.Tests/Hr.Tests.csproj" />
     <Project Path="tests/Repair.Tests/Repair.Tests.csproj" />
     <Project Path="tests/Inventory.Tests/Inventory.Tests.csproj" />
+    <Project Path="tests/Ledger.Tests/Ledger.Tests.csproj" />
   </Folder>
   <Folder Name="/apps/">
     <Project Path="src/FinanceERP.Web/FinanceERP.Web.csproj" />

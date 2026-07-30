@@ -1,0 +1,387 @@
+using ErpPlatform.Shared.Kernel;
+using Ledger.Domain;
+using Ledger.Infrastructure;
+using Microsoft.EntityFrameworkCore;
+using Xunit;
+
+namespace Ledger.Tests;
+
+/// <summary>
+/// Walks the scenario the module was built for: 100,000 taken from Mr A, then
+/// 50,000 each passed to Mr B and Mr C, with repayments coming back afterwards.
+/// The transfer pairing and the tree rollup are what make the book readable, so
+/// they are what these pin down.
+/// </summary>
+public class PlainLedgerTests : IAsyncLifetime
+{
+    private const string Server = "Server=localhost;Port=3306;User=finance;Password=DevPassword1!;";
+    private readonly string _database = $"erp_ledger_test_{Guid.NewGuid():N}"[..28];
+    private bool _available;
+
+    private DbContextOptions<LedgerDbContext> Opts() =>
+        new DbContextOptionsBuilder<LedgerDbContext>()
+            .UseMySql($"{Server}Database={_database};", new MySqlServerVersion(new Version(10, 11, 0)))
+            .Options;
+
+    private LedgerDbContext NewDb() => new(Opts(), new TestUser());
+    private LedgerService NewService(LedgerDbContext db) => new(db, new NullBookkeepingPoster());
+
+    public async Task InitializeAsync()
+    {
+        await using var db = NewDb();
+        try { await db.Database.EnsureCreatedAsync(); _available = true; }
+        catch { _available = false; }
+    }
+
+    public async Task DisposeAsync()
+    {
+        if (!_available) return;
+        await using var db = NewDb();
+        await db.Database.EnsureDeletedAsync();
+    }
+
+    private static PlainLedger MainLedger(string name, string party) => new()
+    {
+        Name = name, CounterpartyName = party,
+        Nature = LedgerNature.Payable,
+        OpenedOn = new DateOnly(2026, 7, 1)
+    };
+
+    private static PlainLedger Sub(string name, string party, int parentId) => new()
+    {
+        Name = name, CounterpartyName = party,
+        Nature = LedgerNature.Receivable, ParentLedgerId = parentId,
+        OpenedOn = new DateOnly(2026, 7, 1)
+    };
+
+    /// <summary>Builds the whole worked example and returns the three ledger ids.</summary>
+    private async Task<(int MainId, int BId, int CId)> SeedScenarioAsync()
+    {
+        await using var db = NewDb();
+        var svc = NewService(db);
+
+        var main = await svc.CreateAsync(MainLedger("Mr A — 1 lac taken", "Mr A"));
+        var b = await svc.CreateAsync(Sub("Mr B — 50k", "Mr B", main.Id));
+        var c = await svc.CreateAsync(Sub("Mr C — 50k", "Mr C", main.Id));
+
+        // Took 100,000 from Mr A: money into the main pot.
+        await svc.AddEntryAsync(new LedgerEntry
+        {
+            PlainLedgerId = main.Id, Date = new DateOnly(2026, 7, 1),
+            Direction = LedgerDirection.In, Amount = 100_000,
+            Description = "Cash taken from Mr A"
+        }, "u1", "Tester");
+
+        // Passed 50,000 to each of B and C.
+        await svc.TransferAsync(main.Id, b.Id, 50_000, new DateOnly(2026, 7, 2),
+            "Advance to Mr B", null, LedgerPaymentMethod.Cash, "u1", "Tester");
+        await svc.TransferAsync(main.Id, c.Id, 50_000, new DateOnly(2026, 7, 2),
+            "Advance to Mr C", null, LedgerPaymentMethod.Cash, "u1", "Tester");
+
+        return (main.Id, b.Id, c.Id);
+    }
+
+    [Fact]
+    public async Task A_transfer_writes_both_halves_as_a_linked_pair()
+    {
+        if (!_available) return;
+        var (mainId, bId, _) = await SeedScenarioAsync();
+
+        await using var db = NewDb();
+        var entries = await db.Entries.AsNoTracking()
+            .Where(e => e.Kind == LedgerEntryKind.Transfer).ToListAsync();
+
+        // Two transfers, so four halves, in two groups of two.
+        Assert.Equal(4, entries.Count);
+        var groups = entries.GroupBy(e => e.TransferGroup).ToList();
+        Assert.Equal(2, groups.Count);
+        Assert.All(groups, g => Assert.Equal(2, g.Count()));
+
+        // Each pair is one Out on the source and one In on the destination, and the
+        // two point at each other.
+        var pair = groups.First(g => g.Any(e => e.PlainLedgerId == bId));
+        var outHalf = pair.Single(e => e.Direction == LedgerDirection.Out);
+        var inHalf = pair.Single(e => e.Direction == LedgerDirection.In);
+
+        Assert.Equal(mainId, outHalf.PlainLedgerId);
+        Assert.Equal(bId, inHalf.PlainLedgerId);
+        Assert.Equal(bId, outHalf.CounterLedgerId);
+        Assert.Equal(mainId, inHalf.CounterLedgerId);
+        Assert.Equal(outHalf.Amount, inHalf.Amount);
+    }
+
+    [Fact]
+    public async Task Fully_distributing_a_main_ledger_leaves_it_unallocated_nil_but_the_tree_intact()
+    {
+        if (!_available) return;
+        var (mainId, _, _) = await SeedScenarioAsync();
+
+        await using var db = NewDb();
+        var tree = await NewService(db).GetTreeAsync();
+        var main = tree.Single(n => n.Ledger.Id == mainId);
+
+        // 100,000 in, 50,000 + 50,000 out: nothing left unallocated on the main.
+        Assert.Equal(0, main.Balance.Own);
+
+        // But the whole tree still holds the 100,000 — it's out with B and C, which
+        // is exactly what you still owe Mr A.
+        Assert.Equal(100_000, main.Balance.Rollup);
+        Assert.Equal(2, main.Children.Count);
+        Assert.All(main.Children, c => Assert.Equal(50_000, c.Balance.Own));
+    }
+
+    [Fact]
+    public async Task A_repayment_reduces_the_sub_ledger_and_the_tree_total()
+    {
+        if (!_available) return;
+        var (mainId, bId, _) = await SeedScenarioAsync();
+
+        await using var db = NewDb();
+        var svc = NewService(db);
+
+        // Mr B returns 20,000 — money leaves his pot back to you.
+        await svc.AddEntryAsync(new LedgerEntry
+        {
+            PlainLedgerId = bId, Date = new DateOnly(2026, 7, 10),
+            Direction = LedgerDirection.Out, Amount = 20_000,
+            Description = "Repayment from Mr B"
+        }, "u1", "Tester");
+
+        var tree = await svc.GetTreeAsync();
+        var main = tree.Single(n => n.Ledger.Id == mainId);
+        var b = main.Children.Single(c => c.Ledger.Id == bId);
+
+        Assert.Equal(30_000, b.Balance.Own);
+        Assert.Equal(80_000, main.Balance.Rollup);
+    }
+
+    [Fact]
+    public async Task Nesting_goes_deeper_than_two_levels()
+    {
+        if (!_available) return;
+        var (mainId, bId, _) = await SeedScenarioAsync();
+
+        await using var db = NewDb();
+        var svc = NewService(db);
+
+        // B passes 25,000 of it on to Mr D.
+        var d = await svc.CreateAsync(Sub("Mr D — 25k", "Mr D", bId));
+        await svc.TransferAsync(bId, d.Id, 25_000, new DateOnly(2026, 7, 5),
+            "Passed on to Mr D", null, LedgerPaymentMethod.Cash, "u1", "Tester");
+
+        var tree = await svc.GetTreeAsync();
+        var main = tree.Single(n => n.Ledger.Id == mainId);
+        var b = main.Children.Single(c => c.Ledger.Id == bId);
+
+        // main is depth 0, B is its child at 1, D sits under B at 2.
+        Assert.Equal(1, b.Depth);
+        Assert.Single(b.Children);
+        Assert.Equal(2, b.Children[0].Depth);
+        Assert.Equal(25_000, b.Balance.Own);
+        Assert.Equal(50_000, b.Balance.Rollup);
+        // The grandchild still counts toward the main ledger's tree total.
+        Assert.Equal(100_000, main.Balance.Rollup);
+    }
+
+    [Fact]
+    public async Task Deleting_one_half_of_a_transfer_removes_the_other()
+    {
+        if (!_available) return;
+        var (_, bId, _) = await SeedScenarioAsync();
+
+        await using var db = NewDb();
+        var svc = NewService(db);
+
+        var half = await db.Entries.AsNoTracking()
+            .FirstAsync(e => e.PlainLedgerId == bId && e.Kind == LedgerEntryKind.Transfer);
+        await svc.DeleteEntryAsync(half.Id);
+
+        // The pair goes together — a one-sided transfer would leave the two
+        // statements permanently disagreeing.
+        var left = await db.Entries.AsNoTracking()
+            .CountAsync(e => e.TransferGroup == half.TransferGroup);
+        Assert.Equal(0, left);
+    }
+
+    [Fact]
+    public async Task Amending_one_half_of_a_transfer_moves_both()
+    {
+        if (!_available) return;
+        var (_, bId, _) = await SeedScenarioAsync();
+
+        await using var db = NewDb();
+        var svc = NewService(db);
+
+        var half = await db.Entries.AsNoTracking()
+            .FirstAsync(e => e.PlainLedgerId == bId && e.Kind == LedgerEntryKind.Transfer);
+
+        half.Amount = 40_000;
+        half.Description = "Corrected advance";
+        await svc.UpdateEntryAsync(half);
+
+        var both = await db.Entries.AsNoTracking()
+            .Where(e => e.TransferGroup == half.TransferGroup).ToListAsync();
+        Assert.Equal(2, both.Count);
+        Assert.All(both, e => Assert.Equal(40_000, e.Amount));
+        Assert.All(both, e => Assert.Equal("Corrected advance", e.Description));
+    }
+
+    [Fact]
+    public async Task The_statement_running_balance_ends_at_the_ledger_balance()
+    {
+        if (!_available) return;
+        var (mainId, _, _) = await SeedScenarioAsync();
+
+        await using var db = NewDb();
+        var svc = NewService(db);
+        var statement = await svc.GetStatementAsync(mainId);
+
+        Assert.Equal(3, statement.Count);
+        Assert.Equal(100_000, statement[0].RunningBalance);
+        Assert.Equal(50_000, statement[1].RunningBalance);
+        Assert.Equal(0, statement[2].RunningBalance);
+    }
+
+    [Fact]
+    public async Task An_opening_balance_starts_the_running_balance()
+    {
+        if (!_available) return;
+
+        await using var db = NewDb();
+        var svc = NewService(db);
+        var l = await svc.CreateAsync(new PlainLedger
+        {
+            Name = "Carried over", CounterpartyName = "Mr E",
+            Nature = LedgerNature.Receivable, OpeningBalance = 15_000,
+            OpenedOn = new DateOnly(2026, 7, 1)
+        });
+
+        await svc.AddEntryAsync(new LedgerEntry
+        {
+            PlainLedgerId = l.Id, Date = new DateOnly(2026, 7, 3),
+            Direction = LedgerDirection.Out, Amount = 5_000, Description = "Part repaid"
+        }, "u1", "Tester");
+
+        var statement = await svc.GetStatementAsync(l.Id);
+        Assert.Equal(10_000, statement.Single().RunningBalance);
+    }
+
+    [Fact]
+    public async Task A_ledger_cannot_be_reparented_under_its_own_descendant()
+    {
+        if (!_available) return;
+        var (mainId, bId, _) = await SeedScenarioAsync();
+
+        await using var db = NewDb();
+        var svc = NewService(db);
+
+        var main = await svc.GetAsync(mainId);
+        main!.ParentLedgerId = bId;
+
+        // Otherwise the tree walk would have no way out.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.UpdateAsync(main));
+    }
+
+    [Fact]
+    public async Task A_ledger_with_entries_or_children_refuses_deletion()
+    {
+        if (!_available) return;
+        var (mainId, bId, _) = await SeedScenarioAsync();
+
+        await using var db = NewDb();
+        var svc = NewService(db);
+
+        // Main has both children and entries.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.DeleteAsync(mainId));
+        // B has a transfer half on it.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.DeleteAsync(bId));
+
+        Assert.NotNull(await svc.GetAsync(mainId));
+    }
+
+    [Fact]
+    public async Task An_empty_ledger_deletes()
+    {
+        if (!_available) return;
+
+        await using var db = NewDb();
+        var svc = NewService(db);
+        var l = await svc.CreateAsync(MainLedger("Scratch", "Nobody"));
+
+        await svc.DeleteAsync(l.Id);
+        Assert.Null(await svc.GetAsync(l.Id));
+    }
+
+    [Fact]
+    public async Task Transfers_and_entries_are_refused_on_a_closed_ledger()
+    {
+        if (!_available) return;
+        var (mainId, bId, _) = await SeedScenarioAsync();
+
+        await using var db = NewDb();
+        var svc = NewService(db);
+
+        var b = await svc.GetAsync(bId);
+        b!.Status = LedgerStatus.Settled;
+        await svc.UpdateAsync(b);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.AddEntryAsync(
+            new LedgerEntry
+            {
+                PlainLedgerId = bId, Direction = LedgerDirection.Out,
+                Amount = 100, Description = "late entry"
+            }, "u1", "Tester"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.TransferAsync(
+            mainId, bId, 100, new DateOnly(2026, 8, 1), "late transfer",
+            null, LedgerPaymentMethod.Cash, "u1", "Tester"));
+    }
+
+    [Fact]
+    public async Task Nonsense_amounts_and_self_transfers_are_refused()
+    {
+        if (!_available) return;
+        var (mainId, bId, _) = await SeedScenarioAsync();
+
+        await using var db = NewDb();
+        var svc = NewService(db);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.AddEntryAsync(
+            new LedgerEntry
+            {
+                PlainLedgerId = mainId, Direction = LedgerDirection.In,
+                Amount = 0, Description = "zero"
+            }, "u1", "Tester"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.TransferAsync(
+            mainId, mainId, 100, new DateOnly(2026, 8, 1), "to itself",
+            null, LedgerPaymentMethod.Cash, "u1", "Tester"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.TransferAsync(
+            mainId, bId, -50, new DateOnly(2026, 8, 1), "negative",
+            null, LedgerPaymentMethod.Cash, "u1", "Tester"));
+    }
+
+    [Fact]
+    public async Task Nothing_posts_to_the_books_when_accounting_is_unavailable()
+    {
+        if (!_available) return;
+        var (mainId, _, _) = await SeedScenarioAsync();
+
+        await using var db = NewDb();
+        // Seeded through NullBookkeepingPoster, so every entry stands on its own
+        // with no voucher behind it — the plain ledger works without accounting.
+        var posted = await db.Entries.AsNoTracking()
+            .CountAsync(e => e.PlainLedgerId == mainId && e.PostedVoucherId != null);
+        Assert.Equal(0, posted);
+    }
+
+    private sealed class TestUser : ICurrentUserService
+    {
+        public string? UserId => "test";
+        public string? UserName => "test";
+        public string? IpAddress => null;
+        public string? Browser => null;
+        public bool HasPermission(string permission) => true;
+    }
+}

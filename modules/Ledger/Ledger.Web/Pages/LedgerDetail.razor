@@ -1,0 +1,555 @@
+@page "/ledger/ledgers/{Id:int}"
+@attribute [Authorize(Policy = LedgerPermissions.View)]
+@layout LedgerLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_ledger?.Name ?? "Ledger")</PageTitle>
+
+@if (_ledger is null)
+{
+    <MudText>Loading…</MudText>
+}
+else
+{
+    <div class="d-flex align-center mb-4 flex-wrap gap-2">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/ledger/tree" />
+        <MudText Typo="Typo.h5">@_ledger.Name</MudText>
+        <MudChip T="string" Size="Size.Small"
+                 Color="@(_ledger.Nature == LedgerNature.Payable ? Color.Error : Color.Success)">
+            @_ledger.Nature
+        </MudChip>
+        @if (_ledger.Status != LedgerStatus.Open)
+        {
+            <MudChip T="string" Size="Size.Small">@_ledger.Status</MudChip>
+        }
+        <MudSpacer />
+        <AuthorizeView Policy="@LedgerPermissions.Manage">
+            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.Edit"
+                       Href="@($"/ledger/ledgers/{Id}/edit")">Edit</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.AccountTree"
+                       Href="@($"/ledger/ledgers/new?parent={Id}")">Add sub-ledger</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
+                       StartIcon="@Icons.Material.Filled.Delete"
+                       OnClick="@(() => _confirmDelete = true)">Delete</MudButton>
+        </AuthorizeView>
+    </div>
+
+    <MudGrid Spacing="3" Class="mb-2">
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-3">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Counterparty</MudText>
+                <MudText Typo="Typo.body1">@_ledger.CounterpartyName</MudText>
+                @if (!string.IsNullOrWhiteSpace(_ledger.CounterpartyPhone))
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@_ledger.CounterpartyPhone</MudText>
+                }
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-3">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">On this ledger</MudText>
+                <MudText Typo="Typo.h6">@_own.ToString("N2")</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@OwnMeaning()</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-3">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Whole tree</MudText>
+                <MudText Typo="Typo.h6">@_rollup.ToString("N2")</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    including @_ledger.Children.Count sub-ledger(s)
+                </MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-3">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Under</MudText>
+                <MudText Typo="Typo.body1">
+                    @if (_ledger.ParentLedger is { } p)
+                    {
+                        <MudLink Href="@($"/ledger/ledgers/{p.Id}")">@p.Name</MudLink>
+                    }
+                    else
+                    {
+                        <span>Main ledger</span>
+                    }
+                </MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @if (_ledger.Children.Count > 0)
+    {
+        <MudPaper Class="pa-4 mb-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Sub-ledgers</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>Ledger</th><th>Counterparty</th><th>Type</th><th style="text-align:right">Balance</th></tr></thead>
+                <tbody>
+                    @foreach (var c in _ledger.Children)
+                    {
+                        <tr>
+                            <td><MudLink Href="@($"/ledger/ledgers/{c.Id}")">@c.Name</MudLink></td>
+                            <td>@c.CounterpartyName</td>
+                            <td>@c.Nature</td>
+                            <td style="text-align:right">@_childBalances.GetValueOrDefault(c.Id).ToString("N2")</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    }
+
+    <MudPaper Class="pa-4 mb-4">
+        <div class="d-flex align-center mb-2 flex-wrap gap-2">
+            <MudText Typo="Typo.subtitle1">Statement</MudText>
+            <MudSpacer />
+            <AuthorizeView Policy="@LedgerPermissions.EntryRecord">
+                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="OpenEntryEditor">Add entry</MudButton>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                           StartIcon="@Icons.Material.Filled.SwapHoriz"
+                           OnClick="OpenTransfer">Transfer</MudButton>
+            </AuthorizeView>
+        </div>
+
+        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+            <thead>
+                <tr>
+                    <th>Date</th><th>Description</th><th>Kind</th><th>Method</th>
+                    <th style="text-align:right">In</th><th style="text-align:right">Out</th>
+                    <th style="text-align:right">Balance</th><th>By</th><th style="width:96px"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_ledger.OpeningBalance != 0)
+                {
+                    <tr>
+                        <td>@_ledger.OpenedOn.ToString("yyyy-MM-dd")</td>
+                        <td><i>Opening balance</i></td>
+                        <td colspan="4"></td>
+                        <td style="text-align:right">@_ledger.OpeningBalance.ToString("N2")</td>
+                        <td colspan="2"></td>
+                    </tr>
+                }
+                @foreach (var line in _statement)
+                {
+                    var e = line.Entry;
+                    <tr>
+                        <td>@e.Date.ToString("yyyy-MM-dd")</td>
+                        <td>
+                            @e.Description
+                            @if (e.Kind == LedgerEntryKind.Transfer && e.CounterLedgerId is { } cid)
+                            {
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">
+                                    @(e.Direction == LedgerDirection.In ? "from" : "to")
+                                    <MudLink Href="@($"/ledger/ledgers/{cid}")">
+                                        @_names.GetValueOrDefault(cid, $"#{cid}")
+                                    </MudLink>
+                                </MudText>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(e.Reference))
+                            {
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">
+                                    Ref: @e.Reference
+                                </MudText>
+                            }
+                        </td>
+                        <td>
+                            <MudChip T="string" Size="Size.Small"
+                                     Variant="@(e.Kind == LedgerEntryKind.Transfer ? Variant.Filled : Variant.Outlined)">
+                                @e.Kind
+                            </MudChip>
+                            @if (e.PostedVoucherId is not null)
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.Book" Size="Size.Small"
+                                         Color="Color.Success" Title="Posted to the books" />
+                            }
+                        </td>
+                        <td>@e.Method</td>
+                        <td style="text-align:right">
+                            @(e.Direction == LedgerDirection.In ? e.Amount.ToString("N2") : "")
+                        </td>
+                        <td style="text-align:right">
+                            @(e.Direction == LedgerDirection.Out ? e.Amount.ToString("N2") : "")
+                        </td>
+                        <td style="text-align:right">@line.RunningBalance.ToString("N2")</td>
+                        <td>@e.RecordedByName</td>
+                        <td>
+                            <AuthorizeView Policy="@LedgerPermissions.EntryAmend" Context="amend">
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                               OnClick="@(() => OpenEntryEditor(e))" />
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                               Color="Color.Error" OnClick="@(() => _deleteEntry = e)" />
+                            </AuthorizeView>
+                        </td>
+                    </tr>
+                }
+                @if (_statement.Count == 0 && _ledger.OpeningBalance == 0)
+                {
+                    <tr><td colspan="9" class="mud-text-secondary pa-4">
+                        Nothing recorded yet. Add an entry for money received or paid, or transfer
+                        to a sub-ledger to pass some of it on.
+                    </td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+
+@* --- entry editor --- *@
+@if (_entry is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:560px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_entry.Id == 0 ? "Add Entry" : "Edit Entry")</MudText>
+
+            @if (_entry.Kind == LedgerEntryKind.Transfer)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                    This is one half of a transfer. Changes apply to both sides.
+                </MudAlert>
+            }
+
+            <MudGrid Spacing="2">
+                <MudItem xs="6">
+                    <MudDatePicker Date="_entryDate" DateChanged="@(d => _entryDate = d)"
+                                   Label="Date" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField T="decimal" @bind-Value="_entry.Amount" Label="Amount"
+                                     Min="0.01M" Margin="Margin.Dense" />
+                </MudItem>
+                @if (_entry.Kind == LedgerEntryKind.External)
+                {
+                    <MudItem xs="12">
+                        <MudSelect T="LedgerDirection" @bind-Value="_entry.Direction" Label="Direction"
+                                   Margin="Margin.Dense">
+                            <MudSelectItem T="LedgerDirection" Value="@LedgerDirection.In">@InLabel()</MudSelectItem>
+                            <MudSelectItem T="LedgerDirection" Value="@LedgerDirection.Out">@OutLabel()</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                }
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_entry.Description" Label="Description" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudSelect T="LedgerPaymentMethod" @bind-Value="_entry.Method" Label="Method"
+                               Margin="Margin.Dense">
+                        @foreach (var m in Enum.GetValues<LedgerPaymentMethod>())
+                        {
+                            <MudSelectItem T="LedgerPaymentMethod" Value="@m">@m</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6">
+                    <MudTextField @bind-Value="_entry.Reference" Label="Reference" Margin="Margin.Dense" />
+                </MudItem>
+            </MudGrid>
+
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _entry = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveEntry">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@* --- transfer --- *@
+@if (_transferOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:560px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-1">Transfer</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                Moves money out of @_ledger?.Name into another ledger. Both statements get a
+                matching line, so the two can never disagree.
+            </MudText>
+
+            <MudSelect T="int?" @bind-Value="_transferTo" Label="To ledger" Class="mb-2">
+                @foreach (var l in _transferTargets)
+                {
+                    <MudSelectItem T="int?" Value="@l.Id">@l.Name — @l.CounterpartyName</MudSelectItem>
+                }
+            </MudSelect>
+            <MudGrid Spacing="2">
+                <MudItem xs="6">
+                    <MudDatePicker Date="_transferDate" DateChanged="@(d => _transferDate = d)"
+                                   Label="Date" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField T="decimal" @bind-Value="_transferAmount" Label="Amount"
+                                     Min="0.01M" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_transferDescription" Label="Description" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudSelect T="LedgerPaymentMethod" @bind-Value="_transferMethod" Label="Method"
+                               Margin="Margin.Dense">
+                        @foreach (var m in Enum.GetValues<LedgerPaymentMethod>())
+                        {
+                            <MudSelectItem T="LedgerPaymentMethod" Value="@m">@m</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6">
+                    <MudTextField @bind-Value="_transferReference" Label="Reference" Margin="Margin.Dense" />
+                </MudItem>
+            </MudGrid>
+
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _transferOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="DoTransfer"
+                           Disabled="@(_transferTo is null)">Transfer</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_deleteEntry is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-2">Remove this entry?</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                @_deleteEntry.Date.ToString("yyyy-MM-dd") — @_deleteEntry.Description
+                (@_deleteEntry.Amount.ToString("N2"))
+                @if (_deleteEntry.Kind == LedgerEntryKind.Transfer)
+                {
+                    <b> Both halves of the transfer go.</b>
+                }
+            </MudText>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _deleteEntry = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="DoDeleteEntry">Remove</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_confirmDelete)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-2">Delete @_ledger?.Name?</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                Only possible while it has no sub-ledgers and no entries. Close it instead
+                to keep the record.
+            </MudText>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _confirmDelete = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="DoDelete">Delete</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private PlainLedger? _ledger;
+    private List<StatementLine> _statement = [];
+    private Dictionary<int, string> _names = [];
+    private Dictionary<int, decimal> _childBalances = [];
+    private decimal _own, _rollup;
+
+    private LedgerEntry? _entry;
+    private DateTime? _entryDate;
+    private LedgerEntry? _deleteEntry;
+    private bool _confirmDelete;
+
+    private bool _transferOpen;
+    private List<PlainLedger> _transferTargets = [];
+    private int? _transferTo;
+    private decimal _transferAmount;
+    private DateTime? _transferDate = DateTime.Today;
+    private string _transferDescription = "";
+    private string? _transferReference;
+    private LedgerPaymentMethod _transferMethod = LedgerPaymentMethod.Cash;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<ILedgerService>();
+
+        _ledger = await svc.GetAsync(Id);
+        if (_ledger is null) return;
+
+        _statement = await svc.GetStatementAsync(Id);
+        _own = _ledger.OpeningBalance + _ledger.Entries.Sum(e => e.Signed);
+
+        var all = await svc.ListAsync(new LedgerFilter());
+        _names = all.ToDictionary(l => l.Id, l => l.Name);
+        _childBalances = all.Where(l => l.ParentLedgerId == Id)
+            .ToDictionary(l => l.Id, l => l.OpeningBalance + l.Entries.Sum(e => e.Signed));
+
+        // Rollup over the whole subtree, not just direct children.
+        var byParent = all.GroupBy(l => l.ParentLedgerId ?? 0)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        _rollup = Rollup(Id);
+
+        _transferTargets = all.Where(l => l.Id != Id && l.Status == LedgerStatus.Open).ToList();
+
+        decimal Rollup(int ledgerId)
+        {
+            var self = all.First(l => l.Id == ledgerId);
+            var total = self.OpeningBalance + self.Entries.Sum(e => e.Signed);
+            foreach (var child in byParent.GetValueOrDefault(ledgerId, []))
+                total += Rollup(child.Id);
+            return total;
+        }
+    }
+
+    private string OwnMeaning() => _ledger is null ? "" : _ledger.Nature switch
+    {
+        LedgerNature.Payable when _own > 0 => "still held by you, owed to them",
+        LedgerNature.Payable when _own < 0 => "you have overpaid them",
+        LedgerNature.Receivable when _own > 0 => "they are holding your money",
+        LedgerNature.Receivable when _own < 0 => "they have returned more than taken",
+        _ => "settled"
+    };
+
+    private string InLabel() => _ledger?.Nature == LedgerNature.Payable
+        ? "In — you received money from them"
+        : "In — you gave money to them";
+
+    private string OutLabel() => _ledger?.Nature == LedgerNature.Payable
+        ? "Out — you paid them back"
+        : "Out — they returned money to you";
+
+    private void OpenEntryEditor() => OpenEntryEditor(null);
+
+    private void OpenEntryEditor(LedgerEntry? existing)
+    {
+        if (existing is null)
+        {
+            _entry = new LedgerEntry
+            {
+                PlainLedgerId = Id, Amount = 0,
+                Direction = LedgerDirection.In, Kind = LedgerEntryKind.External
+            };
+            _entryDate = DateTime.Today;
+        }
+        else
+        {
+            // A copy, so cancelling leaves the statement untouched.
+            _entry = new LedgerEntry
+            {
+                Id = existing.Id, PlainLedgerId = existing.PlainLedgerId, Amount = existing.Amount,
+                Direction = existing.Direction, Kind = existing.Kind,
+                Description = existing.Description, Reference = existing.Reference,
+                Method = existing.Method, CounterLedgerId = existing.CounterLedgerId,
+                TransferGroup = existing.TransferGroup
+            };
+            _entryDate = existing.Date.ToDateTime(TimeOnly.MinValue);
+        }
+    }
+
+    private async Task<(string Id, string Name)> CurrentUserAsync()
+    {
+        var user = (await AuthState.GetAuthenticationStateAsync()).User;
+        var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+        var name = user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown";
+        return (userId, name);
+    }
+
+    private async Task SaveEntry()
+    {
+        try
+        {
+            _entry!.Date = _entryDate is { } d
+                ? DateOnly.FromDateTime(d)
+                : DateOnly.FromDateTime(DateTime.UtcNow);
+
+            using var scope = ScopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<ILedgerService>();
+
+            if (_entry.Id == 0)
+            {
+                var (userId, name) = await CurrentUserAsync();
+                await svc.AddEntryAsync(_entry, userId, name);
+            }
+            else
+            {
+                await svc.UpdateEntryAsync(_entry);
+            }
+
+            _entry = null;
+            Snackbar.Add("Entry saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private void OpenTransfer()
+    {
+        _transferOpen = true;
+        _transferTo = null;
+        _transferAmount = 0;
+        _transferDate = DateTime.Today;
+        _transferDescription = "";
+        _transferReference = null;
+        _transferMethod = LedgerPaymentMethod.Cash;
+    }
+
+    private async Task DoTransfer()
+    {
+        try
+        {
+            var (userId, name) = await CurrentUserAsync();
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<ILedgerService>().TransferAsync(
+                Id, _transferTo!.Value, _transferAmount,
+                _transferDate is { } d ? DateOnly.FromDateTime(d) : DateOnly.FromDateTime(DateTime.UtcNow),
+                _transferDescription, _transferReference, _transferMethod, userId, name);
+
+            _transferOpen = false;
+            Snackbar.Add("Transfer recorded on both ledgers.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DoDeleteEntry()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<ILedgerService>()
+                .DeleteEntryAsync(_deleteEntry!.Id);
+            _deleteEntry = null;
+            Snackbar.Add("Entry removed.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _deleteEntry = null;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DoDelete()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<ILedgerService>().DeleteAsync(Id);
+            Snackbar.Add("Ledger deleted.", Severity.Success);
+            Nav.NavigateTo("/ledger/tree");
+        }
+        catch (Exception ex)
+        {
+            _confirmDelete = false;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

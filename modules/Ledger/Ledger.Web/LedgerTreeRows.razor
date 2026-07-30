@@ -1,0 +1,49 @@
+@* Recursive: renders one node then calls itself for the children, so the tree
+   displays at whatever depth the books actually go. *@
+
+@foreach (var node in Nodes)
+{
+    <tr>
+        <td>
+            <div style="@($"padding-left:{node.Depth * 22}px")" class="d-flex align-center gap-1">
+                @if (node.Depth > 0)
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.SubdirectoryArrowRight"
+                             Size="Size.Small" Class="mud-text-secondary" />
+                }
+                <MudLink Href="@($"/ledger/ledgers/{node.Ledger.Id}")">@node.Ledger.Name</MudLink>
+            </div>
+        </td>
+        <td>@node.Ledger.CounterpartyName</td>
+        <td>
+            <MudChip T="string" Size="Size.Small"
+                     Color="@(node.Ledger.Nature == LedgerNature.Payable ? Color.Error : Color.Success)">
+                @node.Ledger.Nature
+            </MudChip>
+        </td>
+        <td>
+            @if (node.Ledger.Status != LedgerStatus.Open)
+            {
+                <MudChip T="string" Size="Size.Small">@node.Ledger.Status</MudChip>
+            }
+        </td>
+        <td>@node.Balance.EntryCount</td>
+        <td style="text-align:right">@node.Balance.Own.ToString("N2")</td>
+        <td style="text-align:right">
+            @if (node.Children.Count > 0)
+            {
+                <b>@node.Balance.Rollup.ToString("N2")</b>
+            }
+            else
+            {
+                <span class="mud-text-secondary">—</span>
+            }
+        </td>
+    </tr>
+
+    <LedgerTreeRows Nodes="node.Children" />
+}
+
+@code {
+    [Parameter, EditorRequired] public List<LedgerNode> Nodes { get; set; } = [];
+}

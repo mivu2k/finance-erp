@@ -38,7 +38,7 @@ db_running() { [ -S "$SOCK" ] && "$PKG/usr/bin/mariadb-admin" --socket="$SOCK" -
 # One database per app, plus the shared identity database every app authenticates
 # against. The accounts module keeps the original `finance_erp` name so existing
 # installs upgrade in place rather than starting empty.
-DATABASES=(erp_identity finance_erp erp_repair erp_gatepass erp_hr erp_inventory erp_auto)
+DATABASES=(erp_identity finance_erp erp_repair erp_gatepass erp_hr erp_inventory erp_auto erp_ledger)
 
 db_ensure() {
     local sql=""
@@ -48,7 +48,7 @@ db_ensure() {
         sql+="GRANT ALL PRIVILEGES ON $d.* TO 'finance'@'127.0.0.1';"
     done
     # Integration tests spin up and drop their own throwaway databases.
-    for t in erp_hr_test erp_repair_test erp_inventory_test; do
+    for t in erp_hr_test erp_repair_test erp_inventory_test erp_ledger_test; do
         sql+="GRANT ALL PRIVILEGES ON \`${t}%\`.* TO 'finance'@'localhost';"
         sql+="GRANT ALL PRIVILEGES ON \`${t}%\`.* TO 'finance'@'127.0.0.1';"
     done

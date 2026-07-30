@@ -1,4 +1,5 @@
 using ErpPlatform.Shared.Identity;
+using ErpPlatform.Shared.Kernel;
 using FinanceERP.Application.Interfaces;
 using FinanceERP.Infrastructure.Persistence;
 using FinanceERP.Infrastructure.Services;
@@ -45,6 +46,11 @@ public static class DependencyInjection
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IReconciliationService, ReconciliationService>();
         services.AddSingleton<IAppEmailSender, EmailService>();
+
+        // The one doorway other modules have into the books. Registered here rather
+        // than in the host so it only exists when accounting is actually wired in;
+        // the host falls back to NullBookkeepingPoster otherwise.
+        services.AddScoped<IBookkeepingPoster, BookkeepingPoster>();
 
         return services;
     }

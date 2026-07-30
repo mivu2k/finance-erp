@@ -1,0 +1,110 @@
+@page "/ledger"
+@attribute [Authorize(Policy = "module:ledger")]
+@layout LedgerLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Plain Ledger</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Plain Ledger</MudText>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Main ledgers</MudText>
+            <MudText Typo="Typo.h4">@_mainCount</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Sub-ledgers</MudText>
+            <MudText Typo="Typo.h4">@_subCount</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">They owe you</MudText>
+            <MudText Typo="Typo.h5" Color="Color.Success">@_receivable.ToString("N2")</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">You owe them</MudText>
+            <MudText Typo="Typo.h5" Color="Color.Error">@_payable.ToString("N2")</MudText>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <div class="d-flex align-center mb-2">
+                <MudText Typo="Typo.subtitle1">Main ledgers</MudText>
+                <MudSpacer />
+                <MudButton Size="Size.Small" Variant="Variant.Text" Href="/ledger/tree"
+                           EndIcon="@Icons.Material.Filled.ChevronRight">Full tree</MudButton>
+            </div>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead>
+                    <tr>
+                        <th>Ledger</th><th>Counterparty</th><th>Type</th><th>Subs</th>
+                        <th style="text-align:right">Unallocated</th>
+                        <th style="text-align:right">Whole tree</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var n in _roots)
+                    {
+                        <tr>
+                            <td><MudLink Href="@($"/ledger/ledgers/{n.Ledger.Id}")">@n.Ledger.Name</MudLink></td>
+                            <td>@n.Ledger.CounterpartyName</td>
+                            <td>
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(n.Ledger.Nature == LedgerNature.Payable ? Color.Error : Color.Success)">
+                                    @n.Ledger.Nature
+                                </MudChip>
+                            </td>
+                            <td>@n.Children.Count</td>
+                            <td style="text-align:right">@n.Balance.Own.ToString("N2")</td>
+                            <td style="text-align:right"><b>@n.Balance.Rollup.ToString("N2")</b></td>
+                        </tr>
+                    }
+                    @if (_roots.Count == 0)
+                    {
+                        <tr><td colspan="6" class="mud-text-secondary pa-4">
+                            No ledgers yet. Open a main ledger for money you have taken or given,
+                            then add sub-ledgers under it as you pass it on.
+                        </td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private List<LedgerNode> _roots = [];
+    private int _mainCount, _subCount;
+    private decimal _receivable, _payable;
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<ILedgerService>();
+
+        _roots = await svc.GetTreeAsync();
+        _mainCount = _roots.Count;
+        _subCount = _roots.Sum(CountDescendants);
+
+        // A receivable ledger with money still on it is someone holding yours; a
+        // payable one with money on it is what you still owe.
+        var all = await svc.ListAsync(new LedgerFilter());
+        foreach (var l in all.Where(l => l.Status == LedgerStatus.Open))
+        {
+            var own = l.OpeningBalance + l.Entries.Sum(e => e.Signed);
+            if (l.Nature == LedgerNature.Receivable && own > 0) _receivable += own;
+            if (l.Nature == LedgerNature.Payable && own > 0) _payable += own;
+        }
+    }
+
+    private static int CountDescendants(LedgerNode n) =>
+        n.Children.Count + n.Children.Sum(CountDescendants);
+}

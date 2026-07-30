@@ -57,6 +57,8 @@
                                        OnClick="@(() => Reissue(station))" />
                         <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
                                        OnClick="@(() => Open(station))" />
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                       Color="Color.Error" OnClick="@(() => _delete = station)" />
                     </td>
                 </tr>
             }
@@ -97,10 +99,29 @@
     </MudOverlay>
 }
 
+@if (_delete is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:480px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-2">Delete @_delete.Name?</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                Its kiosk link stops working immediately. Punches already recorded are kept —
+                they belong to the employee, not the door. Disable the station instead if you
+                only want to take it out of use for a while.
+            </MudText>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _delete = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="Delete">Delete</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
 @code {
     private List<AttendanceStation> _stations = [];
     private AttendanceStation _edit = new();
     private bool _editorOpen;
+    private AttendanceStation? _delete;
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -164,6 +185,30 @@
 
         await LoadAsync();
         Snackbar.Add($"{row.Name} re-issued — reopen the kiosk on that PC.", Severity.Warning);
+    }
+
+    /// <summary>
+    /// Punches are deliberately left behind: a punch records that a person was at
+    /// work, which stays true after the door it was scanned at is retired.
+    /// </summary>
+    private async Task Delete()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<HrDbContext>();
+            var row = await db.AttendanceStations.FirstOrDefaultAsync(s => s.Id == _delete!.Id);
+            if (row is not null) { db.AttendanceStations.Remove(row); await db.SaveChangesAsync(); }
+
+            _delete = null;
+            Snackbar.Add("Station deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _delete = null;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
     }
 
     /// <summary>URL-safe and long enough that guessing one is not worth attempting.</summary>
