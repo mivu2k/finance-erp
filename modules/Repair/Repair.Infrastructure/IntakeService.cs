@@ -67,54 +67,60 @@ public class IntakeService(RepairDbContext db) : IIntakeService
         if (devices.Any(d => string.IsNullOrWhiteSpace(d.IssueDescription)))
             throw new InvalidOperationException("Every device needs a reported fault.");
 
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
-
-        var numbers = new DocumentNumberService(db);
-        var now = DateTime.UtcNow;
-
-        intake.IntakeNumber = await numbers.NextAsync("Intake", "INT", ct);
-        intake.ReceivedAtUtc = now;
-        intake.ReceivedById = receivedById;
-        intake.ReceivedByName = receivedByName;
-        db.Intakes.Add(intake);
-
-        foreach (var device in devices)
+        // EnableRetryOnFailure requires transactions to run through the execution
+        // strategy so a retried attempt re-runs the whole unit, not a half-open one.
+        var strategy = db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
-            var job = new RepairJob
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            var numbers = new DocumentNumberService(db);
+            var now = DateTime.UtcNow;
+
+            intake.IntakeNumber = await numbers.NextAsync("Intake", "INT", ct);
+            intake.ReceivedAtUtc = now;
+            intake.ReceivedById = receivedById;
+            intake.ReceivedByName = receivedByName;
+            db.Intakes.Add(intake);
+
+            foreach (var device in devices)
             {
-                JobNumber = await numbers.NextAsync("RepairJob", "JOB", ct),
-                Intake = intake,
-                CustomerId = intake.CustomerId,
-                DeviceName = device.DeviceName.Trim(),
-                Brand = device.Brand,
-                Model = device.Model,
-                SerialNumber = device.SerialNumber,
-                ConditionOnArrival = device.Condition,
-                IssueDescription = device.IssueDescription.Trim(),
-                Priority = device.Priority,
-                ExpectedDeliveryDate = device.ExpectedDelivery,
-                Status = JobStatus.Received,
-                StatusUpdatedAtUtc = now,
-                Symptoms = device.SymptomIds.Distinct()
-                    .Select(id => new JobSymptom { SymptomId = id }).ToList(),
-                Accessories = device.AccessoryIds.Distinct()
-                    .Select(id => new JobAccessory { AccessoryId = id }).ToList()
-            };
+                var job = new RepairJob
+                {
+                    JobNumber = await numbers.NextAsync("RepairJob", "JOB", ct),
+                    Intake = intake,
+                    CustomerId = intake.CustomerId,
+                    DeviceName = device.DeviceName.Trim(),
+                    Brand = device.Brand,
+                    Model = device.Model,
+                    SerialNumber = device.SerialNumber,
+                    ConditionOnArrival = device.Condition,
+                    IssueDescription = device.IssueDescription.Trim(),
+                    Priority = device.Priority,
+                    ExpectedDeliveryDate = device.ExpectedDelivery,
+                    Status = JobStatus.Received,
+                    StatusUpdatedAtUtc = now,
+                    Symptoms = device.SymptomIds.Distinct()
+                        .Select(id => new JobSymptom { SymptomId = id }).ToList(),
+                    Accessories = device.AccessoryIds.Distinct()
+                        .Select(id => new JobAccessory { AccessoryId = id }).ToList()
+                };
 
-            job.StatusHistory.Add(new JobStatusHistory
-            {
-                ChangedById = receivedById,
-                ChangedByName = receivedByName,
-                FromStatus = JobStatus.Received,
-                ToStatus = JobStatus.Received,
-                Note = "Received at the counter"
-            });
+                job.StatusHistory.Add(new JobStatusHistory
+                {
+                    ChangedById = receivedById,
+                    ChangedByName = receivedByName,
+                    FromStatus = JobStatus.Received,
+                    ToStatus = JobStatus.Received,
+                    Note = "Received at the counter"
+                });
 
-            intake.Jobs.Add(job);
-        }
+                intake.Jobs.Add(job);
+            }
 
-        await db.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
-        return intake;
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return intake;
+        });
     }
 }

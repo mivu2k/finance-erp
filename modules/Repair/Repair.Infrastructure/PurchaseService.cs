@@ -125,23 +125,29 @@ public class PurchaseService(RepairDbContext db) : IPurchaseService
 
         IPurchaseService.Recalculate(purchase);
 
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // EnableRetryOnFailure requires transactions to run through the execution
+        // strategy so a retried attempt re-runs the whole unit, not a half-open one.
+        var strategy = db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
 
-        purchase.PurchaseNumber = await new DocumentNumberService(db)
-            .NextAsync("PartPurchase", "PUR", ct);
-        purchase.ReceivedById = userId;
-        purchase.ReceivedByName = userName;
-        if (purchase.PurchasedOn == default)
-            purchase.PurchasedOn = DateOnly.FromDateTime(DateTime.Today);
+            purchase.PurchaseNumber = await new DocumentNumberService(db)
+                .NextAsync("PartPurchase", "PUR", ct);
+            purchase.ReceivedById = userId;
+            purchase.ReceivedByName = userName;
+            if (purchase.PurchasedOn == default)
+                purchase.PurchasedOn = DateOnly.FromDateTime(DateTime.Today);
 
-        db.PartPurchases.Add(purchase);
-        await db.SaveChangesAsync(ct);
+            db.PartPurchases.Add(purchase);
+            await db.SaveChangesAsync(ct);
 
-        await ApplyToPartsAsync(purchase, ct);
+            await ApplyToPartsAsync(purchase, ct);
 
-        await db.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
-        return purchase;
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return purchase;
+        });
     }
 
     /// <summary>
