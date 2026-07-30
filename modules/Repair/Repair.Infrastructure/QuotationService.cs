@@ -213,6 +213,7 @@ public class QuotationService(RepairDbContext db) : IQuotationService
                       .Include(j => j.Customer).Include(j => j.Intake)
                       .Include(j => j.WorkItems).ThenInclude(w => w.Part)
                       .AsNoTracking()
+                      .AsSplitQuery()
                       .FirstOrDefaultAsync(j => j.Id == jobId, ct)
                   ?? throw new InvalidOperationException("Job not found.");
 
@@ -239,10 +240,16 @@ public class QuotationService(RepairDbContext db) : IQuotationService
 
     public async Task<Quotation> BuildForIntakeAsync(int intakeId, CancellationToken ct = default)
     {
+        // AsSplitQuery: Jobs (collection) -> WorkItems (collection) -> Part is a
+        // nested collection-of-collections Include. Without splitting, an intake
+        // with several jobs whose work items share the same part hits the same
+        // EF Core Cartesian-multiplication bug fixed in RepairJobService.Detailed —
+        // "already being tracked" for Part even under AsNoTracking.
         var intake = await db.Intakes
                          .Include(i => i.Customer)
                          .Include(i => i.Jobs).ThenInclude(j => j.WorkItems).ThenInclude(w => w.Part)
                          .AsNoTracking()
+                         .AsSplitQuery()
                          .FirstOrDefaultAsync(i => i.Id == intakeId, ct)
                      ?? throw new InvalidOperationException("Intake not found.");
 
