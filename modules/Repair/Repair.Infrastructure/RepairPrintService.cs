@@ -27,11 +27,14 @@ public interface IRepairPrintService
 {
     /// <summary>Handed to the customer when the device is booked in.</summary>
     byte[] IntakeReceipt(Intake intake, PrintSize size, CompanyBranding company);
-    /// <summary>Small adhesive label for the device itself.</summary>
-    byte[] DeviceLabels(Intake intake, CompanyBranding company);
+    /// <summary>
+    /// Small adhesive label for the device itself. Pass a template to use an
+    /// admin-defined size and field list; without one the built-in 62mm layout is used.
+    /// </summary>
+    byte[] DeviceLabels(Intake intake, CompanyBranding company, LabelTemplateSpec? template = null);
     byte[] JobCard(RepairJob job, CompanyBranding company);
     /// <summary>Single device label, reprinted from the job.</summary>
-    byte[] JobLabel(RepairJob job, CompanyBranding company);
+    byte[] JobLabel(RepairJob job, CompanyBranding company, LabelTemplateSpec? template = null);
     byte[] Quotation(Quotation quotation, CompanyBranding company);
     byte[] Invoice(SalesOrder order, PrintSize size, CompanyBranding company);
     /// <summary>Signed on handover — the workshop's proof the device left.</summary>
@@ -136,17 +139,46 @@ public class RepairPrintService : IRepairPrintService
                 });
             });
 
-    public byte[] DeviceLabels(Intake intake, CompanyBranding company) =>
-        Document.Create(doc =>
-        {
-            // One label per device, on a 62mm roll — the usual label-printer size.
-            foreach (var job in intake.Jobs)
-                doc.Page(page => Label(page, job, intake, company));
-        }).GeneratePdf();
+    public byte[] DeviceLabels(Intake intake, CompanyBranding company, LabelTemplateSpec? template = null) =>
+        template is null
+            ? Document.Create(doc =>
+            {
+                // One label per device, on a 62mm roll — the usual label-printer size.
+                foreach (var job in intake.Jobs)
+                    doc.Page(page => Label(page, job, intake, company));
+            }).GeneratePdf()
+            : LabelRenderer.Render(template,
+                intake.Jobs.Select(j => LabelDataFor(j, intake)).ToList(), company);
 
-    public byte[] JobLabel(RepairJob job, CompanyBranding company) =>
-        Document.Create(doc => doc.Page(page => Label(page, job, job.Intake, company)))
-            .GeneratePdf();
+    public byte[] JobLabel(RepairJob job, CompanyBranding company, LabelTemplateSpec? template = null) =>
+        template is null
+            ? Document.Create(doc => doc.Page(page => Label(page, job, job.Intake, company)))
+                .GeneratePdf()
+            : LabelRenderer.Render(template, [LabelDataFor(job, job.Intake)], company);
+
+    /// <summary>
+    /// Every field a device label could show, keyed as RepairModule advertises them.
+    /// The template picks which of these print, so offering all of them is free.
+    /// </summary>
+    private static LabelData LabelDataFor(RepairJob job, Intake? intake) => new(
+        job.DeviceName,
+        job.JobNumber,
+        new Dictionary<string, string?>
+        {
+            ["job.number"] = job.JobNumber,
+            ["device.name"] = job.DeviceName,
+            ["device.brand"] = job.Brand,
+            ["device.model"] = job.Model,
+            ["device.serial"] = string.IsNullOrWhiteSpace(job.SerialNumber)
+                ? null : $"S/N {job.SerialNumber}",
+            ["customer.name"] = job.Customer?.Name,
+            ["customer.phone"] = job.Customer?.Phone,
+            ["intake.number"] = intake?.IntakeNumber,
+            ["intake.received"] = intake is null ? null : $"In: {intake.ReceivedAtUtc:yyyy-MM-dd}",
+            ["job.fault"] = job.IssueDescription,
+            ["job.expected"] = job.ExpectedDeliveryDate is { } d ? $"Due: {d:yyyy-MM-dd}" : null,
+            ["job.status"] = job.Status.ToString()
+        });
 
     private static void Label(PageDescriptor page, RepairJob job, Intake? intake, CompanyBranding company)
     {

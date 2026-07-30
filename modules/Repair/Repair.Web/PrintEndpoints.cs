@@ -1,4 +1,5 @@
 using ErpPlatform.Shared.Identity;
+using ErpPlatform.Shared.Printing;
 using ErpPlatform.Shared.Kernel;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -36,13 +37,18 @@ public static class PrintEndpoints
                 $"{intake.IntakeNumber}-receipt");
         }).RequireAuthorization(RepairPermissions.IntakesView);
 
+        // ?template= picks a saved layout; omitted uses the default for device
+        // labels, and with none configured the built-in 62mm layout.
         print.MapGet("/intake/{id:int}/labels", async (
-            int id, IIntakeService intakes, IRepairPrintService printer, ICompanyProfileService companies) =>
+            int id, int? template, IIntakeService intakes, IRepairPrintService printer,
+            ICompanyProfileService companies, ILabelTemplateService labels) =>
         {
             var intake = await intakes.GetAsync(id);
             if (intake is null) return Results.NotFound();
 
-            return Pdf(printer.DeviceLabels(intake, await companies.GetBrandingAsync()), $"{intake.IntakeNumber}-labels");
+            return Pdf(printer.DeviceLabels(intake, await companies.GetBrandingAsync(),
+                    await ResolveLabelAsync(labels, template)),
+                $"{intake.IntakeNumber}-labels");
         }).RequireAuthorization(RepairPermissions.IntakesView);
 
         // --- workshop ---
@@ -57,12 +63,15 @@ public static class PrintEndpoints
         }).RequireAuthorization(RepairPermissions.JobsView);
 
         print.MapGet("/job/{id:int}/label", async (
-            int id, IRepairJobService jobs, IRepairPrintService printer, ICompanyProfileService companies) =>
+            int id, int? template, IRepairJobService jobs, IRepairPrintService printer,
+            ICompanyProfileService companies, ILabelTemplateService labels) =>
         {
             var job = await jobs.GetAsync(id);
             if (job is null) return Results.NotFound();
 
-            return Pdf(printer.JobLabel(job, await companies.GetBrandingAsync()), $"{job.JobNumber}-label");
+            return Pdf(printer.JobLabel(job, await companies.GetBrandingAsync(),
+                    await ResolveLabelAsync(labels, template)),
+                $"{job.JobNumber}-label");
         }).RequireAuthorization(RepairPermissions.JobsView);
 
         // --- delivering ---
@@ -173,6 +182,27 @@ public static class PrintEndpoints
         string.Equals(size, "pos", StringComparison.OrdinalIgnoreCase)
             ? PrintSize.Pos
             : PrintSize.A4;
+
+    /// <summary>
+    /// Turns a saved template into the flat spec the renderer wants, or null when
+    /// none applies — null means the built-in layout, so labels keep working on an
+    /// install where nobody has configured one.
+    /// </summary>
+    private static async Task<LabelTemplateSpec?> ResolveLabelAsync(
+        ILabelTemplateService labels, int? templateId)
+    {
+        var t = templateId is { } id
+            ? await labels.GetAsync(id)
+            : await labels.GetDefaultAsync(LabelDocumentTypes.RepairDevice);
+
+        // A template saved for another kind of record would ask for fields a job
+        // can't supply, so it is ignored rather than printed half-empty.
+        if (t is null || t.DocumentType != LabelDocumentTypes.RepairDevice) return null;
+
+        return new LabelTemplateSpec(
+            t.WidthMm, t.HeightMm, t.MarginMm, t.SelectedFields(),
+            t.ShowTitle, t.ShowCompanyName, t.ShowBarcode, t.ShowQrCode, t.FontScale);
+    }
 
     private static IResult Pdf(byte[] bytes, string fileName) =>
         Results.File(bytes, "application/pdf", $"{fileName}.pdf");

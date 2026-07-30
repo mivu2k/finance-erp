@@ -3,10 +3,15 @@ using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 
-namespace Repair.Infrastructure;
+namespace ErpPlatform.Shared.Printing;
 
 /// <summary>Draws a Code 128 barcode into a PDF as a row of filled rectangles.</summary>
-internal static class BarcodeRenderer
+/// <remarks>
+/// Lives in the shared printing library rather than one module: every module that
+/// prints a document puts the same Code 128 and QR on it, and the label renderer
+/// needs it too.
+/// </remarks>
+public static class BarcodeRenderer
 {
     /// <summary>
     /// Renders <paramref name="text"/> to fill the container's width.

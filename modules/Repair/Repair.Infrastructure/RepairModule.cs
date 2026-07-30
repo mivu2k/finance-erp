@@ -128,6 +128,24 @@ public static class RepairModule
         services.AddSingleton<IReportExportService, ReportExportService>();
         services.AddSingleton<IRepairPrintService, RepairPrintService>();
 
+        // What a device label may carry. Registered here so the admin screen can
+        // only ever offer fields the print service is able to fill.
+        LabelFieldCatalog.Register(LabelDocumentTypes.RepairDevice,
+        [
+            new("job.number", "Job number"),
+            new("device.name", "Device name"),
+            new("device.brand", "Brand"),
+            new("device.model", "Model"),
+            new("device.serial", "Serial number"),
+            new("customer.name", "Customer name"),
+            new("customer.phone", "Customer phone"),
+            new("intake.number", "Intake number"),
+            new("intake.received", "Received date"),
+            new("job.fault", "Reported fault"),
+            new("job.expected", "Expected delivery"),
+            new("job.status", "Status")
+        ]);
+
         ModuleRegistry.Register(Registration);
         return services;
     }

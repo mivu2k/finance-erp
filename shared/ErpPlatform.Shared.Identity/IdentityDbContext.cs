@@ -15,10 +15,25 @@ public class PlatformIdentityDbContext(DbContextOptions<PlatformIdentityDbContex
     public DbSet<UserModuleAccess> UserModuleAccess => Set<UserModuleAccess>();
     /// <summary>Platform-wide letterhead — one row, read by every module's print stack.</summary>
     public DbSet<CompanyProfile> CompanyProfiles => Set<CompanyProfile>();
+    /// <summary>Sticker layouts — shared, because label stock belongs to the printer.</summary>
+    public DbSet<LabelTemplate> LabelTemplates => Set<LabelTemplate>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
+
+        b.Entity<LabelTemplate>(e =>
+        {
+            e.HasIndex(x => new { x.DocumentType, x.Name }).IsUnique();
+            e.Property(x => x.Name).HasMaxLength(120);
+            e.Property(x => x.DocumentType).HasMaxLength(64);
+            e.Property(x => x.FieldKeys).HasMaxLength(1000);
+            e.Property(x => x.ModifiedBy).HasMaxLength(256);
+            e.Property(x => x.WidthMm).HasPrecision(8, 2);
+            e.Property(x => x.HeightMm).HasPrecision(8, 2);
+            e.Property(x => x.MarginMm).HasPrecision(6, 2);
+            e.Property(x => x.FontScale).HasPrecision(4, 2);
+        });
 
         b.Entity<ApplicationUser>(e =>
         {

@@ -25,6 +25,7 @@ public static class DependencyInjection
         services.AddScoped<IModuleAccessService, ModuleAccessService>();
         services.AddScoped<IPlatformUserDirectory, PlatformUserDirectory>();
         services.AddScoped<ICompanyProfileService, CompanyProfileService>();
+        services.AddScoped<ILabelTemplateService, LabelTemplateService>();
 
         services.AddIdentityCore<ApplicationUser>(options =>
             {

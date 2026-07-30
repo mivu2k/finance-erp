@@ -1,0 +1,280 @@
+@page "/admin/labels"
+@attribute [Authorize(Policy = PlatformPermissions.LabelsManage)]
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>Label Templates</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Label Templates</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Open(null))">
+        New Template
+    </MudButton>
+</div>
+
+<MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+    A template is one sticker size plus the fields that go on it. The fields on offer
+    depend on what kind of record the label is for — you can only pick something the
+    record actually has. One template per kind can be the default, which is what prints
+    when nobody picks.
+</MudAlert>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr>
+                <th>Name</th><th>For</th><th>Size (mm)</th><th>Fields</th>
+                <th>Barcode</th><th>QR</th><th>Default</th><th style="width:96px"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var t in _templates)
+            {
+                <tr>
+                    <td>@t.Name</td>
+                    <td>@LabelDocumentTypes.Describe(t.DocumentType)</td>
+                    <td>@t.WidthMm.ToString("0.#") × @(t.HeightMm is { } h ? h.ToString("0.#") : "continuous")</td>
+                    <td>@t.SelectedFields().Count</td>
+                    <td>@(t.ShowBarcode ? "Yes" : "—")</td>
+                    <td>@(t.ShowQrCode ? "Yes" : "—")</td>
+                    <td>
+                        @if (t.IsDefault)
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.Star" Size="Size.Small" Color="Color.Warning" />
+                        }
+                    </td>
+                    <td>
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                       OnClick="@(() => Open(t))" />
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                       Color="Color.Error" OnClick="@(() => _delete = t)" />
+                    </td>
+                </tr>
+            }
+            @if (_templates.Count == 0)
+            {
+                <tr><td colspan="8" class="mud-text-secondary pa-4">
+                    No templates yet. Until one exists, labels print at 62mm with their
+                    built-in fields, exactly as before.
+                </td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@if (_edit is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:640px;max-width:95vw;max-height:92vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_edit.Id == 0 ? "New Template" : _edit.Name)</MudText>
+
+            <MudGrid Spacing="2">
+                <MudItem xs="12" md="7">
+                    <MudTextField @bind-Value="_edit.Name" Label="Name" Margin="Margin.Dense"
+                                  HelperText="e.g. 38x25 device label" />
+                </MudItem>
+                <MudItem xs="12" md="5">
+                    <MudSelect T="string" Value="_edit.DocumentType" ValueChanged="OnDocumentTypeChanged"
+                               Label="Label is for" Margin="Margin.Dense">
+                        @foreach (var (key, name) in LabelDocumentTypes.All)
+                        {
+                            <MudSelectItem T="string" Value="@key">@name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="6" md="3">
+                    <MudNumericField T="decimal" @bind-Value="_edit.WidthMm" Label="Width (mm)"
+                                     Min="10" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudNumericField T="decimal?" @bind-Value="_edit.HeightMm" Label="Height (mm)"
+                                     Margin="Margin.Dense" Clearable="true"
+                                     HelperText="Blank = continuous roll" />
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudNumericField T="decimal" @bind-Value="_edit.MarginMm" Label="Margin (mm)"
+                                     Min="0" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudNumericField T="decimal" @bind-Value="_edit.FontScale" Label="Font scale"
+                                     Min="0.5M" Max="3M" Step="0.1M" Margin="Margin.Dense" />
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">Fields to print, in order</MudText>
+                    @if (_available.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            Pick what the label is for to see its fields.
+                        </MudText>
+                    }
+                    else
+                    {
+                        <MudSimpleTable Dense="true">
+                            <tbody>
+                                @foreach (var f in _available)
+                                {
+                                    var chosen = _chosen.Contains(f.Key);
+                                    <tr>
+                                        <td style="width:44px">
+                                            <MudCheckBox T="bool" Value="chosen"
+                                                         ValueChanged="@(v => Toggle(f.Key, v))" Dense="true" />
+                                        </td>
+                                        <td>@f.Label</td>
+                                        <td style="width:110px">
+                                            @if (chosen)
+                                            {
+                                                <MudIconButton Size="Size.Small" Dense="true"
+                                                               Icon="@Icons.Material.Filled.ArrowUpward"
+                                                               OnClick="@(() => Move(f.Key, -1))" />
+                                                <MudIconButton Size="Size.Small" Dense="true"
+                                                               Icon="@Icons.Material.Filled.ArrowDownward"
+                                                               OnClick="@(() => Move(f.Key, 1))" />
+                                                <MudText Typo="Typo.caption">@(_chosen.IndexOf(f.Key) + 1)</MudText>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                </MudItem>
+
+                <MudItem xs="12" Class="d-flex flex-wrap gap-3">
+                    <MudSwitch T="bool" @bind-Value="_edit.ShowTitle" Label="Title" Color="Color.Primary" />
+                    <MudSwitch T="bool" @bind-Value="_edit.ShowCompanyName" Label="Company name" Color="Color.Primary" />
+                    <MudSwitch T="bool" @bind-Value="_edit.ShowBarcode" Label="Barcode" Color="Color.Primary" />
+                    <MudSwitch T="bool" @bind-Value="_edit.ShowQrCode" Label="QR code" Color="Color.Primary" />
+                    <MudSwitch T="bool" @bind-Value="_edit.IsDefault" Label="Default for this kind" Color="Color.Warning" />
+                </MudItem>
+            </MudGrid>
+
+            @if (_edit.ShowQrCode && _edit.WidthMm < 50)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">
+                    A QR beside the bars needs roughly 50mm of width. On a narrower label,
+                    turn one of them off or the layout will be cramped.
+                </MudAlert>
+            }
+
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _edit = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_delete is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-2">Delete @_delete.Name?</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                Anything printing with it falls back to the built-in 62mm layout.
+            </MudText>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _delete = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="Delete">Delete</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    private List<LabelTemplate> _templates = [];
+    private LabelTemplate? _edit;
+    private LabelTemplate? _delete;
+    private IReadOnlyList<LabelField> _available = [];
+    private List<string> _chosen = [];
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _templates = await scope.ServiceProvider.GetRequiredService<ILabelTemplateService>().ListAsync();
+        StateHasChanged();
+    }
+
+    // Edited on a copy so cancelling leaves the table untouched.
+    private void Open(LabelTemplate? t)
+    {
+        _edit = t is null
+            ? new LabelTemplate { DocumentType = LabelDocumentTypes.RepairDevice }
+            : new LabelTemplate
+            {
+                Id = t.Id, Name = t.Name, DocumentType = t.DocumentType,
+                WidthMm = t.WidthMm, HeightMm = t.HeightMm, MarginMm = t.MarginMm,
+                FieldKeys = t.FieldKeys, ShowTitle = t.ShowTitle,
+                ShowCompanyName = t.ShowCompanyName, ShowBarcode = t.ShowBarcode,
+                ShowQrCode = t.ShowQrCode, FontScale = t.FontScale, IsDefault = t.IsDefault
+            };
+
+        _chosen = _edit.SelectedFields().ToList();
+        _available = LabelFieldCatalog.For(_edit.DocumentType);
+    }
+
+    private void OnDocumentTypeChanged(string key)
+    {
+        _edit!.DocumentType = key;
+        // Field keys belong to a document type, so a switch can't carry them over.
+        _chosen = [];
+        _available = LabelFieldCatalog.For(key);
+    }
+
+    private void Toggle(string key, bool on)
+    {
+        if (on) { if (!_chosen.Contains(key)) _chosen.Add(key); }
+        else _chosen.Remove(key);
+    }
+
+    private void Move(string key, int delta)
+    {
+        var i = _chosen.IndexOf(key);
+        var j = i + delta;
+        if (i < 0 || j < 0 || j >= _chosen.Count) return;
+        (_chosen[i], _chosen[j]) = (_chosen[j], _chosen[i]);
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            _edit!.FieldKeys = string.Join(',', _chosen);
+
+            var user = (await AuthState.GetAuthenticationStateAsync()).User;
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<ILabelTemplateService>()
+                .SaveAsync(_edit, user.Identity?.Name);
+
+            _edit = null;
+            Snackbar.Add("Template saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Delete()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<ILabelTemplateService>()
+                .DeleteAsync(_delete!.Id);
+            _delete = null;
+            Snackbar.Add("Template deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _delete = null;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

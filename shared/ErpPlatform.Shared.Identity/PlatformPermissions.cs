@@ -15,6 +15,8 @@ public static class PlatformPermissions
     public const string ModulesManageAll = "platform.modules.manageall";
     /// <summary>Edit the letterhead every app prints — name, logo, address, footer.</summary>
     public const string CompanyManage = "platform.company.manage";
+    /// <summary>Maintain the sticker layouts every module prints labels from.</summary>
+    public const string LabelsManage = "platform.labels.manage";
 
     public static readonly IReadOnlyList<PermissionDescriptor> All =
     [
@@ -22,7 +24,8 @@ public static class PlatformPermissions
         new(UsersManage, ModuleKey, "Users", "Create, edit, deactivate and reset users"),
         new(RolesManage, ModuleKey, "Roles", "Edit roles and their permission matrix"),
         new(ModulesManageAll, ModuleKey, "Modules", "Access every app and assign app access"),
-        new(CompanyManage, ModuleKey, "Company", "Edit the company profile and logo used on every printed document")
+        new(CompanyManage, ModuleKey, "Company", "Edit the company profile and logo used on every printed document"),
+        new(LabelsManage, ModuleKey, "Labels", "Define sticker sizes and which fields print on them")
     ];
 }
 

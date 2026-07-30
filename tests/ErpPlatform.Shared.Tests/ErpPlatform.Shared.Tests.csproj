@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\shared\ErpPlatform.Shared.Kernel\ErpPlatform.Shared.Kernel.csproj" />
+    <ProjectReference Include="..\..\shared\ErpPlatform.Shared.Printing\ErpPlatform.Shared.Printing.csproj" />
   </ItemGroup>
 
 </Project>

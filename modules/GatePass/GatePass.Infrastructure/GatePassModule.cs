@@ -69,6 +69,21 @@ public static class GatePassModule
         services.AddScoped<IDemoIssuanceService, DemoIssuanceService>();
         services.AddSingleton<IGatePassPrintService, GatePassPrintService>();
 
+        LabelFieldCatalog.Register(LabelDocumentTypes.GatePassItem,
+        [
+            new("pass.number", "Pass number"),
+            new("pass.direction", "Direction"),
+            new("item.description", "Item description"),
+            new("item.serial", "Serial number"),
+            new("item.quantity", "Quantity"),
+            new("item.unit", "Unit"),
+            new("person.name", "Person carrying"),
+            new("company.name", "Company"),
+            new("pass.vehicle", "Vehicle"),
+            new("pass.issued", "Issued at"),
+            new("pass.authorised", "Authorised by")
+        ]);
+
         ModuleRegistry.Register(Registration);
         return services;
     }
