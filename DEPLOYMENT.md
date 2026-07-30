@@ -14,7 +14,7 @@ Target: Ubuntu 24.04 LXC on Proxmox, MariaDB, the app under systemd, nginx in fr
 
 ## What you are installing
 
-One process hosting four apps, chosen from a portal at `/` after a single login:
+One process hosting six apps, chosen from a portal at `/` after a single login:
 
 | App | Route | Database |
 |---|---|---|
@@ -22,9 +22,11 @@ One process hosting four apps, chosen from a portal at `/` after a single login:
 | Repair | `/repair` | `erp_repair` |
 | Gate Pass & Demo Goods | `/gatepass` | `erp_gatepass` |
 | HR | `/hr` | `erp_hr` |
+| Inventory | `/inventory` | `erp_inventory` |
+| Auto | `/auto` | `erp_auto` |
 
 Plus `erp_identity` — the one shared database holding users, roles, permissions,
-per-user app access and the company letterhead. **Five databases.** That matters for
+per-user app access and the company letterhead. **Seven databases.** That matters for
 every backup and restore instruction below.
 
 ---
@@ -51,7 +53,7 @@ pct start 210
 pct enter 210
 ```
 
-**Why 4 GB:** four apps, PDF rendering and the attendance poller share one process
+**Why 4 GB:** six apps, PDF rendering and the attendance poller share one process
 (~300–400 MB idle). If you later build on this box (§11 path B) a Release build peaks
 around 1.5 GB *while the app is still running* — a 2 GB container gets OOM-killed
 mid-build.
@@ -131,7 +133,7 @@ If only the first appears, you installed the base runtime — the app needs ASP.
 
 ---
 
-## 4. Create the five databases
+## 4. Create the seven databases
 
 On Ubuntu, MariaDB's `root` authenticates over a **unix socket**. `mysql -u root -p`
 prompts for a password that doesn't exist and fails; since you are already root, just
@@ -139,18 +141,22 @@ run `mysql`:
 
 ```bash
 mysql <<'SQL'
-CREATE DATABASE erp_identity CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE DATABASE finance_erp  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE DATABASE erp_repair   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE DATABASE erp_gatepass CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE DATABASE erp_hr       CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE erp_identity  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE finance_erp   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE erp_repair    CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE erp_gatepass  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE erp_hr        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE erp_inventory CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE erp_auto      CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 CREATE USER 'finance'@'localhost' IDENTIFIED BY 'CHANGE_THIS_PASSWORD';
-GRANT ALL PRIVILEGES ON erp_identity.* TO 'finance'@'localhost';
-GRANT ALL PRIVILEGES ON finance_erp.*  TO 'finance'@'localhost';
-GRANT ALL PRIVILEGES ON erp_repair.*   TO 'finance'@'localhost';
-GRANT ALL PRIVILEGES ON erp_gatepass.* TO 'finance'@'localhost';
-GRANT ALL PRIVILEGES ON erp_hr.*       TO 'finance'@'localhost';
+GRANT ALL PRIVILEGES ON erp_identity.*  TO 'finance'@'localhost';
+GRANT ALL PRIVILEGES ON finance_erp.*   TO 'finance'@'localhost';
+GRANT ALL PRIVILEGES ON erp_repair.*    TO 'finance'@'localhost';
+GRANT ALL PRIVILEGES ON erp_gatepass.*  TO 'finance'@'localhost';
+GRANT ALL PRIVILEGES ON erp_hr.*        TO 'finance'@'localhost';
+GRANT ALL PRIVILEGES ON erp_inventory.* TO 'finance'@'localhost';
+GRANT ALL PRIVILEGES ON erp_auto.*      TO 'finance'@'localhost';
 FLUSH PRIVILEGES;
 SQL
 ```
@@ -159,7 +165,7 @@ Choose a password with **no `;` and no `"`** — it goes into both a connection 
 and a JSON file, and each uses one of those characters structurally. `@`, `!`, `#`
 are fine.
 
-**Check** — must succeed *as the finance user* and list all five:
+**Check** — must succeed *as the finance user* and list all seven:
 
 ```bash
 mysql -u finance -p -e "SHOW DATABASES;"
@@ -255,7 +261,7 @@ into `keys/` at startup and will not start if it cannot.
 ## 6. Configuration
 
 Create `/opt/finance-erp/appsettings.Production.json`. This generates it so you
-can't mistype the password in one of the five places:
+can't mistype the password in one of the seven places:
 
 ```bash
 read -rsp "finance DB password: " DBPW; echo
@@ -267,11 +273,13 @@ cfg = {
     "ConnectionStrings": {
         name: f"Server=localhost;Port=3306;Database={db};User=finance;Password={pw};"
         for name, db in [
-            ("IdentityConnection", "erp_identity"),
-            ("AccountsConnection", "finance_erp"),
-            ("RepairConnection",   "erp_repair"),
-            ("GatePassConnection", "erp_gatepass"),
-            ("HrConnection",       "erp_hr"),
+            ("IdentityConnection",  "erp_identity"),
+            ("AccountsConnection",  "finance_erp"),
+            ("RepairConnection",    "erp_repair"),
+            ("GatePassConnection",  "erp_gatepass"),
+            ("HrConnection",        "erp_hr"),
+            ("InventoryConnection", "erp_inventory"),
+            ("AutoConnection",      "erp_auto"),
         ]
     },
     "Seed": {
@@ -293,10 +301,10 @@ Edit the `Seed` values before first boot — they create the first admin and are
 
 - **SMTP is optional** and omitted above. Notifications stay off unless you add an
   `Smtp` block with a non-empty `Host`. Nothing else depends on it.
-- There is **no `DefaultConnection`** any more. The build looks up each of the five
+- There is **no `DefaultConnection`** any more. The build looks up each of the seven
   names explicitly and never falls back.
 
-**Check** — prints the file, five connection strings, no syntax error:
+**Check** — prints the file, seven connection strings, no syntax error:
 
 ```bash
 python3 -m json.tool /opt/finance-erp/appsettings.Production.json
@@ -315,9 +323,9 @@ systemctl enable --now finance-erp
 
 The service binds `http://127.0.0.1:5000` — loopback only, nginx in front.
 
-**First boot takes about three minutes.** It migrates five databases and seeds the
-module catalog, 25 roles, the admin account, the company profile and every module's
-reference data. Watch it rather than guessing:
+**First boot takes about three minutes.** It migrates seven databases and seeds the
+module catalog, roles for every app, the admin account, the company profile and
+every module's reference data. Watch it rather than guessing:
 
 ```bash
 journalctl -u finance-erp -f
@@ -326,14 +334,16 @@ journalctl -u finance-erp -f
 A healthy run walks through roughly this, then stops:
 
 ```
-INF] Seeded module finance / repair / gatepass / hr
+INF] Seeded module finance / repair / gatepass / hr / inventory / auto
 INF] Seeded role Super Admin for module platform
-INF] Seeded role ... (25 of them)
+INF] Seeded role ... (every module's roles)
 INF] Seeded platform administrator you@yourcompany.com
 INF] Seeded the company profile (name: My Company (Pvt) Ltd).
 INF] Seeded HR departments / designations / the default shift / leave types
 INF] Gate Pass database is up to date
 INF] Seeded repair symptoms / accessories / device types
+INF] Inventory database is up to date
+INF] Auto database is up to date
 INF] Attendance polling every 15 minute(s)
 ```
 
@@ -461,7 +471,7 @@ Browse to `http://<container-ip>/` and sign in with the `Seed` credentials.
 
 1. **Change the admin password immediately** — top-right menu → My profile → Password.
 2. **Administration → Company Profile** — name, logo, address, contact, tax number,
-   footer note. This is the letterhead on every printed document in all four apps,
+   footer note. This is the letterhead on every printed document in every app,
    and it starts blank.
 3. **Administration → Users** — create real users; assign roles **and** app access.
    A role is scoped to one app: holding it both admits the user to that app's tile on
@@ -495,7 +505,7 @@ DEST=/var/backups/mei-erp
 mkdir -p "$DEST"
 STAMP=$(date +%F)
 
-for db in erp_identity finance_erp erp_repair erp_gatepass erp_hr; do
+for db in erp_identity finance_erp erp_repair erp_gatepass erp_hr erp_inventory erp_auto; do
     mysqldump --single-transaction --routines "$db" | gzip > "$DEST/$db-$STAMP.sql.gz"
 done
 
@@ -517,7 +527,7 @@ once** — an untested backup is a guess.
 
 ## 11. Updates
 
-Two paths. Both back up all five databases, snapshot the binaries, restart,
+Two paths. Both back up all seven databases, snapshot the binaries, restart,
 health-check, and roll the *code* back automatically if the app doesn't return.
 
 ### A. Push from your dev machine — `deploy/update.sh`
@@ -618,7 +628,7 @@ zcat /var/backups/finance-erp/finance_erp-<stamp>.sql.gz  | mysql finance_erp
 | `FINANCE_ERP_APP_DIR` | `/opt/finance-erp` |
 | `FINANCE_ERP_SRC` | `/opt/src/finance-erp` (path B) |
 | `FINANCE_ERP_SERVICE` | `finance-erp` |
-| `FINANCE_ERP_DBS` | `erp_identity finance_erp erp_repair erp_gatepass erp_hr` |
+| `FINANCE_ERP_DBS` | `erp_identity finance_erp erp_repair erp_gatepass erp_hr erp_inventory erp_auto` |
 | `FINANCE_ERP_APP_USER` | `finance-erp` |
 | `FINANCE_ERP_BRANCH` | `main` (path B) |
 | `FINANCE_ERP_HEALTH_URL` | `http://localhost:5000/` |
@@ -674,7 +684,7 @@ network path to any device.
 |---|---|
 | `Couldn't find a valid ICU package` | `libicu74` missing (§2) |
 | `Access denied for user 'finance'@'localhost'` | Wrong password in the config, or grants not applied. Prove it with `mysql -u finance -p` first |
-| `ConnectionStrings:IdentityConnection is not configured` | Config still has a single `DefaultConnection`. The build needs all five names (§6) |
+| `ConnectionStrings:IdentityConnection is not configured` | Config still has a single `DefaultConnection`. The build needs all seven names (§6) |
 | `Unable to locate package aspnetcore-runtime-10.0` | Use the installer script (§3) |
 | `Unknown database 'erp_identity'` | §4 was skipped or partially run |
 | Service `active`, `curl` returns `000` | Read `journalctl -u finance-erp -n 50` — almost always a database connection failure |
@@ -685,7 +695,7 @@ network path to any device.
 | `mysql -u root -p` fails on a fresh box | MariaDB root uses socket auth on Ubuntu — run `mysql` as root, no `-u root -p` |
 | `Failed to determine the https port for redirect` | Benign. TLS terminates at nginx so the app sees no HTTPS port |
 | `No XML encryptor configured` | Benign. DataProtection keys are plaintext on Linux — `chmod 700` the `keys/` directory |
-| First boot seems hung | It isn't — five databases and ~25 roles take about three minutes. `journalctl -u finance-erp -f` and wait for `Attendance polling every N minute(s)` |
+| First boot seems hung | It isn't — seven databases and every module's roles take about three minutes. `journalctl -u finance-erp -f` and wait for `Attendance polling every N minute(s)` |
 | `chown: invalid spec: 'finance-erp:'` | The service account was never created — the `useradd` at the end of §5 |
 
 ---
