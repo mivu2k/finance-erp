@@ -18,6 +18,25 @@
         </MudNavLink>
     </AuthorizeView>
 
+    <AuthorizeView Policy="@InventoryPermissions.WarehouseManage" Context="w">
+        <MudNavGroup Title="Warehouses" Icon="@Icons.Material.Filled.Warehouse" Expanded="false">
+            <MudNavLink Href="/inventory/warehouses" Icon="@Icons.Material.Filled.Store">Warehouses</MudNavLink>
+            <MudNavLink Href="/inventory/transfers" Icon="@Icons.Material.Filled.SwapHoriz">Transfers</MudNavLink>
+        </MudNavGroup>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@InventoryPermissions.PurchaseManage" Context="p">
+        <MudNavGroup Title="Purchasing" Icon="@Icons.Material.Filled.ShoppingCart" Expanded="false">
+            <MudNavLink Href="/inventory/suppliers" Icon="@Icons.Material.Filled.Storefront">Suppliers</MudNavLink>
+            <MudNavLink Href="/inventory/purchase-orders" Icon="@Icons.Material.Filled.Receipt">Purchase Orders</MudNavLink>
+            <MudNavLink Href="/inventory/receipts" Icon="@Icons.Material.Filled.MoveToInbox">Goods Received</MudNavLink>
+        </MudNavGroup>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@InventoryPermissions.CountManage" Context="c">
+        <MudNavLink Href="/inventory/counts" Icon="@Icons.Material.Filled.Checklist">Stock Takes</MudNavLink>
+    </AuthorizeView>
+
     <AuthorizeView Policy="@InventoryPermissions.ReportsView" Context="r">
         <MudNavLink Href="/inventory/reports" Icon="@Icons.Material.Filled.Assessment">
             Reports

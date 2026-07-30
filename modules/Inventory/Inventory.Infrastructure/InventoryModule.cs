@@ -60,6 +60,8 @@ public static class InventoryModule
         services.AddScoped<ISupplierService, SupplierService>();
         services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
         services.AddScoped<IGoodsReceiptService, GoodsReceiptService>();
+        services.AddScoped<IInventoryReportService, InventoryReportService>();
+        services.AddSingleton<IInventoryPrintService, InventoryPrintService>();
 
         ModuleRegistry.Register(Registration);
         return services;

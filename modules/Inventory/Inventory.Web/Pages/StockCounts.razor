@@ -1,0 +1,249 @@
+@page "/inventory/counts"
+@page "/inventory/counts/{Id:int}"
+@attribute [Authorize(Policy = InventoryPermissions.CountManage)]
+@layout InventoryLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Stock Takes</PageTitle>
+
+@if (_count is null)
+{
+    <div class="d-flex align-center mb-4 flex-wrap gap-2">
+        <MudText Typo="Typo.h5">Stock Takes</MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="Start">Start a Count</MudButton>
+    </div>
+
+    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+        Starting a count freezes what the system currently holds, so the sheet you work
+        from doesn't move while you walk the floor. Posting writes each difference to the
+        stock ledger — corrections stay as traceable as any other movement.
+    </MudAlert>
+
+    <MudPaper Class="pa-2" Style="overflow-x:auto">
+        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+            <thead>
+                <tr><th>Number</th><th>Date</th><th>Status</th><th>Lines</th>
+                    <th>Variances</th><th>By</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var c in _counts)
+                {
+                    <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/inventory/counts/{c.Id}"))">
+                        <td>@c.CountNumber</td>
+                        <td>@c.Date.ToString("yyyy-MM-dd")</td>
+                        <td>
+                            <MudChip T="string" Size="Size.Small" Color="@StatusColour(c.Status)">@c.Status</MudChip>
+                        </td>
+                        <td>@c.Lines.Count</td>
+                        <td>@c.VarianceCount</td>
+                        <td>@c.CountedByName</td>
+                    </tr>
+                }
+                @if (_counts.Count == 0)
+                {
+                    <tr><td colspan="6" class="mud-text-secondary pa-4">No stock takes yet.</td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+else
+{
+    <div class="d-flex align-center mb-4 flex-wrap gap-2">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/inventory/counts" />
+        <MudText Typo="Typo.h5">@_count.CountNumber</MudText>
+        <MudChip T="string" Size="Size.Small" Color="@StatusColour(_count.Status)">@_count.Status</MudChip>
+        <MudSpacer />
+        @if (_count.Status == StockCountStatus.Draft)
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="SaveCounts">Save counts</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                       OnClick="Finish">Finish counting</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error"
+                       OnClick="Cancel">Cancel</MudButton>
+        }
+        else if (_count.Status == StockCountStatus.Counted)
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Warning"
+                       StartIcon="@Icons.Material.Filled.Publish" OnClick="Post">
+                Post @_count.VarianceCount variance(s)
+            </MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error"
+                       OnClick="Cancel">Cancel</MudButton>
+        }
+    </div>
+
+    <MudPaper Class="pa-2" Style="overflow-x:auto">
+        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th style="text-align:right">System</th>
+                    <th style="width:140px">Counted</th>
+                    <th style="text-align:right">Variance</th>
+                    <th>Note</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var line in _count.Lines)
+                {
+                    var l = line;
+                    <tr>
+                        <td>@l.ItemName</td>
+                        <td style="text-align:right">@l.SystemQuantity.ToString("0.##")</td>
+                        <td>
+                            @if (_count.Status == StockCountStatus.Draft)
+                            {
+                                <MudNumericField T="decimal?" Value="_entered.GetValueOrDefault(l.Id)"
+                                                 ValueChanged="@(v => _entered[l.Id] = v)"
+                                                 Margin="Margin.Dense" Clearable="true"
+                                                 HideSpinButtons="true" />
+                            }
+                            else
+                            {
+                                @(l.CountedQuantity?.ToString("0.##") ?? "not counted")
+                            }
+                        </td>
+                        <td style="text-align:right">
+                            @{
+                                var counted = _count.Status == StockCountStatus.Draft
+                                    ? _entered.GetValueOrDefault(l.Id)
+                                    : l.CountedQuantity;
+                                var variance = counted is { } c ? c - l.SystemQuantity : (decimal?)null;
+                            }
+                            @if (variance is { } v && v != 0)
+                            {
+                                <span style="@(v > 0 ? "color:var(--mud-palette-success)" : "color:var(--mud-palette-error)")">
+                                    @v.ToString("+0.##;-0.##")
+                                </span>
+                            }
+                        </td>
+                        <td>@l.Note</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+
+    <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-block">
+        A blank count means "not looked at" and is left alone when posting — it is not treated as zero.
+    </MudText>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private List<StockCount> _counts = [];
+    private StockCount? _count;
+    private readonly Dictionary<int, decimal?> _entered = [];
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private static Color StatusColour(StockCountStatus s) => s switch
+    {
+        StockCountStatus.Draft => Color.Info,
+        StockCountStatus.Counted => Color.Warning,
+        StockCountStatus.Posted => Color.Success,
+        _ => Color.Default
+    };
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<IStockCountService>();
+
+        if (Id is { } id)
+        {
+            _count = await svc.GetAsync(id);
+            if (_count is not null)
+                foreach (var line in _count.Lines)
+                    _entered[line.Id] = line.CountedQuantity;
+        }
+        else
+        {
+            _count = null;
+            _counts = await svc.ListAsync();
+        }
+        StateHasChanged();
+    }
+
+    private async Task<(string Id, string Name)> CurrentUserAsync()
+    {
+        var user = (await AuthState.GetAuthenticationStateAsync()).User;
+        return (user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+                user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown");
+    }
+
+    private async Task Start()
+    {
+        try
+        {
+            var (userId, name) = await CurrentUserAsync();
+            using var scope = ScopeFactory.CreateScope();
+            var started = await scope.ServiceProvider.GetRequiredService<IStockCountService>()
+                .StartAsync(null, userId, name);
+            Snackbar.Add($"{started.CountNumber} opened with {started.Lines.Count} line(s).", Severity.Success);
+            Nav.NavigateTo($"/inventory/counts/{started.Id}");
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task SaveCounts()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IStockCountService>()
+                .SaveCountsAsync(_count!.Id, _entered);
+            Snackbar.Add("Counts saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Finish()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<IStockCountService>();
+            await svc.SaveCountsAsync(_count!.Id, _entered);
+            await svc.MarkCountedAsync(_count.Id);
+            Snackbar.Add("Counting finished — review the variances, then post.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Post()
+    {
+        try
+        {
+            var (userId, name) = await CurrentUserAsync();
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IStockCountService>()
+                .PostAsync(_count!.Id, userId, name);
+            Snackbar.Add("Variances posted to the stock ledger.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Cancel()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IStockCountService>().CancelAsync(_count!.Id);
+            Snackbar.Add("Count cancelled.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

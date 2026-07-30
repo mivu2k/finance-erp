@@ -19,6 +19,7 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <PackageReference Include="QuestPDF" Version="2024.12.3" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,6 +27,7 @@
     <ProjectReference Include="..\..\..\shared\ErpPlatform.Shared.Kernel\ErpPlatform.Shared.Kernel.csproj" />
     <ProjectReference Include="..\..\..\shared\ErpPlatform.Shared.Persistence\ErpPlatform.Shared.Persistence.csproj" />
     <ProjectReference Include="..\..\..\shared\ErpPlatform.Shared.Identity\ErpPlatform.Shared.Identity.csproj" />
+    <ProjectReference Include="..\..\..\shared\ErpPlatform.Shared.Printing\ErpPlatform.Shared.Printing.csproj" />
   </ItemGroup>
 
 </Project>

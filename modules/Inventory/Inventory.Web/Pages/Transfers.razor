@@ -1,0 +1,346 @@
+@page "/inventory/transfers"
+@page "/inventory/transfers/{Id:int}"
+@attribute [Authorize(Policy = InventoryPermissions.WarehouseManage)]
+@layout InventoryLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Stock Transfers</PageTitle>
+
+@if (_transfer is null)
+{
+    <div class="d-flex align-center mb-4 flex-wrap gap-2">
+        <MudText Typo="Typo.h5">Stock Transfers</MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => _draftOpen = true)">
+            New Transfer
+        </MudButton>
+    </div>
+
+    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+        A transfer moves in two steps. Dispatch takes the goods out of the source; receipt
+        puts them into the destination. In between they are <b>in transit</b> — in neither
+        place — which is where a shortfall becomes visible instead of quietly disappearing.
+    </MudAlert>
+
+    <MudPaper Class="pa-2" Style="overflow-x:auto">
+        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+            <thead>
+                <tr><th>Number</th><th>Date</th><th>From</th><th>To</th>
+                    <th>Lines</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var t in _transfers)
+                {
+                    <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/inventory/transfers/{t.Id}"))">
+                        <td>@t.TransferNumber</td>
+                        <td>@t.Date.ToString("yyyy-MM-dd")</td>
+                        <td>@t.FromWarehouse?.Name</td>
+                        <td>@t.ToWarehouse?.Name</td>
+                        <td>@t.Lines.Count</td>
+                        <td><MudChip T="string" Size="Size.Small" Color="@StatusColour(t.Status)">@t.Status</MudChip></td>
+                    </tr>
+                }
+                @if (_transfers.Count == 0)
+                {
+                    <tr><td colspan="6" class="mud-text-secondary pa-4">No transfers yet.</td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+else
+{
+    <div class="d-flex align-center mb-4 flex-wrap gap-2">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/inventory/transfers" />
+        <MudText Typo="Typo.h5">@_transfer.TransferNumber</MudText>
+        <MudChip T="string" Size="Size.Small" Color="@StatusColour(_transfer.Status)">@_transfer.Status</MudChip>
+        <MudSpacer />
+        @if (_transfer.Status == StockTransferStatus.Draft)
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.LocalShipping" OnClick="Dispatch">Dispatch</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="Cancel">Cancel</MudButton>
+        }
+        else if (_transfer.Status == StockTransferStatus.InTransit)
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                       StartIcon="@Icons.Material.Filled.MoveToInbox" OnClick="Receive">Receive</MudButton>
+        }
+    </div>
+
+    <MudGrid Spacing="3" Class="mb-2">
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-3">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">From</MudText>
+                <MudText>@_transfer.FromWarehouse?.Name</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-3">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">To</MudText>
+                <MudText>@_transfer.ToWarehouse?.Name</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-3">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Progress</MudText>
+                <MudText Typo="Typo.body2">
+                    Dispatched: @(_transfer.DispatchedAtUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—")
+                </MudText>
+                <MudText Typo="Typo.body2">
+                    Received: @(_transfer.ReceivedAtUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—")
+                </MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudPaper Class="pa-2" Style="overflow-x:auto">
+        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+            <thead>
+                <tr><th>Item</th><th style="text-align:right">Sent</th>
+                    <th style="width:150px">Received</th><th style="text-align:right">Difference</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var line in _transfer.Lines)
+                {
+                    var l = line;
+                    <tr>
+                        <td>@l.ItemName</td>
+                        <td style="text-align:right">@l.Quantity.ToString("0.##")</td>
+                        <td>
+                            @if (_transfer.Status == StockTransferStatus.InTransit)
+                            {
+                                <MudNumericField T="decimal" Value="_received.GetValueOrDefault(l.Id, l.Quantity)"
+                                                 ValueChanged="@(v => _received[l.Id] = v)"
+                                                 Min="0" Max="@l.Quantity" Margin="Margin.Dense"
+                                                 HideSpinButtons="true" />
+                            }
+                            else
+                            {
+                                @(l.ReceivedQuantity?.ToString("0.##") ?? "—")
+                            }
+                        </td>
+                        <td style="text-align:right">
+                            @if (l.Shortfall != 0)
+                            {
+                                <span style="color:var(--mud-palette-error)">@l.Shortfall.ToString("0.##")</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+
+@if (_draftOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:640px;max-width:95vw;max-height:92vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">New Transfer</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" md="6">
+                    <MudSelect T="int" @bind-Value="_fromId" Label="From" Margin="Margin.Dense">
+                        @foreach (var w in _warehouses)
+                        {
+                            <MudSelectItem T="int" Value="@w.Id">@w.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="int" @bind-Value="_toId" Label="To" Margin="Margin.Dense">
+                        @foreach (var w in _warehouses)
+                        {
+                            <MudSelectItem T="int" Value="@w.Id">@w.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="string" @bind-Value="_pickedItem" Label="Item" Margin="Margin.Dense">
+                        @foreach (var (key, name) in _items)
+                        {
+                            <MudSelectItem T="string" Value="@key">@name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudNumericField T="decimal" @bind-Value="_pickedQty" Label="Qty" Min="0.01M" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6" md="3" Class="d-flex align-center">
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="AddLine">Add line</MudButton>
+                </MudItem>
+            </MudGrid>
+
+            <MudSimpleTable Dense="true" Class="mt-3">
+                <tbody>
+                    @foreach (var l in _draftLines)
+                    {
+                        var line = l;
+                        <tr>
+                            <td>@line.ItemName</td>
+                            <td style="text-align:right">@line.Quantity.ToString("0.##")</td>
+                            <td style="width:44px">
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                               Color="Color.Error" OnClick="@(() => _draftLines.Remove(line))" />
+                            </td>
+                        </tr>
+                    }
+                    @if (_draftLines.Count == 0)
+                    {
+                        <tr><td class="mud-text-secondary">No lines yet.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _draftOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateDraft"
+                           Disabled="@(_draftLines.Count == 0)">Create</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private List<StockTransfer> _transfers = [];
+    private StockTransfer? _transfer;
+    private readonly Dictionary<int, decimal> _received = [];
+
+    private bool _draftOpen;
+    private List<Warehouse> _warehouses = [];
+    private List<(string Key, string Name)> _items = [];
+    private readonly List<StockTransferLine> _draftLines = [];
+    private int _fromId, _toId;
+    private string? _pickedItem;
+    private decimal _pickedQty = 1;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private static Color StatusColour(StockTransferStatus s) => s switch
+    {
+        StockTransferStatus.Draft => Color.Info,
+        StockTransferStatus.InTransit => Color.Warning,
+        StockTransferStatus.Received => Color.Success,
+        _ => Color.Default
+    };
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<IStockTransferService>();
+
+        if (Id is { } id)
+        {
+            _transfer = await svc.GetAsync(id);
+        }
+        else
+        {
+            _transfer = null;
+            _transfers = await svc.ListAsync();
+            _warehouses = await scope.ServiceProvider.GetRequiredService<IWarehouseService>()
+                .ListAsync(activeOnly: true);
+            _fromId = _warehouses.FirstOrDefault()?.Id ?? 0;
+            _toId = _warehouses.Skip(1).FirstOrDefault()?.Id ?? 0;
+
+            // "Model:3" style keys, so one picker can offer both kinds of stock item.
+            var products = await scope.ServiceProvider.GetRequiredService<IProductService>().ListAsync();
+            _items = products.SelectMany(p => p.Models.Select(m =>
+                    ($"{StockItemType.Model}:{m.Id}", $"{p.Name} › {m.Name}")))
+                .Concat(products.SelectMany(p => p.Models.SelectMany(m => m.Accessories.Select(a =>
+                    ($"{StockItemType.Accessory}:{a.Id}", $"{m.Name} › {a.Name}")))))
+                .ToList();
+        }
+        StateHasChanged();
+    }
+
+    private void AddLine()
+    {
+        if (_pickedItem is null || _pickedQty <= 0) return;
+
+        var parts = _pickedItem.Split(':');
+        _draftLines.Add(new StockTransferLine
+        {
+            ItemType = Enum.Parse<StockItemType>(parts[0]),
+            ItemId = int.Parse(parts[1]),
+            ItemName = _items.First(i => i.Key == _pickedItem).Name,
+            Quantity = _pickedQty
+        });
+        _pickedQty = 1;
+    }
+
+    private async Task<(string Id, string Name)> CurrentUserAsync()
+    {
+        var user = (await AuthState.GetAuthenticationStateAsync()).User;
+        return (user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+                user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown");
+    }
+
+    private async Task CreateDraft()
+    {
+        try
+        {
+            var (userId, name) = await CurrentUserAsync();
+            using var scope = ScopeFactory.CreateScope();
+            var created = await scope.ServiceProvider.GetRequiredService<IStockTransferService>()
+                .CreateAsync(new StockTransfer
+                {
+                    FromWarehouseId = _fromId, ToWarehouseId = _toId,
+                    Date = DateOnly.FromDateTime(DateTime.Today),
+                    Lines = _draftLines.ToList()
+                }, userId, name);
+
+            _draftOpen = false;
+            _draftLines.Clear();
+            Nav.NavigateTo($"/inventory/transfers/{created.Id}");
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Dispatch()
+    {
+        try
+        {
+            var (userId, name) = await CurrentUserAsync();
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IStockTransferService>()
+                .DispatchAsync(_transfer!.Id, userId, name, name);
+            Snackbar.Add("Dispatched — the goods are now in transit.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Receive()
+    {
+        try
+        {
+            var (userId, name) = await CurrentUserAsync();
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IStockTransferService>()
+                .ReceiveAsync(_transfer!.Id, _received, userId, name, name);
+            Snackbar.Add("Received into the destination.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Cancel()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IStockTransferService>()
+                .CancelAsync(_transfer!.Id);
+            Snackbar.Add("Transfer cancelled.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

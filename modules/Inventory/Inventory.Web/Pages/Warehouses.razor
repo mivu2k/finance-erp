@@ -1,0 +1,195 @@
+@page "/inventory/warehouses"
+@attribute [Authorize(Policy = InventoryPermissions.WarehouseManage)]
+@layout InventoryLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Warehouses</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Warehouses</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Open(null))">
+        New Warehouse
+    </MudButton>
+</div>
+
+<MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+    One warehouse is the default: stock recorded without naming a place lands there,
+    so every movement can be attributed somewhere.
+</MudAlert>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="@(_selected is null ? 12 : 6)">
+        <MudPaper Class="pa-2" Style="overflow-x:auto">
+            <MudSimpleTable Dense="true" Hover="true" Striped="true">
+                <thead>
+                    <tr><th>Name</th><th>Code</th><th>Status</th><th>Default</th><th style="width:96px"></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var w in _warehouses)
+                    {
+                        <tr style="cursor:pointer" @onclick="@(() => Select(w))">
+                            <td>@w.Name</td>
+                            <td>@w.Code</td>
+                            <td>
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(w.IsActive ? Color.Success : Color.Default)">
+                                    @(w.IsActive ? "Active" : "Inactive")
+                                </MudChip>
+                            </td>
+                            <td>
+                                @if (w.IsDefault)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.Star" Size="Size.Small" Color="Color.Warning" />
+                                }
+                            </td>
+                            <td>
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                               OnClick="@(() => Open(w))" />
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                               Color="Color.Error" OnClick="@(() => _delete = w)" />
+                            </td>
+                        </tr>
+                    }
+                    @if (_warehouses.Count == 0)
+                    {
+                        <tr><td colspan="5" class="mud-text-secondary pa-4">No warehouses yet.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    @if (_selected is not null)
+    {
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4">
+                <div class="d-flex align-center mb-2">
+                    <MudText Typo="Typo.subtitle1">What's in @_selected.Name</MudText>
+                    <MudSpacer />
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Close"
+                                   OnClick="@(() => { _selected = null; _contents = []; })" />
+                </div>
+                <MudSimpleTable Dense="true" Hover="true">
+                    <thead><tr><th>Item</th><th>Unit</th><th style="text-align:right">Qty</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in _contents)
+                        {
+                            <tr>
+                                <td>@row.ItemName</td>
+                                <td>@row.Unit</td>
+                                <td style="text-align:right">@row.Quantity.ToString("0.##")</td>
+                            </tr>
+                        }
+                        @if (_contents.Count == 0)
+                        {
+                            <tr><td colspan="3" class="mud-text-secondary pa-3">Nothing here.</td></tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+        </MudItem>
+    }
+</MudGrid>
+
+@if (_edit is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:500px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_edit.Id == 0 ? "New Warehouse" : _edit.Name)</MudText>
+            <MudTextField @bind-Value="_edit.Name" Label="Name" Class="mb-2" />
+            <MudTextField @bind-Value="_edit.Code" Label="Code" Class="mb-2" />
+            <MudTextField @bind-Value="_edit.Address" Label="Address" Lines="2" Class="mb-2" />
+            <MudTextField @bind-Value="_edit.Notes" Label="Notes" Lines="2" Class="mb-2" />
+            <div class="d-flex gap-4">
+                <MudSwitch T="bool" @bind-Value="_edit.IsActive" Label="Active" Color="Color.Primary" />
+                <MudSwitch T="bool" @bind-Value="_edit.IsDefault" Label="Default" Color="Color.Warning" />
+            </div>
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _edit = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_delete is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-2">Delete @_delete.Name?</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                Only possible while it holds no stock, and never for the default warehouse.
+            </MudText>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _delete = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="Delete">Delete</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    private List<Warehouse> _warehouses = [];
+    private Warehouse? _edit, _delete, _selected;
+    private List<WarehouseStockRow> _contents = [];
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _warehouses = await scope.ServiceProvider.GetRequiredService<IWarehouseService>().ListAsync();
+        StateHasChanged();
+    }
+
+    private async Task Select(Warehouse w)
+    {
+        _selected = w;
+        using var scope = ScopeFactory.CreateScope();
+        _contents = await scope.ServiceProvider.GetRequiredService<IWarehouseService>().StockAtAsync(w.Id);
+    }
+
+    // A copy, so cancelling leaves the table untouched.
+    private void Open(Warehouse? w) => _edit = w is null
+        ? new Warehouse()
+        : new Warehouse
+        {
+            Id = w.Id, Name = w.Name, Code = w.Code, Address = w.Address,
+            Notes = w.Notes, IsActive = w.IsActive, IsDefault = w.IsDefault
+        };
+
+    private async Task Save()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IWarehouseService>().SaveAsync(_edit!);
+            _edit = null;
+            Snackbar.Add("Warehouse saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Delete()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IWarehouseService>().DeleteAsync(_delete!.Id);
+            _delete = null;
+            if (_selected?.Id == _delete?.Id) { _selected = null; _contents = []; }
+            Snackbar.Add("Warehouse deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _delete = null;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

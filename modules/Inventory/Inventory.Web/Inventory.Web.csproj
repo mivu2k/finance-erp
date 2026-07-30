@@ -20,6 +20,7 @@
     <ProjectReference Include="..\Inventory.Domain\Inventory.Domain.csproj" />
     <ProjectReference Include="..\Inventory.Infrastructure\Inventory.Infrastructure.csproj" />
     <ProjectReference Include="..\..\..\shared\ErpPlatform.Shared.Web\ErpPlatform.Shared.Web.csproj" />
+    <ProjectReference Include="..\..\..\shared\ErpPlatform.Shared.Printing\ErpPlatform.Shared.Printing.csproj" />
   </ItemGroup>
 
 </Project>

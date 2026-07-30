@@ -59,7 +59,24 @@ else
                 {
                     <MudChip T="string" Size="Size.Small">Inactive</MudChip>
                 }
+                @if (model.IsSerialised)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info"
+                             Icon="@Icons.Material.Filled.Tag">Serialised</MudChip>
+                }
+                @if (model.IsBatchTracked)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info"
+                             Icon="@Icons.Material.Filled.Inventory">Batched</MudChip>
+                }
                 <MudSpacer />
+                <AuthorizeView Policy="@InventoryPermissions.CostsView" Context="costCtx">
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                        Cost @(model.AverageCost?.ToString("N2") ?? "—")
+                        · Sale @model.SalePrice.ToString("N2")
+                        · Value @model.StockValue.ToString("N2")
+                    </MudText>
+                </AuthorizeView>
                 <MudText Typo="Typo.h6" Color="@(model.CurrentQuantity <= model.ReorderThreshold ? Color.Warning : Color.Default)">
                     @model.CurrentQuantity @model.Unit
                 </MudText>
@@ -141,6 +158,74 @@ else
                 </MudSimpleTable>
             }
 
+            @if (_locations.TryGetValue(model.Id, out var places) && places.Count > 0)
+            {
+                <div class="d-flex align-center gap-2 flex-wrap mb-2">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Where it is:</MudText>
+                    @foreach (var place in places)
+                    {
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
+                            @place.Warehouse.Name: @place.Quantity.ToString("0.##")
+                        </MudChip>
+                    }
+                </div>
+            }
+
+            @if (model.IsSerialised && _units.TryGetValue(model.Id, out var units) && units.Count > 0)
+            {
+                <MudExpansionPanels Elevation="0" Class="mb-2">
+                    <MudExpansionPanel Text="@($"Serial numbers ({units.Count(u => u.CountsAsStock)} in stock of {units.Count})")">
+                        <MudSimpleTable Dense="true">
+                            <thead>
+                                <tr><th>Serial</th><th>Status</th><th>Received</th><th>Issued to</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var u in units)
+                                {
+                                    <tr>
+                                        <td>@u.SerialNumber</td>
+                                        <td>
+                                            <MudChip T="string" Size="Size.Small"
+                                                     Color="@(u.CountsAsStock ? Color.Success : Color.Default)">
+                                                @u.Status
+                                            </MudChip>
+                                        </td>
+                                        <td>@u.ReceivedOn.ToString("yyyy-MM-dd")</td>
+                                        <td>@u.IssuedTo</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudExpansionPanel>
+                </MudExpansionPanels>
+            }
+
+            @if (model.IsBatchTracked && _batches.TryGetValue(model.Id, out var batches) && batches.Count > 0)
+            {
+                <MudExpansionPanels Elevation="0" Class="mb-2">
+                    <MudExpansionPanel Text="@($"Batches ({batches.Count} open)")">
+                        <MudSimpleTable Dense="true">
+                            <thead><tr><th>Batch</th><th>Received</th><th>Expires</th><th style="text-align:right">Remaining</th></tr></thead>
+                            <tbody>
+                                @foreach (var b in batches)
+                                {
+                                    <tr>
+                                        <td>@b.BatchNumber</td>
+                                        <td>@b.ReceivedOn.ToString("yyyy-MM-dd")</td>
+                                        <td>
+                                            <span style="@(b.IsExpired(_today) ? "color:var(--mud-palette-error)" : "")">
+                                                @(b.ExpiresOn?.ToString("yyyy-MM-dd") ?? "—")
+                                            </span>
+                                        </td>
+                                        <td style="text-align:right">@b.RemainingQuantity.ToString("0.##")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudExpansionPanel>
+                </MudExpansionPanels>
+            }
+
             <AuthorizeView Policy="@InventoryPermissions.ProductsManage" Context="addAccCtx">
                 <div class="d-flex align-center gap-2 mt-3 flex-wrap">
                     <MudTextField @bind-Value="_newAccessoryName[model.Id]" Label="New accessory name"
@@ -185,7 +270,16 @@ else
             <MudTextField @bind-Value="_editModel.ModelNumber" Label="Model number" Class="mb-2" />
             <MudTextField @bind-Value="_editModel.Sku" Label="SKU" Class="mb-2" />
             <MudTextField @bind-Value="_editModel.Unit" Label="Unit" Class="mb-2" />
+            <MudTextField @bind-Value="_editModel.Barcode" Label="Barcode" Class="mb-2" />
             <MudNumericField T="decimal" @bind-Value="_editModel.ReorderThreshold" Label="Reorder at" Class="mb-2" />
+            <MudNumericField T="decimal" @bind-Value="_editModel.ReorderQuantity" Label="Reorder quantity" Class="mb-2" />
+            <AuthorizeView Policy="@InventoryPermissions.CostsView" Context="priceCtx">
+                <MudNumericField T="decimal" @bind-Value="_editModel.SalePrice" Label="Sale price" Class="mb-2" />
+            </AuthorizeView>
+            <div class="d-flex gap-4 mb-2">
+                <MudSwitch T="bool" @bind-Value="_editModel.IsSerialised" Label="Serialised" Color="Color.Info" />
+                <MudSwitch T="bool" @bind-Value="_editModel.IsBatchTracked" Label="Batch tracked" Color="Color.Info" />
+            </div>
             <MudSwitch T="bool" @bind-Value="_editModel.IsActive" Label="Active" Color="Color.Primary" />
             <div class="d-flex justify-end gap-2 mt-4">
                 <MudButton OnClick="@(() => _editModel = null)">Cancel</MudButton>
@@ -270,6 +364,10 @@ else
     private readonly Dictionary<int, decimal> _accessoryQty = [];
     private readonly Dictionary<int, string> _newAccessoryName = [];
     private ProductModel _newModel = new() { Unit = "pcs" };
+    private readonly Dictionary<int, List<StockUnit>> _units = [];
+    private readonly Dictionary<int, List<StockBatch>> _batches = [];
+    private readonly Dictionary<int, List<StockBalance>> _locations = [];
+    private readonly DateOnly _today = DateOnly.FromDateTime(DateTime.UtcNow);
 
     private ProductModel? _editModel;
     private Accessory? _editAccessory;
@@ -285,8 +383,19 @@ else
         _product = await scope.ServiceProvider.GetRequiredService<IProductService>().GetAsync(Id);
         if (_product is null) return;
 
+        var tracking = scope.ServiceProvider.GetRequiredService<IStockTrackingService>();
+        var stock = scope.ServiceProvider.GetRequiredService<IStockService>();
+
         foreach (var model in _product.Models)
         {
+            // Only fetched for items that actually track them, so a plain consumable
+            // costs nothing extra to display.
+            if (model.IsSerialised)
+                _units[model.Id] = await tracking.ListUnitsAsync(StockItemType.Model, model.Id);
+            if (model.IsBatchTracked)
+                _batches[model.Id] = await tracking.ListBatchesAsync(StockItemType.Model, model.Id, openOnly: true);
+            _locations[model.Id] = await stock.ListBalancesAsync(StockItemType.Model, model.Id);
+
             _modelQty.TryAdd(model.Id, 1);
             _modelReason.TryAdd(model.Id, StockReason.Adjustment);
             _newAccessoryName.TryAdd(model.Id, "");
@@ -351,7 +460,10 @@ else
     {
         Id = model.Id, ProductId = model.ProductId, Name = model.Name,
         ModelNumber = model.ModelNumber, Sku = model.Sku, Unit = model.Unit,
-        ReorderThreshold = model.ReorderThreshold, IsActive = model.IsActive
+        Barcode = model.Barcode, ReorderThreshold = model.ReorderThreshold,
+        ReorderQuantity = model.ReorderQuantity, SalePrice = model.SalePrice,
+        IsSerialised = model.IsSerialised, IsBatchTracked = model.IsBatchTracked,
+        IsActive = model.IsActive
     };
 
     private void OpenAccessoryEditor(Accessory accessory) => _editAccessory = new Accessory

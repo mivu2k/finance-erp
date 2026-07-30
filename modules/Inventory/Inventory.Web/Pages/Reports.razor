@@ -1,62 +1,158 @@
 @page "/inventory/reports"
+@page "/inventory/reports/{ReportKey}"
 @attribute [Authorize(Policy = InventoryPermissions.ReportsView)]
 @layout InventoryLayout
 @rendermode InteractiveServer
 @inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
 
-<PageTitle>Inventory Reports</PageTitle>
+<PageTitle>@(_report?.Title ?? "Inventory Reports")</PageTitle>
 
-<MudText Typo="Typo.h5" Class="mb-4">Stock Levels</MudText>
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Reports</MudText>
+    <MudSpacer />
+    @if (_report is not null && _definition is not null)
+    {
+        <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                   Href="@($"/inventory/print/report/{_definition.Key}")" Target="_blank">
+            Print / PDF
+        </MudButton>
+    }
+</div>
 
-<MudPaper Class="pa-2" Style="overflow-x:auto">
-    <MudSimpleTable Dense="true" Hover="true" Striped="true">
-        <thead>
-            <tr><th>Product</th><th>Model</th><th>Accessory</th><th>Quantity</th><th>Reorder at</th><th>Status</th></tr>
-        </thead>
-        <tbody>
-            @foreach (var p in _products)
-            {
-                @foreach (var m in p.Models)
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="3">
+        <MudPaper Class="pa-2">
+            <MudNavMenu Dense="true">
+                @foreach (var d in _catalog)
                 {
-                    <tr>
-                        <td>@p.Name</td>
-                        <td>@m.Name</td>
-                        <td></td>
-                        <td>@m.CurrentQuantity @m.Unit</td>
-                        <td>@m.ReorderThreshold</td>
-                        <td>
-                            <MudChip T="string" Size="Size.Small" Color="@(m.CurrentQuantity <= m.ReorderThreshold ? Color.Warning : Color.Success)">
-                                @(m.CurrentQuantity <= m.ReorderThreshold ? "Low" : "OK")
-                            </MudChip>
-                        </td>
-                    </tr>
-                    @foreach (var a in m.Accessories)
+                    @if (!d.ShowsMoney || _canSeeMoney)
                     {
-                        <tr>
-                            <td>@p.Name</td>
-                            <td>@m.Name</td>
-                            <td>@a.Name</td>
-                            <td>@a.CurrentQuantity @a.Unit</td>
-                            <td>@a.ReorderThreshold</td>
-                            <td>
-                                <MudChip T="string" Size="Size.Small" Color="@(a.CurrentQuantity <= a.ReorderThreshold ? Color.Warning : Color.Success)">
-                                    @(a.CurrentQuantity <= a.ReorderThreshold ? "Low" : "OK")
-                                </MudChip>
-                            </td>
-                        </tr>
+                        <MudNavLink Href="@($"/inventory/reports/{d.Key}")"
+                                    Match="NavLinkMatch.All"
+                                    Icon="@(d.ShowsMoney ? Icons.Material.Filled.Payments : Icons.Material.Filled.Inventory2)">
+                            @d.Name
+                        </MudNavLink>
                     }
                 }
-            }
-        </tbody>
-    </MudSimpleTable>
-</MudPaper>
+            </MudNavMenu>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="9">
+        @if (_definition is null)
+        {
+            <MudAlert Severity="Severity.Info">
+                Pick a report. Anything showing cost or value needs the
+                <b>See cost, sale price and stock valuation</b> permission.
+            </MudAlert>
+        }
+        else if (_report is not null)
+        {
+            <MudPaper Class="pa-4">
+                <div class="d-flex align-center mb-1 flex-wrap gap-2">
+                    <MudText Typo="Typo.h6">@_report.Title</MudText>
+                    <MudSpacer />
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@_report.Subtitle</MudText>
+                </div>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                    @_definition.Description
+                </MudText>
+
+                <div style="overflow-x:auto">
+                    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+                        <thead>
+                            <tr>
+                                @foreach (var c in _report.Columns)
+                                {
+                                    <th style="@(c.Right ? "text-align:right" : "")">@c.Header</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _report.Rows)
+                            {
+                                <tr>
+                                    @for (var i = 0; i < row.Length; i++)
+                                    {
+                                        var right = i < _report.Columns.Count && _report.Columns[i].Right;
+                                        <td style="@(right ? "text-align:right" : "")">@row[i]</td>
+                                    }
+                                </tr>
+                            }
+                            @if (_report.Rows.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="@_report.Columns.Count" class="mud-text-secondary pa-4">
+                                        Nothing to report for this selection.
+                                    </td>
+                                </tr>
+                            }
+                            @if (_report.TotalsRow is { } totals)
+                            {
+                                <tr style="border-top:2px solid var(--mud-palette-lines-default)">
+                                    @for (var i = 0; i < totals.Count; i++)
+                                    {
+                                        var right = i < _report.Columns.Count && _report.Columns[i].Right;
+                                        <td style="@(right ? "text-align:right" : "")"><b>@totals[i]</b></td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_report.Note))
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-block">
+                        @_report.Note
+                    </MudText>
+                }
+            </MudPaper>
+        }
+    </MudItem>
+</MudGrid>
 
 @code {
-    private List<Product> _products = [];
+    [Parameter] public string? ReportKey { get; set; }
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
 
-    protected override async Task OnInitializedAsync()
+    private IReadOnlyList<InventoryReportDefinition> _catalog = [];
+    private InventoryReportDefinition? _definition;
+    private InventoryReport? _report;
+    private bool _canSeeMoney;
+
+    protected override async Task OnParametersSetAsync()
     {
         using var scope = ScopeFactory.CreateScope();
-        _products = await scope.ServiceProvider.GetRequiredService<IProductService>().ListAsync();
+        var reports = scope.ServiceProvider.GetRequiredService<IInventoryReportService>();
+        _catalog = reports.Catalog;
+
+        var user = (await AuthState).User;
+        _canSeeMoney = user.HasClaim(PermissionCatalog.ClaimType, InventoryPermissions.CostsView);
+
+        _definition = ReportKey is null ? null : reports.Find(ReportKey);
+        if (_definition is null) { _report = null; return; }
+
+        // A money report is refused outright rather than rendered with holes in it.
+        if (_definition.ShowsMoney && !_canSeeMoney)
+        {
+            _definition = null;
+            _report = null;
+            Snackbar.Add("That report shows costs, which you don't have permission to see.", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            _report = await reports.BuildAsync(_definition.Key, _canSeeMoney);
+        }
+        catch (Exception ex)
+        {
+            _report = null;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
     }
 }

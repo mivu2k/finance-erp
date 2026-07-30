@@ -1,0 +1,361 @@
+@page "/inventory/purchase-orders"
+@page "/inventory/purchase-orders/{Id:int}"
+@attribute [Authorize(Policy = InventoryPermissions.PurchaseManage)]
+@layout InventoryLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Purchase Orders</PageTitle>
+
+@if (_order is null)
+{
+    <div class="d-flex align-center mb-4 flex-wrap gap-2">
+        <MudText Typo="Typo.h5">Purchase Orders</MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => _draftOpen = true)">
+            New Order
+        </MudButton>
+    </div>
+
+    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+        An order is a commitment, not a movement — nothing reaches stock until a goods
+        received note books it in. That is what makes "ordered but not yet arrived" answerable.
+    </MudAlert>
+
+    <MudPaper Class="pa-2" Style="overflow-x:auto">
+        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+            <thead>
+                <tr><th>Number</th><th>Date</th><th>Supplier</th><th>Expected</th>
+                    <th>Lines</th><th style="text-align:right">Total</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var o in _orders)
+                {
+                    <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/inventory/purchase-orders/{o.Id}"))">
+                        <td>@o.OrderNumber</td>
+                        <td>@o.Date.ToString("yyyy-MM-dd")</td>
+                        <td>@o.Supplier?.Name</td>
+                        <td>@(o.ExpectedOn?.ToString("yyyy-MM-dd") ?? "—")</td>
+                        <td>@o.Lines.Count</td>
+                        <td style="text-align:right">@o.TotalAmount.ToString("N2")</td>
+                        <td><MudChip T="string" Size="Size.Small" Color="@StatusColour(o.Status)">@o.Status</MudChip></td>
+                    </tr>
+                }
+                @if (_orders.Count == 0)
+                {
+                    <tr><td colspan="7" class="mud-text-secondary pa-4">No orders yet.</td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+else
+{
+    <div class="d-flex align-center mb-4 flex-wrap gap-2">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/inventory/purchase-orders" />
+        <MudText Typo="Typo.h5">@_order.OrderNumber</MudText>
+        <MudChip T="string" Size="Size.Small" Color="@StatusColour(_order.Status)">@_order.Status</MudChip>
+        <MudSpacer />
+        <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                   StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                   Href="@($"/inventory/print/purchase-order/{_order.Id}")" Target="_blank">PDF</MudButton>
+        @if (_order.Status == PurchaseOrderStatus.Draft)
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                       OnClick="Place">Place order</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error"
+                       OnClick="Cancel">Cancel</MudButton>
+        }
+        else if (_order.Status is PurchaseOrderStatus.Ordered or PurchaseOrderStatus.PartlyReceived)
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                       StartIcon="@Icons.Material.Filled.MoveToInbox" OnClick="ReceiveGoods">
+                Receive goods
+            </MudButton>
+        }
+    </div>
+
+    <MudGrid Spacing="3" Class="mb-2">
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-3">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Supplier</MudText>
+                <MudText>@_order.Supplier?.Name</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-3">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Expected</MudText>
+                <MudText>@(_order.ExpectedOn?.ToString("yyyy-MM-dd") ?? "—")</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-3">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Total</MudText>
+                <MudText Typo="Typo.h6">@_order.TotalAmount.ToString("N2")</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudPaper Class="pa-2" Style="overflow-x:auto">
+        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+            <thead>
+                <tr><th>Item</th><th style="text-align:right">Ordered</th>
+                    <th style="text-align:right">Received</th><th style="text-align:right">Outstanding</th>
+                    <th style="text-align:right">Unit cost</th><th style="text-align:right">Amount</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var l in _order.Lines)
+                {
+                    <tr>
+                        <td>@l.ItemName</td>
+                        <td style="text-align:right">@l.Quantity.ToString("0.##")</td>
+                        <td style="text-align:right">@l.ReceivedQuantity.ToString("0.##")</td>
+                        <td style="text-align:right">
+                            @if (l.Outstanding > 0)
+                            {
+                                <b>@l.Outstanding.ToString("0.##")</b>
+                            }
+                            else
+                            {
+                                <span class="mud-text-secondary">—</span>
+                            }
+                        </td>
+                        <td style="text-align:right">@l.UnitCost.ToString("N2")</td>
+                        <td style="text-align:right">@l.LineTotal.ToString("N2")</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+
+@if (_draftOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:680px;max-width:95vw;max-height:92vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">New Purchase Order</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" md="6">
+                    <MudSelect T="int" @bind-Value="_supplierId" Label="Supplier" Margin="Margin.Dense">
+                        @foreach (var s in _suppliers)
+                        {
+                            <MudSelectItem T="int" Value="@s.Id">@s.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudSelect T="int?" @bind-Value="_warehouseId" Label="Deliver to" Margin="Margin.Dense">
+                        @foreach (var w in _warehouses)
+                        {
+                            <MudSelectItem T="int?" Value="@w.Id">@w.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudDatePicker Date="_expected" DateChanged="@(d => _expected = d)"
+                                   Label="Expected" Margin="Margin.Dense" />
+                </MudItem>
+
+                <MudItem xs="12" md="5">
+                    <MudSelect T="string" @bind-Value="_pickedItem" Label="Item" Margin="Margin.Dense">
+                        @foreach (var (key, name) in _items)
+                        {
+                            <MudSelectItem T="string" Value="@key">@name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="4" md="2">
+                    <MudNumericField T="decimal" @bind-Value="_pickedQty" Label="Qty" Min="0.01M" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="4" md="3">
+                    <MudNumericField T="decimal" @bind-Value="_pickedCost" Label="Unit cost" Min="0" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="4" md="2" Class="d-flex align-center">
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="AddLine">Add</MudButton>
+                </MudItem>
+            </MudGrid>
+
+            <MudSimpleTable Dense="true" Class="mt-3">
+                <tbody>
+                    @foreach (var l in _draftLines)
+                    {
+                        var line = l;
+                        <tr>
+                            <td>@line.ItemName</td>
+                            <td style="text-align:right">@line.Quantity.ToString("0.##")</td>
+                            <td style="text-align:right">@line.UnitCost.ToString("N2")</td>
+                            <td style="text-align:right">@((line.Quantity * line.UnitCost).ToString("N2"))</td>
+                            <td style="width:44px">
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete"
+                                               Color="Color.Error" OnClick="@(() => _draftLines.Remove(line))" />
+                            </td>
+                        </tr>
+                    }
+                    @if (_draftLines.Count == 0)
+                    {
+                        <tr><td class="mud-text-secondary">No lines yet.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _draftOpen = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateDraft"
+                           Disabled="@(_draftLines.Count == 0)">Create</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private List<PurchaseOrder> _orders = [];
+    private PurchaseOrder? _order;
+
+    private bool _draftOpen;
+    private List<Supplier> _suppliers = [];
+    private List<Warehouse> _warehouses = [];
+    private List<(string Key, string Name)> _items = [];
+    private readonly List<PurchaseOrderLine> _draftLines = [];
+    private int _supplierId;
+    private int? _warehouseId;
+    private DateTime? _expected = DateTime.Today.AddDays(7);
+    private string? _pickedItem;
+    private decimal _pickedQty = 1, _pickedCost;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private static Color StatusColour(PurchaseOrderStatus s) => s switch
+    {
+        PurchaseOrderStatus.Draft => Color.Info,
+        PurchaseOrderStatus.Ordered => Color.Primary,
+        PurchaseOrderStatus.PartlyReceived => Color.Warning,
+        PurchaseOrderStatus.Received => Color.Success,
+        _ => Color.Default
+    };
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<IPurchaseOrderService>();
+
+        if (Id is { } id)
+        {
+            _order = await svc.GetAsync(id);
+        }
+        else
+        {
+            _order = null;
+            _orders = await svc.ListAsync();
+            _suppliers = await scope.ServiceProvider.GetRequiredService<ISupplierService>()
+                .ListAsync(activeOnly: true);
+            _warehouses = await scope.ServiceProvider.GetRequiredService<IWarehouseService>()
+                .ListAsync(activeOnly: true);
+            _supplierId = _suppliers.FirstOrDefault()?.Id ?? 0;
+            _warehouseId = _warehouses.FirstOrDefault(w => w.IsDefault)?.Id
+                           ?? _warehouses.FirstOrDefault()?.Id;
+
+            var products = await scope.ServiceProvider.GetRequiredService<IProductService>().ListAsync();
+            _items = products.SelectMany(p => p.Models.Select(m =>
+                    ($"{StockItemType.Model}:{m.Id}", $"{p.Name} › {m.Name}")))
+                .Concat(products.SelectMany(p => p.Models.SelectMany(m => m.Accessories.Select(a =>
+                    ($"{StockItemType.Accessory}:{a.Id}", $"{m.Name} › {a.Name}")))))
+                .ToList();
+        }
+        StateHasChanged();
+    }
+
+    private void AddLine()
+    {
+        if (_pickedItem is null || _pickedQty <= 0) return;
+
+        var parts = _pickedItem.Split(':');
+        _draftLines.Add(new PurchaseOrderLine
+        {
+            ItemType = Enum.Parse<StockItemType>(parts[0]),
+            ItemId = int.Parse(parts[1]),
+            ItemName = _items.First(i => i.Key == _pickedItem).Name,
+            Quantity = _pickedQty, UnitCost = _pickedCost
+        });
+        _pickedQty = 1;
+        _pickedCost = 0;
+    }
+
+    private async Task<(string Id, string Name)> CurrentUserAsync()
+    {
+        var user = (await AuthState.GetAuthenticationStateAsync()).User;
+        return (user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+                user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown");
+    }
+
+    private async Task CreateDraft()
+    {
+        try
+        {
+            var (userId, name) = await CurrentUserAsync();
+            using var scope = ScopeFactory.CreateScope();
+            var created = await scope.ServiceProvider.GetRequiredService<IPurchaseOrderService>()
+                .SaveAsync(new PurchaseOrder
+                {
+                    SupplierId = _supplierId,
+                    WarehouseId = _warehouseId,
+                    Date = DateOnly.FromDateTime(DateTime.Today),
+                    ExpectedOn = _expected is { } e ? DateOnly.FromDateTime(e) : null,
+                    Lines = _draftLines.ToList()
+                }, userId, name);
+
+            _draftOpen = false;
+            _draftLines.Clear();
+            Nav.NavigateTo($"/inventory/purchase-orders/{created.Id}");
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Place()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IPurchaseOrderService>().PlaceAsync(_order!.Id);
+            Snackbar.Add("Order placed.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Cancel()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IPurchaseOrderService>().CancelAsync(_order!.Id);
+            Snackbar.Add("Order cancelled.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    /// <summary>Builds a draft receipt from what this order is still owed.</summary>
+    private async Task ReceiveGoods()
+    {
+        try
+        {
+            var (userId, name) = await CurrentUserAsync();
+            using var scope = ScopeFactory.CreateScope();
+            var receipts = scope.ServiceProvider.GetRequiredService<IGoodsReceiptService>();
+
+            var draft = await receipts.BuildFromOrderAsync(_order!.Id);
+            var saved = await receipts.SaveAsync(draft, userId, name);
+
+            Snackbar.Add($"{saved.ReceiptNumber} drafted — check quantities and serials, then post.",
+                Severity.Success);
+            Nav.NavigateTo($"/inventory/receipts/{saved.Id}");
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

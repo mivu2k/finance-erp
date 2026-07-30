@@ -1,0 +1,245 @@
+@page "/inventory/receipts"
+@page "/inventory/receipts/{Id:int}"
+@attribute [Authorize(Policy = InventoryPermissions.PurchaseManage)]
+@layout InventoryLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Goods Received</PageTitle>
+
+@if (_receipt is null)
+{
+    <MudText Typo="Typo.h5" Class="mb-4">Goods Received</MudText>
+
+    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+        A receipt is what actually moves stock. Raise one from a purchase order to have it
+        pre-filled with what is still owed, or record goods that arrived without paperwork.
+        Serialised items need one serial per unit before they can be posted.
+    </MudAlert>
+
+    <MudPaper Class="pa-2" Style="overflow-x:auto">
+        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+            <thead>
+                <tr><th>Number</th><th>Date</th><th>Supplier</th><th>Their doc</th>
+                    <th>Lines</th><th style="text-align:right">Total</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _receipts)
+                {
+                    <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/inventory/receipts/{r.Id}"))">
+                        <td>@r.ReceiptNumber</td>
+                        <td>@r.Date.ToString("yyyy-MM-dd")</td>
+                        <td>@r.Supplier?.Name</td>
+                        <td>@r.SupplierDocumentNumber</td>
+                        <td>@r.Lines.Count</td>
+                        <td style="text-align:right">@r.TotalCost.ToString("N2")</td>
+                        <td><MudChip T="string" Size="Size.Small" Color="@StatusColour(r.Status)">@r.Status</MudChip></td>
+                    </tr>
+                }
+                @if (_receipts.Count == 0)
+                {
+                    <tr><td colspan="7" class="mud-text-secondary pa-4">
+                        Nothing received yet. Start from a purchase order.
+                    </td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+else
+{
+    <div class="d-flex align-center mb-4 flex-wrap gap-2">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/inventory/receipts" />
+        <MudText Typo="Typo.h5">@_receipt.ReceiptNumber</MudText>
+        <MudChip T="string" Size="Size.Small" Color="@StatusColour(_receipt.Status)">@_receipt.Status</MudChip>
+        <MudSpacer />
+        <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                   StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                   Href="@($"/inventory/print/grn/{_receipt.Id}")" Target="_blank">GRN PDF</MudButton>
+        @if (_receipt.Status == GoodsReceiptStatus.Draft)
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="SaveDraft">Save</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                       StartIcon="@Icons.Material.Filled.Publish" OnClick="Post">Post into stock</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="Cancel">Cancel</MudButton>
+        }
+    </div>
+
+    <MudPaper Class="pa-4 mb-4">
+        <MudGrid Spacing="2">
+            <MudItem xs="12" md="4">
+                <MudTextField Value="@(_receipt.Supplier?.Name ?? "—")" Label="Supplier"
+                              ReadOnly="true" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField @bind-Value="_receipt.SupplierDocumentNumber"
+                              Label="Their invoice / delivery note" Margin="Margin.Dense"
+                              ReadOnly="@(_receipt.Status != GoodsReceiptStatus.Draft)" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField Value="@(_receipt.PurchaseOrder?.OrderNumber ?? "standalone")"
+                              Label="Against order" ReadOnly="true" Margin="Margin.Dense" />
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudPaper Class="pa-2" Style="overflow-x:auto">
+        <MudSimpleTable Dense="true" Striped="true">
+            <thead>
+                <tr>
+                    <th>Item</th><th style="width:110px">Qty</th><th style="width:120px">Unit cost</th>
+                    <th style="width:230px">Serials (comma separated)</th>
+                    <th style="width:130px">Batch</th><th style="width:150px">Expires</th>
+                    <th style="text-align:right">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var line in _receipt.Lines)
+                {
+                    var l = line;
+                    var editable = _receipt.Status == GoodsReceiptStatus.Draft;
+                    <tr>
+                        <td>@l.ItemName</td>
+                        <td>
+                            @if (editable)
+                            {
+                                <MudNumericField T="decimal" Value="l.Quantity"
+                                                 ValueChanged="@(v => { l.Quantity = v; Recalc(); })"
+                                                 Min="0.01M" Margin="Margin.Dense" HideSpinButtons="true" />
+                            }
+                            else { @l.Quantity.ToString("0.##") }
+                        </td>
+                        <td>
+                            @if (editable)
+                            {
+                                <MudNumericField T="decimal" Value="l.UnitCost"
+                                                 ValueChanged="@(v => { l.UnitCost = v; Recalc(); })"
+                                                 Min="0" Margin="Margin.Dense" HideSpinButtons="true" />
+                            }
+                            else { @l.UnitCost.ToString("N2") }
+                        </td>
+                        <td>
+                            @if (editable)
+                            {
+                                <MudTextField @bind-Value="l.SerialNumbers" Margin="Margin.Dense"
+                                              Placeholder="only if serialised" />
+                            }
+                            else { @l.SerialNumbers }
+                        </td>
+                        <td>
+                            @if (editable)
+                            {
+                                <MudTextField @bind-Value="l.BatchNumber" Margin="Margin.Dense"
+                                              Placeholder="if batched" />
+                            }
+                            else { @l.BatchNumber }
+                        </td>
+                        <td>
+                            @if (editable)
+                            {
+                                <MudDatePicker Date="@(l.ExpiresOn?.ToDateTime(TimeOnly.MinValue))"
+                                               DateChanged="@(d => l.ExpiresOn = d is { } dd ? DateOnly.FromDateTime(dd) : null)"
+                                               Margin="Margin.Dense" Clearable="true" />
+                            }
+                            else { @l.ExpiresOn?.ToString("yyyy-MM-dd") }
+                        </td>
+                        <td style="text-align:right">@l.LineTotal.ToString("N2")</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+
+    <div class="d-flex justify-end mt-2">
+        <MudText Typo="Typo.h6">Total: @_receipt.TotalCost.ToString("N2")</MudText>
+    </div>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private List<GoodsReceipt> _receipts = [];
+    private GoodsReceipt? _receipt;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private static Color StatusColour(GoodsReceiptStatus s) => s switch
+    {
+        GoodsReceiptStatus.Draft => Color.Info,
+        GoodsReceiptStatus.Posted => Color.Success,
+        _ => Color.Default
+    };
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<IGoodsReceiptService>();
+
+        if (Id is { } id) _receipt = await svc.GetAsync(id);
+        else { _receipt = null; _receipts = await svc.ListAsync(); }
+
+        StateHasChanged();
+    }
+
+    private void Recalc()
+    {
+        foreach (var l in _receipt!.Lines) l.LineTotal = Math.Round(l.Quantity * l.UnitCost, 2);
+        _receipt.TotalCost = _receipt.Lines.Sum(l => l.LineTotal);
+    }
+
+    private async Task<(string Id, string Name)> CurrentUserAsync()
+    {
+        var user = (await AuthState.GetAuthenticationStateAsync()).User;
+        return (user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+                user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown");
+    }
+
+    private async Task SaveDraft()
+    {
+        try
+        {
+            var (userId, name) = await CurrentUserAsync();
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IGoodsReceiptService>()
+                .SaveAsync(_receipt!, userId, name);
+            Snackbar.Add("Saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Post()
+    {
+        try
+        {
+            var (userId, name) = await CurrentUserAsync();
+            using var scope = ScopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<IGoodsReceiptService>();
+
+            // Save first: quantities, costs and serials typed on screen have to be on
+            // the row before posting reads them.
+            await svc.SaveAsync(_receipt!, userId, name);
+            await svc.PostAsync(_receipt!.Id, userId, name);
+
+            Snackbar.Add("Posted — stock, costs and serials are in.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Cancel()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IGoodsReceiptService>()
+                .CancelAsync(_receipt!.Id);
+            Snackbar.Add("Receipt cancelled.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}
