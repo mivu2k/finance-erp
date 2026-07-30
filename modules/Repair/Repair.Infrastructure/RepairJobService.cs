@@ -88,6 +88,12 @@ public class RepairJobService(RepairDbContext db) : IRepairJobService
     public Task<RepairJob?> GetByNumberAsync(string jobNumber, CancellationToken ct = default) =>
         Detailed().FirstOrDefaultAsync(j => j.JobNumber == jobNumber, ct);
 
+    // AsSplitQuery: six collection navigations in one query (two of them reaching
+    // the same Part through Diagnoses and WorkItems) is the classic EF Core
+    // Cartesian-explosion trap — a single non-split query can materialize Part
+    // inconsistently across the joined rows and throw "already being tracked"
+    // whenever a diagnosis and a work item reference the same part. Splitting
+    // into one query per collection avoids the join entirely.
     private IQueryable<RepairJob> Detailed() =>
         db.RepairJobs
             .Include(j => j.Customer)
@@ -97,7 +103,8 @@ public class RepairJobService(RepairDbContext db) : IRepairJobService
             .Include(j => j.Diagnoses).ThenInclude(d => d.Part)
             .Include(j => j.Photos)
             .Include(j => j.WorkItems).ThenInclude(w => w.Part)
-            .Include(j => j.StatusHistory);
+            .Include(j => j.StatusHistory)
+            .AsSplitQuery();
 
     public async Task<RepairJob> UpdateAsync(RepairJob job, CancellationToken ct = default)
     {
