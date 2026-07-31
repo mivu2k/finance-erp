@@ -25,6 +25,11 @@ public class InventoryDbContext(DbContextOptions<InventoryDbContext> options, IC
     public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
     public DbSet<GoodsReceipt> GoodsReceipts => Set<GoodsReceipt>();
     public DbSet<GoodsReceiptLine> GoodsReceiptLines => Set<GoodsReceiptLine>();
+    public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
+    public DbSet<SalesOrderLine> SalesOrderLines => Set<SalesOrderLine>();
+    public DbSet<Delivery> Deliveries => Set<Delivery>();
+    public DbSet<DeliveryLine> DeliveryLines => Set<DeliveryLine>();
     public DbSet<DocumentSequence> DocumentSequences => Set<DocumentSequence>();
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -270,6 +275,90 @@ public class InventoryDbContext(DbContextOptions<InventoryDbContext> options, IC
             e.HasOne(x => x.GoodsReceipt).WithMany(x => x.Lines)
                 .HasForeignKey(x => x.GoodsReceiptId).OnDelete(DeleteBehavior.Cascade);
             e.HasQueryFilter(x => !x.GoodsReceipt.IsDeleted);
+        });
+
+        b.Entity<Customer>(e =>
+        {
+            e.HasIndex(x => x.Name);
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Code).HasMaxLength(32);
+            e.Property(x => x.ContactPerson).HasMaxLength(150);
+            e.Property(x => x.Phone).HasMaxLength(40);
+            e.Property(x => x.Email).HasMaxLength(200);
+            e.Property(x => x.Address).HasMaxLength(400);
+            e.Property(x => x.TaxNumber).HasMaxLength(64);
+            e.Property(x => x.Notes).HasMaxLength(1000);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<SalesOrder>(e =>
+        {
+            e.HasIndex(x => x.OrderNumber).IsUnique();
+            e.HasIndex(x => x.Status);
+            e.Property(x => x.OrderNumber).HasMaxLength(32);
+            e.Property(x => x.CustomerReference).HasMaxLength(100);
+            e.Property(x => x.Notes).HasMaxLength(2000);
+            e.Property(x => x.RaisedById).HasMaxLength(450);
+            e.Property(x => x.RaisedByName).HasMaxLength(200);
+            foreach (var money in new[] { "Subtotal", "TaxAmount", "OtherCharges", "DiscountAmount", "TotalAmount" })
+                e.Property(money).HasPrecision(18, 2);
+            e.Ignore(x => x.IsFullyDelivered);
+            e.HasOne(x => x.Customer).WithMany()
+                .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<SalesOrderLine>(e =>
+        {
+            e.HasIndex(x => new { x.ItemType, x.ItemId });
+            e.Property(x => x.ItemName).HasMaxLength(300);
+            e.Property(x => x.Note).HasMaxLength(500);
+            e.Property(x => x.Quantity).HasPrecision(14, 2);
+            e.Property(x => x.DeliveredQuantity).HasPrecision(14, 2);
+            e.Property(x => x.UnitPrice).HasPrecision(18, 4);
+            e.Property(x => x.LineTotal).HasPrecision(18, 2);
+            e.Ignore(x => x.Outstanding);
+            e.HasOne(x => x.SalesOrder).WithMany(x => x.Lines)
+                .HasForeignKey(x => x.SalesOrderId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(x => !x.SalesOrder.IsDeleted);
+        });
+
+        b.Entity<Delivery>(e =>
+        {
+            e.HasIndex(x => x.DeliveryNumber).IsUnique();
+            e.HasIndex(x => x.Status);
+            e.Property(x => x.DeliveryNumber).HasMaxLength(32);
+            e.Property(x => x.ReceivedByName).HasMaxLength(200);
+            e.Property(x => x.VehicleNumber).HasMaxLength(50);
+            e.Property(x => x.DeliveryAddress).HasMaxLength(400);
+            e.Property(x => x.Notes).HasMaxLength(2000);
+            e.Property(x => x.DeliveredById).HasMaxLength(450);
+            e.Property(x => x.DeliveredByName).HasMaxLength(200);
+            e.Property(x => x.TotalAmount).HasPrecision(18, 2);
+            e.Property(x => x.TotalCost).HasPrecision(18, 2);
+            e.Ignore(x => x.GrossProfit);
+            e.Ignore(x => x.MarginPercent);
+            e.HasOne(x => x.Customer).WithMany()
+                .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.SalesOrder).WithMany()
+                .HasForeignKey(x => x.SalesOrderId).OnDelete(DeleteBehavior.SetNull);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<DeliveryLine>(e =>
+        {
+            e.HasIndex(x => new { x.ItemType, x.ItemId });
+            e.Property(x => x.ItemName).HasMaxLength(300);
+            e.Property(x => x.SerialNumbers).HasMaxLength(4000);
+            e.Property(x => x.Note).HasMaxLength(500);
+            e.Property(x => x.Quantity).HasPrecision(14, 2);
+            e.Property(x => x.UnitPrice).HasPrecision(18, 4);
+            e.Property(x => x.LineTotal).HasPrecision(18, 2);
+            e.Property(x => x.UnitCost).HasPrecision(18, 4);
+            e.Property(x => x.LineCost).HasPrecision(18, 2);
+            e.HasOne(x => x.Delivery).WithMany(x => x.Lines)
+                .HasForeignKey(x => x.DeliveryId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(x => !x.Delivery.IsDeleted);
         });
 
         b.Entity<DocumentSequence>(e =>

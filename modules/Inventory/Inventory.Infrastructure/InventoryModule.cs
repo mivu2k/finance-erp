@@ -22,7 +22,9 @@ public static class InventoryModule
             P(InventoryPermissions.CostsView, "Reports", "See cost, sale price and stock valuation"),
             P(InventoryPermissions.CountManage, "Stock", "Run a stock take and post its variances"),
             P(InventoryPermissions.WarehouseManage, "Warehouses", "Maintain warehouses and move stock between them"),
-            P(InventoryPermissions.PurchaseManage, "Purchasing", "Suppliers, purchase orders and goods received")
+            P(InventoryPermissions.PurchaseManage, "Purchasing", "Suppliers, purchase orders and goods received"),
+            P(InventoryPermissions.SalesManage, "Sales", "Customers, sales orders and delivery notes"),
+            P(InventoryPermissions.DeliveryPost, "Sales", "Issue a delivery out of stock")
         ],
         [
             new(InventoryRoles.Manager, "Full control of products and stock.", InventoryPermissions.All),
@@ -32,7 +34,15 @@ public static class InventoryModule
             new(InventoryRoles.StockClerk, "Adjusts stock and counts it, without seeing costs.",
             [
                 InventoryPermissions.ProductsView, InventoryPermissions.StockAdjust,
-                InventoryPermissions.ReportsView, InventoryPermissions.CountManage
+                InventoryPermissions.ReportsView, InventoryPermissions.CountManage,
+                // Ships what sales has written up, without being able to price it.
+                InventoryPermissions.DeliveryPost
+            ]),
+
+            new(InventoryRoles.SalesClerk, "Takes orders and writes delivery notes.",
+            [
+                InventoryPermissions.ProductsView, InventoryPermissions.ReportsView,
+                InventoryPermissions.CostsView, InventoryPermissions.SalesManage
             ]),
 
             new(InventoryRoles.Viewer, "Read-only.",
@@ -60,6 +70,9 @@ public static class InventoryModule
         services.AddScoped<ISupplierService, SupplierService>();
         services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
         services.AddScoped<IGoodsReceiptService, GoodsReceiptService>();
+        services.AddScoped<ICustomerService, CustomerService>();
+        services.AddScoped<ISalesOrderService, SalesOrderService>();
+        services.AddScoped<IDeliveryService, DeliveryService>();
         services.AddScoped<IInventoryReportService, InventoryReportService>();
         services.AddSingleton<IInventoryPrintService, InventoryPrintService>();
 

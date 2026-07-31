@@ -17,11 +17,18 @@ public static class InventoryPermissions
     public const string WarehouseManage = "inventory.warehouses.manage";
     /// <summary>Suppliers, purchase orders and goods received notes.</summary>
     public const string PurchaseManage = "inventory.purchasing.manage";
+    /// <summary>Customers, sales orders and delivery notes.</summary>
+    public const string SalesManage = "inventory.sales.manage";
+    /// <summary>
+    /// Issuing a delivery out of stock. Separate from writing the paperwork so the
+    /// person who takes the order isn't necessarily the one who moves the goods.
+    /// </summary>
+    public const string DeliveryPost = "inventory.delivery.post";
 
     public static IReadOnlyList<string> All =>
     [
         ProductsView, ProductsManage, StockAdjust, ReportsView, CostsView, CountManage,
-        WarehouseManage, PurchaseManage
+        WarehouseManage, PurchaseManage, SalesManage, DeliveryPost
     ];
 }
 
@@ -29,5 +36,6 @@ public static class InventoryRoles
 {
     public const string Manager = "Inventory Manager";
     public const string StockClerk = "Inventory Stock Clerk";
+    public const string SalesClerk = "Inventory Sales Clerk";
     public const string Viewer = "Inventory Viewer";
 }

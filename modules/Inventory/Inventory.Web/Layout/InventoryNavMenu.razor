@@ -33,6 +33,14 @@
         </MudNavGroup>
     </AuthorizeView>
 
+    <AuthorizeView Policy="@InventoryPermissions.SalesManage" Context="s">
+        <MudNavGroup Title="Sales" Icon="@Icons.Material.Filled.PointOfSale" Expanded="false">
+            <MudNavLink Href="/inventory/customers" Icon="@Icons.Material.Filled.People">Customers</MudNavLink>
+            <MudNavLink Href="/inventory/sales-orders" Icon="@Icons.Material.Filled.Receipt">Sales Orders</MudNavLink>
+            <MudNavLink Href="/inventory/deliveries" Icon="@Icons.Material.Filled.LocalShipping">Deliveries</MudNavLink>
+        </MudNavGroup>
+    </AuthorizeView>
+
     <AuthorizeView Policy="@InventoryPermissions.CountManage" Context="c">
         <MudNavLink Href="/inventory/counts" Icon="@Icons.Material.Filled.Checklist">Stock Takes</MudNavLink>
     </AuthorizeView>

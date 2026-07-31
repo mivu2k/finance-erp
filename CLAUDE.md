@@ -162,6 +162,28 @@ These apply to the **Finance** module specifically:
   pass stops being editable the moment it leaves Issued.
 - **Demo goods support partial returns**: the issuance stays open until the last
   item is ticked back.
+- **Inventory buying and selling are mirror images.** `PurchaseOrder` → `GoodsReceipt`
+  on one side, `SalesOrder` → `Delivery` on the other, and in both an order is a
+  commitment while only the second document moves stock. **Confirming a sales order
+  reserves nothing** — a soft reservation the stock figure doesn't honour is worse
+  than none, because two orders can still be promised the same unit. The order screen
+  warns when a line exceeds stock but takes it anyway; that's a backorder.
+- **Posting a delivery does not open its own transaction.** Every stock movement
+  already runs inside one via the execution strategy, and EF refuses to nest a second
+  — the same trap `GoodsReceiptService.PostAsync` avoids. What stops a half-posted
+  note is the pre-flight loop that checks stock and serial counts for *every* line
+  before moving any of it, not a rollback afterwards.
+- **A delivery snapshots the cost of what went out** onto `DeliveryLine.UnitCost` at
+  posting time, from the item's weighted average. The average moves with the next
+  purchase, so a margin read live would silently rewrite itself; there's a regression
+  test for exactly that. Cost and margin are gated behind `inventory.costs.view`.
+- **A serialised line must name exactly the serials it ships.** Issuing named units
+  moves the quantity and writes the ledger row itself, so a serialised line must not
+  also be adjusted — double-decrementing is the easy bug here.
+- Selling is split across two permissions: `inventory.sales.manage` writes the
+  paperwork, `inventory.delivery.post` issues it out of stock, so the person taking
+  the order need not be the one moving the goods. Inventory remains **standalone** —
+  nothing here posts to Finance's ledger.
 - **Parts carry no stock quantity.** The workshop buys against a job, so what is
   tracked is cost, not count. `PartPurchase` is the only thing that sets a part's
   cost; last cost, weighted-average cost and margin are derived from it. An older
@@ -298,7 +320,7 @@ Seven apps behind one login, chosen from the portal at `/`:
 | Repair | `/repair` | `erp_repair` | ported from Laravel, plus purchasing, barcodes and 15 reports |
 | Gate Pass & Demo Goods | `/gatepass` | `erp_gatepass` | complete |
 | HR | `/hr` | `erp_hr` | employee master, kiosk attendance, leave |
-| Inventory | `/inventory` | `erp_inventory` | products → models → accessories, stock ledger, full CRUD |
+| Inventory | `/inventory` | `erp_inventory` | products → models → accessories, stock ledger, purchasing and sales |
 | Auto | `/auto` | `erp_auto` | company vehicle fleet + maintenance history, full CRUD |
 | Plain Ledger | `/ledger` | `erp_ledger` | hand-ledger tree: main/sub ledgers, paired transfers, own nested heads |
 | Tender & Projects | `/tender` | `erp_tender` | tenders + EMDs/guarantees, and a standalone project register with tasks and milestones |
@@ -323,14 +345,15 @@ UI yet. Not ported: the customer-facing tracking page, Excel report exports.
 
 Known gaps, roughly in priority order:
 
-1. **Finance is barely tested.** 231 tests exist —
+1. **Finance is barely tested.** 242 tests exist —
    `tests/ErpPlatform.Shared.Tests` (37, Code 128 and QR round-trip through decoders —
    QR against ZXing, a test-only dependency),
    `tests/Hr.Tests` (42, the rotating attendance token and attendance arithmetic),
    `tests/Repair.Tests` (39, job workflow, quotation and purchase pricing, the
    collective-quotation save path, plus PDF render smoke tests) and
-   `tests/Inventory.Tests` (49, stock ledger arithmetic, cache rebuild and the
-   delete-while-holding-stock guards), and
+   `tests/Inventory.Tests` (60, stock ledger arithmetic, cache rebuild, the
+   delete-while-holding-stock guards, and the sales order → delivery flow including
+   the cost snapshot and serial rules), and
    `tests/Ledger.Tests` (17, the worked 1-lac-to-two-people scenario: transfer
    pairing, tree rollup, re-parent cycle guard, head rollup and head deletion), and
    `tests/GatePass.Tests` (11), and

@@ -1,0 +1,254 @@
+@page "/inventory/deliveries"
+@page "/inventory/deliveries/{Id:int}"
+@attribute [Authorize(Policy = InventoryPermissions.SalesManage)]
+@layout InventoryLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Deliveries</PageTitle>
+
+@if (_delivery is null)
+{
+    <MudText Typo="Typo.h5" Class="mb-4">Delivery Notes</MudText>
+
+    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+        A delivery is what actually moves stock. Posting is terminal — reversing means a
+        separate return or adjustment, so the correction stays on the record.
+    </MudAlert>
+
+    <MudPaper Class="pa-2" Style="overflow-x:auto">
+        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+            <thead>
+                <tr><th>Number</th><th>Date</th><th>Customer</th><th>Against order</th>
+                    <th>Lines</th><th style="text-align:right">Total</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var d in _deliveries)
+                {
+                    <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/inventory/deliveries/{d.Id}"))">
+                        <td>@d.DeliveryNumber</td>
+                        <td>@d.Date.ToString("yyyy-MM-dd")</td>
+                        <td>@d.Customer?.Name</td>
+                        <td>@(d.SalesOrderId is null ? "counter sale" : "order")</td>
+                        <td>@d.Lines.Count</td>
+                        <td style="text-align:right">@d.TotalAmount.ToString("N2")</td>
+                        <td><MudChip T="string" Size="Size.Small" Color="@StatusColour(d.Status)">@d.Status</MudChip></td>
+                    </tr>
+                }
+                @if (_deliveries.Count == 0)
+                {
+                    <tr><td colspan="7" class="mud-text-secondary pa-4">
+                        No delivery notes yet. Start one from a confirmed sales order.
+                    </td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+else
+{
+    <div class="d-flex align-center mb-4 flex-wrap gap-2">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/inventory/deliveries" />
+        <MudText Typo="Typo.h5">@_delivery.DeliveryNumber</MudText>
+        <MudChip T="string" Size="Size.Small" Color="@StatusColour(_delivery.Status)">@_delivery.Status</MudChip>
+        <MudSpacer />
+        @if (_delivery.Status == DeliveryStatus.Draft)
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="SaveDraft">Save</MudButton>
+            <AuthorizeView Policy="@InventoryPermissions.DeliveryPost">
+                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                           StartIcon="@Icons.Material.Filled.LocalShipping" OnClick="Post">
+                    Issue out of stock
+                </MudButton>
+            </AuthorizeView>
+            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="Cancel">Cancel</MudButton>
+        }
+    </div>
+
+    <MudPaper Class="pa-4 mb-4">
+        <MudGrid Spacing="2">
+            <MudItem xs="12" md="4">
+                <MudTextField Value="@(_delivery.Customer?.Name ?? "—")" Label="Customer"
+                              ReadOnly="true" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField @bind-Value="_delivery.ReceivedByName"
+                              Label="Received by (who collected)" Margin="Margin.Dense"
+                              ReadOnly="@(_delivery.Status != DeliveryStatus.Draft)" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField @bind-Value="_delivery.VehicleNumber" Label="Vehicle" Margin="Margin.Dense"
+                              ReadOnly="@(_delivery.Status != DeliveryStatus.Draft)" />
+            </MudItem>
+            <MudItem xs="12" md="8">
+                <MudTextField @bind-Value="_delivery.DeliveryAddress" Label="Delivery address"
+                              Margin="Margin.Dense" ReadOnly="@(_delivery.Status != DeliveryStatus.Draft)" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField Value="@(_delivery.SalesOrder?.OrderNumber ?? "counter sale")"
+                              Label="Against order" ReadOnly="true" Margin="Margin.Dense" />
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudPaper Class="pa-2" Style="overflow-x:auto">
+        <MudSimpleTable Dense="true" Striped="true">
+            <thead>
+                <tr>
+                    <th>Item</th><th style="width:110px">Qty</th><th style="width:120px">Unit price</th>
+                    <th style="width:260px">Serials (comma separated)</th>
+                    <th style="text-align:right">Amount</th>
+                    <AuthorizeView Policy="@InventoryPermissions.CostsView" Context="cv">
+                        <th style="text-align:right">Cost</th>
+                    </AuthorizeView>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var line in _delivery.Lines)
+                {
+                    var l = line;
+                    var editable = _delivery.Status == DeliveryStatus.Draft;
+                    <tr>
+                        <td>@l.ItemName</td>
+                        <td>
+                            @if (editable)
+                            {
+                                <MudNumericField T="decimal" Value="l.Quantity"
+                                                 ValueChanged="@(v => { l.Quantity = v; Recalc(); })"
+                                                 Min="0.01M" Margin="Margin.Dense" HideSpinButtons="true" />
+                            }
+                            else { @l.Quantity.ToString("0.##") }
+                        </td>
+                        <td>
+                            @if (editable)
+                            {
+                                <MudNumericField T="decimal" Value="l.UnitPrice"
+                                                 ValueChanged="@(v => { l.UnitPrice = v; Recalc(); })"
+                                                 Min="0" Margin="Margin.Dense" HideSpinButtons="true" />
+                            }
+                            else { @l.UnitPrice.ToString("N2") }
+                        </td>
+                        <td>
+                            @if (editable)
+                            {
+                                <MudTextField @bind-Value="l.SerialNumbers" Margin="Margin.Dense"
+                                              Placeholder="only if serialised" />
+                            }
+                            else { @l.SerialNumbers }
+                        </td>
+                        <td style="text-align:right">@l.LineTotal.ToString("N2")</td>
+                        <AuthorizeView Policy="@InventoryPermissions.CostsView" Context="cv">
+                            <td style="text-align:right">
+                                @(l.LineCost == 0 ? "—" : l.LineCost.ToString("N2"))
+                            </td>
+                        </AuthorizeView>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+
+    <div class="d-flex justify-end mt-2 gap-6">
+        <MudText Typo="Typo.h6">Total: @_delivery.TotalAmount.ToString("N2")</MudText>
+        @if (_delivery.Status == DeliveryStatus.Posted)
+        {
+            <AuthorizeView Policy="@InventoryPermissions.CostsView">
+                <MudText Typo="Typo.h6" Class="mud-text-secondary">
+                    Cost: @_delivery.TotalCost.ToString("N2")
+                </MudText>
+                <MudText Typo="Typo.h6" Color="@(_delivery.GrossProfit >= 0 ? Color.Success : Color.Error)">
+                    Margin: @_delivery.GrossProfit.ToString("N2") (@_delivery.MarginPercent.ToString("0.##")%)
+                </MudText>
+            </AuthorizeView>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private List<Delivery> _deliveries = [];
+    private Delivery? _delivery;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private static Color StatusColour(DeliveryStatus s) => s switch
+    {
+        DeliveryStatus.Draft => Color.Info,
+        DeliveryStatus.Posted => Color.Success,
+        _ => Color.Default
+    };
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<IDeliveryService>();
+
+        if (Id is { } id) _delivery = await svc.GetAsync(id);
+        else { _delivery = null; _deliveries = await svc.ListAsync(); }
+
+        StateHasChanged();
+    }
+
+    private void Recalc()
+    {
+        if (_delivery is null) return;
+        foreach (var l in _delivery.Lines) l.LineTotal = Math.Round(l.Quantity * l.UnitPrice, 2);
+        _delivery.TotalAmount = _delivery.Lines.Sum(l => l.LineTotal);
+    }
+
+    private async Task<(string Id, string Name)> CurrentUserAsync()
+    {
+        var user = (await AuthState.GetAuthenticationStateAsync()).User;
+        return (user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+                user.FindFirst("full_name")?.Value ?? user.Identity?.Name ?? "Unknown");
+    }
+
+    private async Task SaveDraft()
+    {
+        try
+        {
+            Recalc();
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IDeliveryService>().SaveAsync(_delivery!);
+            Snackbar.Add("Saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Post()
+    {
+        try
+        {
+            Recalc();
+            var (userId, name) = await CurrentUserAsync();
+            using var scope = ScopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<IDeliveryService>();
+
+            // Save first: quantities and serials typed on this screen have to be on the
+            // row before posting reads them.
+            await svc.SaveAsync(_delivery!);
+            await svc.PostAsync(_delivery!.Id, userId, name);
+
+            Snackbar.Add("Issued out of stock.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Cancel()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IDeliveryService>().CancelAsync(_delivery!.Id);
+            Snackbar.Add("Delivery cancelled.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}
