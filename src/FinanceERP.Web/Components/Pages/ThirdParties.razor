@@ -20,6 +20,46 @@
                   OnAdornmentClick="@(() => _table!.ReloadServerData())" />
 </MudPaper>
 
+@* Which heads all this money actually moved through, across every party. The common
+   case this answers: money taken from a party lands in cash in hand, gets spent on
+   other heads, and is paid back later. *@
+<MudExpansionPanels Class="mb-4" Elevation="1">
+    <MudExpansionPanel Text="@($"Money by head ({_headTotals.Count})")" Expanded="false">
+        @if (_headTotals.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Nothing posted against a third party yet.
+            </MudText>
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Hover="true" Striped="true" Style="overflow-x:auto">
+                <thead>
+                    <tr>
+                        <th>Head</th>
+                        <th style="text-align:right">Received into</th>
+                        <th style="text-align:right">Paid out of</th>
+                        <th style="text-align:right">Net</th>
+                        <th style="text-align:right">Movements</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var h in _headTotals)
+                    {
+                        <tr>
+                            <td><span class="mud-text-secondary">@h.Code</span> @h.Name</td>
+                            <td style="text-align:right">@(h.Received == 0 ? "" : h.Received.ToString("N2"))</td>
+                            <td style="text-align:right">@(h.Paid == 0 ? "" : h.Paid.ToString("N2"))</td>
+                            <td style="text-align:right">@h.Net.ToString("N2")</td>
+                            <td style="text-align:right">@h.Movements</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </MudExpansionPanel>
+</MudExpansionPanels>
+
 <MudTable @ref="_table" T="ThirdParty" ServerData="LoadData" Dense="true" Hover="true" Striped="true">
     <HeaderContent>
         <MudTh>Name</MudTh><MudTh>Side</MudTh><MudTh>Phone</MudTh><MudTh>Email</MudTh>
@@ -141,6 +181,7 @@
     private string _search = "";
     private ThirdParty? _editing;
     private Dictionary<int, decimal> _balances = [];
+    private List<PartyHeadTotalDto> _headTotals = [];
 
     private ThirdParty? _recordParty;
     private PartyMovement _movement = PartyMovement.Debit;
@@ -197,6 +238,10 @@
         _balances = [];
         foreach (var tp in result.Items.Where(t => t.AccountId is not null))
             _balances[tp.Id] = await accounts.GetBalanceAsync(tp.AccountId!.Value);
+
+        _headTotals = await scope.ServiceProvider.GetRequiredService<IThirdPartyService>()
+            .GetHeadTotalsAsync();
+
         return new TableData<ThirdParty> { Items = result.Items, TotalItems = result.TotalCount };
     }
 

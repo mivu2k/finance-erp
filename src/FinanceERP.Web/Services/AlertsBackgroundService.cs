@@ -69,23 +69,6 @@ public class AlertsBackgroundService(IServiceScopeFactory scopeFactory, ILogger<
             }
         }
 
-        // Overdue loan installments
-        var overdueLoans = await db.LoanInstallments
-            .Include(i => i.Loan).ThenInclude(l => l.ThirdParty)
-            .Where(i => i.Status != InstallmentStatus.Paid && i.DueDate < today
-                && !i.Loan.IsDeleted && i.Loan.Status == LoanStatus.Active)
-            .ToListAsync(ct);
-        foreach (var inst in overdueLoans)
-        {
-            if (inst.Status != InstallmentStatus.Overdue) inst.Status = InstallmentStatus.Overdue;
-            var title = $"Loan {inst.Loan.LoanNo} installment #{inst.Number} overdue";
-            if (!await AlreadySentToday(title))
-            {
-                await notifications.NotifyRoleAsync(AppRoles.FinanceManager, title,
-                    $"{inst.Loan.ThirdParty.Name} — due {inst.DueDate:yyyy-MM-dd}, {inst.Amount - inst.PaidAmount:N2} outstanding",
-                    NotificationType.LoanDue, "/finance/loans");
-            }
-        }
         await db.SaveChangesAsync(ct);
 
         // Utility bills due within 3 days or overdue
@@ -123,7 +106,7 @@ public class AlertsBackgroundService(IServiceScopeFactory scopeFactory, ILogger<
             }
         }
 
-        logger.LogInformation("Alert checks completed: {Advances} overdue advances, {Loans} overdue loans",
-            overdueAdvances.Count, overdueLoans.Count);
+        logger.LogInformation("Alert checks completed: {Advances} overdue advances",
+            overdueAdvances.Count);
     }
 }

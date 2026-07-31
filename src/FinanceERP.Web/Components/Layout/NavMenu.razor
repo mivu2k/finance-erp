@@ -67,12 +67,6 @@
     <AuthorizeView Policy="@Permissions.ThirdPartiesView">
         <MudNavGroup Title="Partners &amp; Portfolio" Icon="@Icons.Material.Filled.Handshake">
             <MudNavLink Href="/finance/third-parties" Icon="@Icons.Material.Filled.Groups">Third Parties</MudNavLink>
-            <AuthorizeView Policy="@Permissions.LoansView" Context="lo">
-                <MudNavLink Href="/finance/loans" Icon="@Icons.Material.Filled.RealEstateAgent">Loans</MudNavLink>
-            </AuthorizeView>
-            <AuthorizeView Policy="@Permissions.InvestmentsView" Context="inv">
-                <MudNavLink Href="/finance/investments" Icon="@Icons.Material.Filled.TrendingUp">Investments</MudNavLink>
-            </AuthorizeView>
         </MudNavGroup>
     </AuthorizeView>
 

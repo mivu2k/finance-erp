@@ -181,7 +181,7 @@ public class ThirdPartyPostingTests : IAsyncLifetime
 
         var statement = await parties.GetStatementAsync(tp.Id);
         Assert.Equal(2, statement.Count);
-        Assert.Equal(30_000, statement.Last().RunningBalance);
+        Assert.Equal(30_000, statement[^1].Balance);
     }
 
     [SkippableFact]
@@ -232,5 +232,89 @@ public class ThirdPartyPostingTests : IAsyncLifetime
         public string? IpAddress => null;
         public string? Browser => null;
         public bool HasPermission(string permission) => true;
+    }
+
+    [SkippableFact]
+    public async Task The_statement_names_the_head_the_money_moved_through()
+    {
+        IntegrationDatabase.Require(_available);
+        var cashId = await CashAccountIdAsync();
+
+        await using var db = NewDb();
+        var (parties, _) = Services(db);
+        var cash = await db.Accounts.AsNoTracking().FirstAsync(a => a.Id == cashId);
+
+        // The day-to-day case: they hand us money, we put it in cash, we pay it back later.
+        var tp = await parties.SaveAsync(new ThirdParty { Name = "Mr B", Type = ThirdPartyType.Payable });
+        await parties.RecordAsync(tp.Id, PartyMovement.Credit, 100_000, cashId,
+            new DateOnly(2026, 7, 1), "Received from Mr B");
+        await parties.RecordAsync(tp.Id, PartyMovement.Debit, 30_000, cashId,
+            new DateOnly(2026, 7, 20), "Part payment to Mr B");
+
+        var rows = await parties.GetStatementAsync(tp.Id);
+
+        Assert.Equal(2, rows.Count);
+        // The column that matters: which head, not the party's own account name.
+        Assert.All(rows, r => Assert.Equal(cash.Code, r.ContraCode));
+        Assert.All(rows, r => Assert.Equal(cash.Name, r.ContraName));
+
+        Assert.Equal(100_000, rows[0].Received);
+        Assert.Equal(0, rows[0].Paid);
+        Assert.Equal(30_000, rows[1].Paid);
+        Assert.Equal(0, rows[1].Received);
+    }
+
+    [SkippableFact]
+    public async Task The_running_balance_reads_as_what_is_still_outstanding()
+    {
+        IntegrationDatabase.Require(_available);
+        var cashId = await CashAccountIdAsync();
+
+        await using var db = NewDb();
+        var (parties, _) = Services(db);
+
+        // Payable: took 100,000, paid back 30,000 — we still owe 70,000.
+        var payable = await parties.SaveAsync(new ThirdParty { Name = "Mr B", Type = ThirdPartyType.Payable });
+        await parties.RecordAsync(payable.Id, PartyMovement.Credit, 100_000, cashId, new DateOnly(2026, 7, 1));
+        await parties.RecordAsync(payable.Id, PartyMovement.Debit, 30_000, cashId, new DateOnly(2026, 7, 20));
+
+        var owed = await parties.GetStatementAsync(payable.Id);
+        Assert.Equal(100_000, owed[0].Balance);
+        Assert.Equal(70_000, owed[^1].Balance);
+
+        // Receivable is the mirror: gave 50,000, got 20,000 back — they still owe 30,000.
+        var receivable = await parties.SaveAsync(new ThirdParty { Name = "Mr A", Type = ThirdPartyType.Receivable });
+        await parties.RecordAsync(receivable.Id, PartyMovement.Debit, 50_000, cashId, new DateOnly(2026, 7, 1));
+        await parties.RecordAsync(receivable.Id, PartyMovement.Credit, 20_000, cashId, new DateOnly(2026, 7, 20));
+
+        var due = await parties.GetStatementAsync(receivable.Id);
+        Assert.Equal(30_000, due[^1].Balance);
+    }
+
+    [SkippableFact]
+    public async Task Head_totals_add_up_across_every_party()
+    {
+        IntegrationDatabase.Require(_available);
+        var cashId = await CashAccountIdAsync();
+
+        await using var db = NewDb();
+        var (parties, _) = Services(db);
+        var cash = await db.Accounts.AsNoTracking().FirstAsync(a => a.Id == cashId);
+
+        var a = await parties.SaveAsync(new ThirdParty { Name = "Mr A", Type = ThirdPartyType.Payable });
+        var b = await parties.SaveAsync(new ThirdParty { Name = "Mr B", Type = ThirdPartyType.Payable });
+
+        await parties.RecordAsync(a.Id, PartyMovement.Credit, 100_000, cashId, new DateOnly(2026, 7, 1));
+        await parties.RecordAsync(b.Id, PartyMovement.Credit, 40_000, cashId, new DateOnly(2026, 7, 2));
+        await parties.RecordAsync(a.Id, PartyMovement.Debit, 25_000, cashId, new DateOnly(2026, 7, 20));
+
+        var totals = await parties.GetHeadTotalsAsync();
+        var row = Assert.Single(totals, t => t.Code == cash.Code);
+
+        // Money received from parties landed in cash (debit); money paid left it (credit).
+        Assert.Equal(140_000, row.Received);
+        Assert.Equal(25_000, row.Paid);
+        Assert.Equal(115_000, row.Net);
+        Assert.Equal(3, row.Movements);
     }
 }

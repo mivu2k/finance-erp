@@ -28,10 +28,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUserSe
     public DbSet<RequestApproval> RequestApprovals => Set<RequestApproval>();
     public DbSet<EmployeeAdvance> EmployeeAdvances => Set<EmployeeAdvance>();
     public DbSet<AdvanceInstallment> AdvanceInstallments => Set<AdvanceInstallment>();
-    public DbSet<Loan> Loans => Set<Loan>();
-    public DbSet<LoanInstallment> LoanInstallments => Set<LoanInstallment>();
-    public DbSet<Investment> Investments => Set<Investment>();
-    public DbSet<InvestmentTransaction> InvestmentTransactions => Set<InvestmentTransaction>();
     public DbSet<PettyCashAssignment> PettyCashAssignments => Set<PettyCashAssignment>();
     public DbSet<UtilityLocation> UtilityLocations => Set<UtilityLocation>();
     public DbSet<UtilityConnection> UtilityConnections => Set<UtilityConnection>();
@@ -131,40 +127,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUserSe
             e.Property(x => x.Amount).HasPrecision(18, 2);
             e.Property(x => x.PaidAmount).HasPrecision(18, 2);
             e.HasQueryFilter(x => !x.EmployeeAdvance.IsDeleted);
-        });
-
-        b.Entity<Loan>(e =>
-        {
-            e.HasIndex(x => x.LoanNo).IsUnique();
-            e.Property(x => x.LoanNo).HasMaxLength(32);
-            e.Property(x => x.Principal).HasPrecision(18, 2);
-            e.Property(x => x.InterestRatePercent).HasPrecision(8, 4);
-            e.Property(x => x.RepaidAmount).HasPrecision(18, 2);
-            e.HasOne(x => x.ThirdParty).WithMany().HasForeignKey(x => x.ThirdPartyId).OnDelete(DeleteBehavior.Restrict);
-            e.HasQueryFilter(x => !x.IsDeleted);
-        });
-
-        b.Entity<LoanInstallment>(e =>
-        {
-            e.Property(x => x.Amount).HasPrecision(18, 2);
-            e.Property(x => x.InterestPortion).HasPrecision(18, 2);
-            e.Property(x => x.PaidAmount).HasPrecision(18, 2);
-            e.HasQueryFilter(x => !x.Loan.IsDeleted);
-        });
-
-        b.Entity<Investment>(e =>
-        {
-            e.Property(x => x.Amount).HasPrecision(18, 2);
-            e.Property(x => x.ExpectedRoiPercent).HasPrecision(8, 4);
-            e.Property(x => x.TotalProfit).HasPrecision(18, 2);
-            e.Property(x => x.TotalWithdrawn).HasPrecision(18, 2);
-            e.HasQueryFilter(x => !x.IsDeleted);
-        });
-
-        b.Entity<InvestmentTransaction>(e =>
-        {
-            e.Property(x => x.Amount).HasPrecision(18, 2);
-            e.HasQueryFilter(x => !x.Investment.IsDeleted);
         });
 
         b.Entity<PettyCashAssignment>(e =>

@@ -168,22 +168,6 @@ public interface IPayrollService
     Task<List<SalaryStructure>> GetEligibleEmployeesAsync(int runId);
 }
 
-public interface ILoanService
-{
-    Task<PagedResult<Loan>> ListAsync(ReportFilter filter, LoanDirection? direction = null);
-    Task<Loan?> GetAsync(int id);
-    Task<Loan> CreateAsync(Loan loan, int cashAccountId);
-    Task<Voucher> PayInstallmentAsync(int installmentId, decimal amount, int cashAccountId, DateOnly date);
-}
-
-public interface IInvestmentService
-{
-    Task<PagedResult<Investment>> ListAsync(ReportFilter filter);
-    Task<Investment?> GetAsync(int id);
-    Task<Investment> CreateAsync(Investment investment, int cashAccountId);
-    Task<Voucher> AddTransactionAsync(int investmentId, InvestmentTxnType type, decimal amount, DateOnly date, int cashAccountId, string? notes);
-}
-
 public interface IPettyCashService
 {
     Task<List<PettyCashAssignment>> ListAssignmentsAsync();
@@ -216,7 +200,17 @@ public interface IThirdPartyService
         int cashAccountId, DateOnly date, string? narration = null);
 
     /// <summary>The party's account statement, with a running balance.</summary>
-    Task<List<LedgerRowDto>> GetStatementAsync(int partyId, DateOnly? from = null, DateOnly? to = null);
+    /// <summary>
+    /// The party's ledger with the contra head named on every row — which cash or bank
+    /// account each amount was received into or paid out of.
+    /// </summary>
+    Task<List<PartyStatementRowDto>> GetStatementAsync(int partyId, DateOnly? from = null, DateOnly? to = null);
+
+    /// <summary>
+    /// How much came in and went out through each head, across every third party.
+    /// Answers "which account did all this money actually move through".
+    /// </summary>
+    Task<List<PartyHeadTotalDto>> GetHeadTotalsAsync(DateOnly? from = null, DateOnly? to = null);
 
     /// <summary>Current balance on the party's account. Zero when they have none yet.</summary>
     Task<decimal> GetBalanceAsync(int partyId);

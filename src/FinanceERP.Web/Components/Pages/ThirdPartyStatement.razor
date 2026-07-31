@@ -40,14 +40,14 @@ else
         </MudItem>
         <MudItem xs="12" sm="6" md="3">
             <MudPaper Class="pa-3">
-                <MudText Typo="Typo.overline" Class="mud-text-secondary">Total debit</MudText>
-                <MudText Typo="Typo.h6">@_rows.Sum(r => r.Debit).ToString("N2")</MudText>
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Received from them</MudText>
+                <MudText Typo="Typo.h6">@_rows.Sum(r => r.Received).ToString("N2")</MudText>
             </MudPaper>
         </MudItem>
         <MudItem xs="12" sm="6" md="3">
             <MudPaper Class="pa-3">
-                <MudText Typo="Typo.overline" Class="mud-text-secondary">Total credit</MudText>
-                <MudText Typo="Typo.h6">@_rows.Sum(r => r.Credit).ToString("N2")</MudText>
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Paid to them</MudText>
+                <MudText Typo="Typo.h6">@_rows.Sum(r => r.Paid).ToString("N2")</MudText>
             </MudPaper>
         </MudItem>
         <MudItem xs="12" sm="6" md="3">
@@ -72,8 +72,8 @@ else
         <MudSimpleTable Dense="true" Hover="true" Striped="true">
             <thead>
                 <tr>
-                    <th>Date</th><th>Voucher</th><th>Description</th>
-                    <th style="text-align:right">Debit</th><th style="text-align:right">Credit</th>
+                    <th>Date</th><th>Voucher</th><th>Head</th><th>Description</th>
+                    <th style="text-align:right">Received</th><th style="text-align:right">Paid</th>
                     <th style="text-align:right">Balance</th>
                 </tr>
             </thead>
@@ -83,15 +83,26 @@ else
                     <tr>
                         <td>@r.Date.ToString("yyyy-MM-dd")</td>
                         <td><MudLink Href="@($"/finance/vouchers/{r.VoucherId}")">@r.VoucherNo</MudLink></td>
+                        <td>
+                            @* Which cash/bank head the money actually moved through. *@
+                            @if (r.ContraCode is not null)
+                            {
+                                <span class="mud-text-secondary">@r.ContraCode</span> @r.ContraName
+                            }
+                            else
+                            {
+                                <span class="mud-text-secondary">@r.ContraName</span>
+                            }
+                        </td>
                         <td>@r.Description</td>
-                        <td style="text-align:right">@(r.Debit == 0 ? "" : r.Debit.ToString("N2"))</td>
-                        <td style="text-align:right">@(r.Credit == 0 ? "" : r.Credit.ToString("N2"))</td>
-                        <td style="text-align:right">@r.RunningBalance.ToString("N2")</td>
+                        <td style="text-align:right">@(r.Received == 0 ? "" : r.Received.ToString("N2"))</td>
+                        <td style="text-align:right">@(r.Paid == 0 ? "" : r.Paid.ToString("N2"))</td>
+                        <td style="text-align:right">@r.Balance.ToString("N2")</td>
                     </tr>
                 }
                 @if (_rows.Count == 0)
                 {
-                    <tr><td colspan="6" class="mud-text-secondary pa-4">
+                    <tr><td colspan="7" class="mud-text-secondary pa-4">
                         Nothing recorded in this period. Use the up/down arrows on the parties
                         list to record money paid to or received from them.
                     </td></tr>
@@ -105,7 +116,7 @@ else
     [Parameter] public int Id { get; set; }
 
     private ThirdParty? _party;
-    private List<LedgerRowDto> _rows = [];
+    private List<PartyStatementRowDto> _rows = [];
     private decimal _balance;
 
     private DateTime? _fromDate = DateTime.Today.AddYears(-1);

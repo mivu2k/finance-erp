@@ -57,11 +57,6 @@ public static class Permissions
     public const string ThirdPartiesView = "finance.thirdparties.view";
     public const string ThirdPartiesManage = "finance.thirdparties.manage";
 
-    // Loans & investments
-    public const string LoansView = "finance.loans.view";
-    public const string LoansManage = "finance.loans.manage";
-    public const string InvestmentsView = "finance.investments.view";
-    public const string InvestmentsManage = "finance.investments.manage";
 
     // Utilities
     public const string UtilitiesView = "finance.utilities.view";

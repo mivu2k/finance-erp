@@ -124,17 +124,26 @@ These apply to the **Finance** module specifically:
   on startup by `DbSeeder.SyncEmployeeProfilesAsync`. Payroll queries it rather than
   reaching into the identity database. Department and ledger account are owned here
   and never overwritten by the sync.
-- **A third party is just a name and a side.** `ThirdPartyType` is only
-  `Receivable`/`Payable`, and the single thing it decides is whether the party's
-  auto-created account hangs under Receivables (`1600`) or Payables (`2100`) — it
-  used to be a seven-way list whose extra values nothing read. Money is recorded
-  straight from `/finance/third-parties` via
+- **A third party is just a name and a side, and it is now the *only* place this kind
+  of money is tracked.** `ThirdPartyType` is only `Receivable`/`Payable`, and the single
+  thing it decides is whether the party's auto-created account hangs under Receivables
+  (`1600`) or Payables (`2100`). Money is recorded from `/finance/third-parties` via
   `IThirdPartyService.RecordAsync(partyId, Debit|Credit, amount, cashAccountId, ...)`,
-  which posts a real voucher (their account against cash/bank) rather than writing
-  state directly; the statement comes from `GeneralLedgerAsync` so it can't disagree
-  with the ledger page. Deliberately no schedules, instalments or interest — those
-  belong to Loans and Investments. Note `Loan.ThirdPartyId` still points here, so the
-  entity itself can't be simplified away.
+  which posts a real voucher rather than writing state directly.
+  **Loans and Investments have been removed** — entities, services, pages, permissions
+  and tables. They duplicated what a party ledger already does, and the day-to-day
+  reality is simpler than a schedule: money comes in from someone, lands in a cash head,
+  gets spent on other heads, and is paid back later. That is a payable, not a loan
+  product. If instalments and interest are ever genuinely needed, they belong in a new
+  module, not bolted back onto this one.
+- **The party statement names the contra head on every row.** `GetStatementAsync`
+  returns `PartyStatementRowDto` with `ContraCode`/`ContraName` — which cash or bank
+  head the money was received into or paid out of — because the party's own account name
+  is identical on every row and tells you nothing. A multi-line voucher reads "Split — N
+  heads" rather than inventing one. `Received`/`Paid` are the party's credit/debit, and
+  `Balance` is signed per side, so it reads as what is still outstanding either way.
+  `GetHeadTotalsAsync` answers the same question across every party at once.
+
 - Every page, nav item and action is permission-gated — match that when adding UI.
 
 ## Non-obvious flows
@@ -365,7 +374,7 @@ Seven apps behind one login, chosen from the portal at `/`:
 
 Implemented and wired end-to-end (service + page + nav): accounts, vouchers, ledger,
 day book, payment requests, advances, director funds, petty cash, third parties,
-loans, investments, utilities, reconciliation, payroll (pay components, salary
+utilities, reconciliation, payroll (pay components, salary
 structures, runs, payslips), reports (trial balance, income statement, balance sheet,
 cash flow, project spend), PDF/Excel export, per-record printable documents, audit
 trail, notifications, global search, optional SMTP.
@@ -382,7 +391,7 @@ UI yet. Not ported: the customer-facing tracking page, Excel report exports.
 
 Known gaps, roughly in priority order:
 
-1. **Finance is barely tested.** 253 tests exist —
+1. **Finance is barely tested.** 261 tests exist —
    `tests/ErpPlatform.Shared.Tests` (37, Code 128 and QR round-trip through decoders —
    QR against ZXing, a test-only dependency),
    `tests/Hr.Tests` (42, the rotating attendance token and attendance arithmetic),
@@ -398,8 +407,8 @@ Known gaps, roughly in priority order:
    reconcile, the overdue query across both registers, the tender schedule's totals and
    per-line margin, the file registry's movement chain and issue/return guards, plus
    sticker and movement-register render smoke tests), and
-   `tests/Finance.Tests` (7, third-party account placement and the debit/credit
-   posting sides). The
+   `tests/Finance.Tests` (10, third-party account placement, the debit/credit posting
+   sides, and the party statement's contra head, running balance and head totals). The
    integration tests create and drop their own throwaway databases and skip when no
    server is reachable. **A test suite that finishes suspiciously fast is skipping,
    not passing** — the throwaway name needs a wildcard grant in `dev.sh`'s

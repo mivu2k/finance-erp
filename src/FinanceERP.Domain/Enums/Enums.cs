@@ -85,35 +85,6 @@ public enum InstallmentStatus
     PendingConfirmation = 4
 }
 
-public enum LoanDirection
-{
-    Taken = 1,
-    Given = 2
-}
-
-public enum LoanStatus
-{
-    Active = 0,
-    Settled = 1,
-    Defaulted = 2,
-    Cancelled = 3
-}
-
-public enum InvestmentStatus
-{
-    Active = 0,
-    PartiallyWithdrawn = 1,
-    Closed = 2
-}
-
-public enum InvestmentTxnType
-{
-    Deposit = 1,
-    Profit = 2,
-    Loss = 3,
-    Withdrawal = 4
-}
-
 /// <summary>
 /// Which side of the books a party sits on, and the only thing the code ever needed
 /// from the old seven-way list: it decides whether their auto-created account hangs
@@ -175,7 +146,6 @@ public enum NotificationType
     Rejected = 3,
     PaymentDue = 4,
     AdvanceDue = 5,
-    LoanDue = 6,
     LowCash = 7,
     System = 8
 }

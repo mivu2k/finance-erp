@@ -96,18 +96,115 @@ public class ThirdPartyService(
             VoucherType.Journal, date, text, "thirdparty", tp.Id, lines);
     }
 
-    public async Task<List<LedgerRowDto>> GetStatementAsync(
+    public async Task<List<PartyStatementRowDto>> GetStatementAsync(
         int partyId, DateOnly? from = null, DateOnly? to = null)
     {
         var tp = await db.ThirdParties.AsNoTracking().FirstOrDefaultAsync(t => t.Id == partyId);
         if (tp?.AccountId is not { } accountId) return [];
 
-        // Reuses the general ledger rather than querying voucher lines again, so the
-        // party statement and the ledger page can never show different numbers.
-        return await reports.GeneralLedgerAsync(new ReportFilter
+        // The party's own lines, posted only — a draft voucher is not money yet.
+        var q = db.VoucherLines.AsNoTracking()
+            .Where(l => l.AccountId == accountId
+                        && l.Voucher.Status == VoucherStatus.Posted
+                        && !l.Voucher.IsDeleted);
+
+        if (from is { } f) q = q.Where(l => l.Voucher.Date >= f);
+        if (to is { } t2) q = q.Where(l => l.Voucher.Date <= t2);
+
+        var mine = await q
+            .Select(l => new
+            {
+                l.VoucherId,
+                l.Voucher.VoucherNo,
+                l.Voucher.Date,
+                l.Description,
+                l.Debit,
+                l.Credit
+            })
+            .OrderBy(x => x.Date).ThenBy(x => x.VoucherId)
+            .ToListAsync();
+
+        if (mine.Count == 0) return [];
+
+        // One extra query for the other side of those vouchers, rather than one per row.
+        var voucherIds = mine.Select(x => x.VoucherId).Distinct().ToList();
+        var others = await db.VoucherLines.AsNoTracking()
+            .Where(l => voucherIds.Contains(l.VoucherId) && l.AccountId != accountId)
+            .Select(l => new { l.VoucherId, l.Account.Code, l.Account.Name, l.Debit, l.Credit })
+            .ToListAsync();
+
+        var contra = others.GroupBy(o => o.VoucherId).ToDictionary(
+            g => g.Key,
+            g =>
+            {
+                var distinct = g.GroupBy(x => x.Code).ToList();
+                // A simple two-line entry names its head; a split names how many, because
+                // inventing one head for a multi-line voucher would be a lie.
+                return distinct.Count == 1
+                    ? (Code: (string?)distinct[0].Key, Name: (string?)distinct[0].First().Name)
+                    : (Code: null, Name: (string?)$"Split — {distinct.Count} heads");
+            });
+
+        // The party's side, signed so the running figure reads as what is outstanding:
+        // a Receivable grows when we debit them, a Payable when we credit them.
+        var receivableSide = tp.Type == ThirdPartyType.Receivable;
+
+        decimal running = 0;
+        var rows = new List<PartyStatementRowDto>(mine.Count);
+        foreach (var m in mine)
         {
-            AccountId = accountId, From = from, To = to, PageSize = int.MaxValue
-        });
+            running += receivableSide ? m.Debit - m.Credit : m.Credit - m.Debit;
+            contra.TryGetValue(m.VoucherId, out var head);
+
+            rows.Add(new PartyStatementRowDto(
+                m.Date, m.VoucherNo, m.VoucherId, m.Description,
+                head.Code, head.Name,
+                Received: m.Credit,
+                Paid: m.Debit,
+                Balance: running));
+        }
+
+        return rows;
+    }
+
+    public async Task<List<PartyHeadTotalDto>> GetHeadTotalsAsync(
+        DateOnly? from = null, DateOnly? to = null)
+    {
+        var partyAccountIds = await db.ThirdParties.AsNoTracking()
+            .Where(t => t.AccountId != null)
+            .Select(t => t.AccountId!.Value)
+            .ToListAsync();
+
+        if (partyAccountIds.Count == 0) return [];
+
+        // Vouchers that touched any party account at all.
+        var vq = db.VoucherLines.AsNoTracking()
+            .Where(l => partyAccountIds.Contains(l.AccountId)
+                        && l.Voucher.Status == VoucherStatus.Posted
+                        && !l.Voucher.IsDeleted);
+
+        if (from is { } f) vq = vq.Where(l => l.Voucher.Date >= f);
+        if (to is { } t2) vq = vq.Where(l => l.Voucher.Date <= t2);
+
+        var voucherIds = await vq.Select(l => l.VoucherId).Distinct().ToListAsync();
+        if (voucherIds.Count == 0) return [];
+
+        // The contra side of those vouchers, grouped by head. Debit on the head means
+        // money landed there (received); credit means it left (paid out).
+        var lines = await db.VoucherLines.AsNoTracking()
+            .Where(l => voucherIds.Contains(l.VoucherId) && !partyAccountIds.Contains(l.AccountId))
+            .Select(l => new { l.Account.Code, l.Account.Name, l.Debit, l.Credit })
+            .ToListAsync();
+
+        return lines
+            .GroupBy(l => new { l.Code, l.Name })
+            .Select(g => new PartyHeadTotalDto(
+                g.Key.Code, g.Key.Name,
+                Received: g.Sum(x => x.Debit),
+                Paid: g.Sum(x => x.Credit),
+                Movements: g.Count()))
+            .OrderByDescending(h => h.Received + h.Paid)
+            .ToList();
     }
 
     public async Task<decimal> GetBalanceAsync(int partyId)

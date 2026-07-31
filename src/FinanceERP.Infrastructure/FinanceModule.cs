@@ -60,11 +60,6 @@ public static class FinanceModule
         P(Permissions.ThirdPartiesView, "Third Parties", "View third parties"),
         P(Permissions.ThirdPartiesManage, "Third Parties", "Create and edit third parties"),
 
-        P(Permissions.LoansView, "Loans & Investments", "View loans"),
-        P(Permissions.LoansManage, "Loans & Investments", "Manage loans and instalments"),
-        P(Permissions.InvestmentsView, "Loans & Investments", "View investments"),
-        P(Permissions.InvestmentsManage, "Loans & Investments", "Manage investments"),
-
         P(Permissions.UtilitiesView, "Utilities", "View utility connections and bills"),
         P(Permissions.UtilitiesManage, "Utilities", "Manage connections and record bills"),
         P(Permissions.UtilitiesPay, "Utilities", "Pay utility bills"),
@@ -88,8 +83,7 @@ public static class FinanceModule
             Permissions.AccountsView, Permissions.LedgerView, Permissions.VouchersView,
             Permissions.ReportsView, Permissions.ReportsExport, Permissions.PettyCashView,
             Permissions.PettyCashAssign, Permissions.RequestsViewAll, Permissions.DirectorFundsRequest,
-            Permissions.DirectorFundsView, Permissions.AdvancesViewAll, Permissions.AdvancesApprove,
-            Permissions.LoansView, Permissions.InvestmentsView, Permissions.ThirdPartiesView,
+            Permissions.DirectorFundsView, Permissions.AdvancesViewAll, Permissions.AdvancesApprove, Permissions.ThirdPartiesView,
             Permissions.UtilitiesView, Permissions.PayrollView, Permissions.PayrollApprove
         ]),
 
@@ -100,8 +94,7 @@ public static class FinanceModule
             Permissions.VouchersPost, Permissions.ReportsView, Permissions.ReportsExport,
             Permissions.PettyCashView, Permissions.PettyCashManage, Permissions.RequestsViewAll,
             Permissions.RequestsApproveAdmin, Permissions.AdvancesViewAll, Permissions.AdvancesApprove,
-            Permissions.AdvancesManage, Permissions.LoansView, Permissions.LoansManage,
-            Permissions.InvestmentsView, Permissions.InvestmentsManage,
+            Permissions.AdvancesManage,
             Permissions.ThirdPartiesView, Permissions.ThirdPartiesManage,
             Permissions.UtilitiesView, Permissions.UtilitiesManage, Permissions.UtilitiesPay,
             Permissions.PayrollView, Permissions.PayrollManage, Permissions.PayrollApprove
@@ -114,7 +107,6 @@ public static class FinanceModule
             Permissions.ReportsView, Permissions.ReportsExport, Permissions.PettyCashView,
             Permissions.PettyCashManage, Permissions.RequestsViewAll, Permissions.RequestsPay,
             Permissions.AdvancesViewAll, Permissions.AdvancesManage,
-            Permissions.LoansView, Permissions.InvestmentsView,
             Permissions.ThirdPartiesView, Permissions.ThirdPartiesManage,
             Permissions.UtilitiesView, Permissions.UtilitiesManage, Permissions.UtilitiesPay,
             Permissions.PayrollView, Permissions.PayrollManage, Permissions.PayrollPay
@@ -137,8 +129,7 @@ public static class FinanceModule
         [
             Permissions.AccountsView, Permissions.LedgerView, Permissions.VouchersView,
             Permissions.ReportsView, Permissions.ReportsExport, Permissions.AuditView,
-            Permissions.RequestsViewAll, Permissions.AdvancesViewAll, Permissions.LoansView,
-            Permissions.InvestmentsView, Permissions.ThirdPartiesView, Permissions.PettyCashView,
+            Permissions.RequestsViewAll, Permissions.AdvancesViewAll, Permissions.ThirdPartiesView, Permissions.PettyCashView,
             Permissions.UtilitiesView, Permissions.PayrollView
         ]),
 

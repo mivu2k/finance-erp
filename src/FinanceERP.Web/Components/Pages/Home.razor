@@ -20,9 +20,8 @@ else
             <DashCard Title="Today's Debit" Value="@_summary.TodayDebit" Icon="@Icons.Material.Filled.ArrowUpward" Color="Color.Error" />
             <DashCard Title="Today's Credit" Value="@_summary.TodayCredit" Icon="@Icons.Material.Filled.ArrowDownward" Color="Color.Primary" />
             <DashCard Title="Outstanding Advances" Value="@_summary.OutstandingAdvances" Icon="@Icons.Material.Filled.CreditCard" Color="Color.Secondary" />
-            <DashCard Title="Loans Given" Value="@_summary.LoansReceivable" Icon="@Icons.Material.Filled.CallMade" Color="Color.Tertiary" />
-            <DashCard Title="Loans Taken" Value="@_summary.LoansPayable" Icon="@Icons.Material.Filled.CallReceived" Color="Color.Dark" />
-            <DashCard Title="Investments" Value="@_summary.Investments" Icon="@Icons.Material.Filled.TrendingUp" Color="Color.Success" />
+            <DashCard Title="Receivable" Value="@_summary.ThirdPartyReceivable" Icon="@Icons.Material.Filled.CallMade" Color="Color.Tertiary" />
+            <DashCard Title="Payable" Value="@_summary.ThirdPartyPayable" Icon="@Icons.Material.Filled.CallReceived" Color="Color.Dark" />
         </AuthorizeView>
 
         <AuthorizeView Policy="@Permissions.RequestsViewAll">

@@ -115,14 +115,11 @@ public static class DbSeeder
             ("1200", "Bank Accounts", AccountType.Asset, "1000", false),
             ("1201", "Main Bank Account", AccountType.Asset, "1200", true),
             ("1300", "Petty Cash", AccountType.Asset, "1000", true),
-            ("1400", "Loans Given", AccountType.Asset, "1000", true),
-            ("1500", "Investments", AccountType.Asset, "1000", true),
             ("1600", "Receivables", AccountType.Asset, "1000", false),
             ("1700", "Employee Advances", AccountType.Asset, "1000", true),
 
             ("2000", "Liabilities", AccountType.Liability, null, false),
             ("2100", "Payables", AccountType.Liability, "2000", false),
-            ("2200", "Third Party Loans", AccountType.Liability, "2000", true),
             ("2300", "Taxes Payable", AccountType.Liability, "2000", true),
             ("2400", "Salaries Payable", AccountType.Liability, "2000", true),
 

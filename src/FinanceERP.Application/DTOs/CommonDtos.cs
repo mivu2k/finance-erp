@@ -25,13 +25,39 @@ public record LedgerRowDto(
     string? Description, decimal Debit, decimal Credit, decimal RunningBalance,
     string? CostCenter, string? Department, string? Project, string? Person = null);
 
+/// <summary>
+/// One movement on a third party's ledger, from their side.
+/// </summary>
+/// <param name="ContraCode">
+/// The <em>other</em> head the money moved through — the cash or bank account it was
+/// received into, or paid out from. This is the column people actually want: the party's
+/// own account name is the same on every row and tells you nothing.
+/// </param>
+/// <param name="Received">Money received from the party (their account credited).</param>
+/// <param name="Paid">Money paid to the party (their account debited).</param>
+/// <param name="Balance">
+/// Running balance after this row, signed the way the party's side reads: positive means
+/// they still owe us on a Receivable, or we still owe them on a Payable.
+/// </param>
+public record PartyStatementRowDto(
+    DateOnly Date, string VoucherNo, int VoucherId, string? Description,
+    string? ContraCode, string? ContraName,
+    decimal Received, decimal Paid, decimal Balance);
+
+/// <summary>How much moved through one head, across every third party.</summary>
+public record PartyHeadTotalDto(
+    string Code, string Name, decimal Received, decimal Paid, int Movements)
+{
+    public decimal Net => Received - Paid;
+}
+
 public record TrialBalanceRowDto(string Code, string Name, string Type, decimal Debit, decimal Credit);
 
 public record AccountBalanceDto(int AccountId, string Code, string Name, string Type, decimal Balance);
 
 public record DailySummaryDto(decimal TodayDebit, decimal TodayCredit, decimal CashInHand,
     decimal PettyCash, decimal BankBalance, int PendingRequests, int PendingApprovals,
-    decimal OutstandingAdvances, decimal LoansReceivable, decimal LoansPayable, decimal Investments);
+    decimal OutstandingAdvances, decimal ThirdPartyReceivable, decimal ThirdPartyPayable);
 
 public record CashFlowPointDto(DateOnly Date, decimal Inflow, decimal Outflow);
 

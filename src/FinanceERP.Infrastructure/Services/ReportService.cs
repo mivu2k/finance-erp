@@ -199,9 +199,10 @@ public class ReportService(AppDbContext db) : IReportService
         var outstandingAdvances = await db.EmployeeAdvances
             .Where(a => a.Status == AdvanceStatus.Disbursed || a.Status == AdvanceStatus.Repaying)
             .SumAsync(a => a.Amount - a.RepaidAmount);
-        var loansGiven = await BalanceByCodes("1400");
-        var loansTaken = -await BalanceByCodes("2200");
-        var investments = await BalanceByCodes("1500");
+        // Third parties roll up to Receivables (1600) and Payables (2100). A payable
+        // is a credit balance, so it is negated to read as a positive amount owed.
+        var receivable = await BalanceByCodes("1600");
+        var payable = -await BalanceByCodes("2100");
 
         return new DailySummaryDto(
             todaySums?.D ?? 0, todaySums?.C ?? 0,
@@ -209,6 +210,6 @@ public class ReportService(AppDbContext db) : IReportService
             await BalanceByCodes("1300"),
             await BalanceByCodes("1200"),
             pendingRequests, pendingApprovals, outstandingAdvances,
-            loansGiven, loansTaken, investments);
+            receivable, payable);
     }
 }
