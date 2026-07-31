@@ -40,7 +40,7 @@ public interface IProjectService
     Task<List<ProjectTask>> ListTasksForUserAsync(string userId, CancellationToken ct = default);
 }
 
-public class ProjectService(TenderDbContext db) : IProjectService
+public class ProjectService(TenderDbContext db, IFileRegistryService files) : IProjectService
 {
     private static readonly List<ProjectStatus> OpenStatuses =
     [
@@ -89,6 +89,11 @@ public class ProjectService(TenderDbContext db) : IProjectService
 
         db.Projects.Add(project);
         await db.SaveChangesAsync(ct);
+
+        // Every project gets its physical file the moment it exists, so a folder is
+        // never created without a number and a sticker to put on it.
+        await files.EnsureForAsync(FileOwnerType.Project, project.Id, project.ProjectCode, project.Name, ct);
+
         return project;
     }
 
@@ -122,6 +127,10 @@ public class ProjectService(TenderDbContext db) : IProjectService
         existing.Notes = project.Notes;
 
         await db.SaveChangesAsync(ct);
+
+        // Keeps the registry's snapshot in step with a rename.
+        await files.EnsureForAsync(FileOwnerType.Project, existing.Id, existing.ProjectCode, existing.Name, ct);
+
         return existing;
     }
 

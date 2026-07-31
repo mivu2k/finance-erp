@@ -22,7 +22,9 @@ public static class TenderModule
             P(TenderPermissions.ReportsView, "Reports", "Pipeline, win-rate and guarantee-expiry reports"),
             P(TenderPermissions.ProjectsView, "Projects", "View projects, their tasks and milestones"),
             P(TenderPermissions.ProjectsManage, "Projects", "Add and edit projects and their milestones"),
-            P(TenderPermissions.TasksManage, "Projects", "Add, assign and progress project tasks")
+            P(TenderPermissions.TasksManage, "Projects", "Add, assign and progress project tasks"),
+            P(TenderPermissions.FilesView, "File Registry", "View the physical file register and its movements"),
+            P(TenderPermissions.FilesManage, "File Registry", "Issue, return, transfer and archive physical files")
         ],
         [
             new(TenderRoles.Manager, "Full control of tenders, guarantees, documents and projects.",
@@ -32,7 +34,16 @@ public static class TenderModule
             [
                 TenderPermissions.TendersView, TenderPermissions.TendersManage,
                 TenderPermissions.GuaranteesManage, TenderPermissions.DocumentsManage,
-                TenderPermissions.ReportsView, TenderPermissions.ProjectsView
+                TenderPermissions.ReportsView, TenderPermissions.ProjectsView,
+                TenderPermissions.FilesView
+            ]),
+
+            // Runs the physical registry without being able to edit what the files
+            // are about.
+            new(TenderRoles.RecordsClerk, "Issues, returns and archives physical files.",
+            [
+                TenderPermissions.TendersView, TenderPermissions.ProjectsView,
+                TenderPermissions.FilesView, TenderPermissions.FilesManage
             ]),
 
             new(TenderRoles.ProjectManager, "Runs projects: full control of projects, tasks and milestones.",
@@ -44,13 +55,14 @@ public static class TenderModule
             // Works the task board without being able to re-scope or delete the project.
             new(TenderRoles.ProjectMember, "Progresses tasks on projects they are assigned to.",
             [
-                TenderPermissions.ProjectsView, TenderPermissions.TasksManage
+                TenderPermissions.ProjectsView, TenderPermissions.TasksManage,
+                TenderPermissions.FilesView
             ]),
 
             new(TenderRoles.Viewer, "Read-only.",
             [
                 TenderPermissions.TendersView, TenderPermissions.ProjectsView,
-                TenderPermissions.ReportsView
+                TenderPermissions.ReportsView, TenderPermissions.FilesView
             ])
         ]);
 
@@ -66,6 +78,22 @@ public static class TenderModule
 
         services.AddScoped<ITenderService, TenderService>();
         services.AddScoped<IProjectService, ProjectService>();
+        services.AddScoped<IFileRegistryService, FileRegistryService>();
+
+        // What a file sticker may carry. Registered here so the admin screen can only
+        // ever offer fields the print service is able to fill.
+        LabelFieldCatalog.Register(LabelDocumentTypes.TenderFile,
+        [
+            new("file.number", "File number"),
+            new("file.kind", "Tender or project"),
+            new("owner.reference", "Tender number / project code"),
+            new("owner.title", "Title"),
+            new("file.opened", "Opened date"),
+            new("file.location", "Location"),
+            new("file.volume", "Volume"),
+            new("file.status", "Status"),
+            new("file.holder", "Current holder")
+        ]);
         services.AddScoped<ITenderReportService, TenderReportService>();
         services.AddScoped<ITenderPrintService, TenderPrintService>();
 

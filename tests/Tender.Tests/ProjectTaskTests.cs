@@ -25,6 +25,9 @@ public class ProjectTaskTests : IAsyncLifetime
 
     private TenderDbContext NewDb() => new(Opts(), new TestUser());
 
+    /// <summary>Creating a project opens its physical file, so the registry comes along.</summary>
+    private static ProjectService Projects(TenderDbContext db) => new(db, new FileRegistryService(db));
+
     public async Task InitializeAsync()
     {
         await using var db = NewDb();
@@ -42,7 +45,7 @@ public class ProjectTaskTests : IAsyncLifetime
     private async Task<int> SeedProjectAsync()
     {
         await using var db = NewDb();
-        var project = await new ProjectService(db).CreateAsync(new Project
+        var project = await Projects(db).CreateAsync(new Project
         {
             ProjectCode = "PRJ-001",
             Name = "Head Office Rewiring",
@@ -59,7 +62,7 @@ public class ProjectTaskTests : IAsyncLifetime
 
         await using (var db = NewDb())
         {
-            var svc = new ProjectService(db);
+            var svc = Projects(db);
             await svc.AddTaskAsync(projectId, new ProjectTask
             { Title = "Survey", Status = ProjectTaskStatus.Completed });
             await svc.AddTaskAsync(projectId, new ProjectTask
@@ -71,7 +74,7 @@ public class ProjectTaskTests : IAsyncLifetime
 
         await using (var db = NewDb())
         {
-            var project = await new ProjectService(db).GetAsync(projectId);
+            var project = await Projects(db).GetAsync(projectId);
             Assert.NotNull(project);
             Assert.Equal(3, project!.Tasks.Count);
             Assert.Equal(70, project.ProgressPercent); // (100 + 40) / 2
@@ -87,13 +90,13 @@ public class ProjectTaskTests : IAsyncLifetime
         int taskId;
         await using (var db = NewDb())
         {
-            var task = await new ProjectService(db)
+            var task = await Projects(db)
                 .AddTaskAsync(projectId, new ProjectTask { Title = "Survey", ProgressPercent = 10 });
             taskId = task.Id;
         }
 
         await using (var db = NewDb())
-            await new ProjectService(db).SetTaskStatusAsync(taskId, ProjectTaskStatus.Completed);
+            await Projects(db).SetTaskStatusAsync(taskId, ProjectTaskStatus.Completed);
 
         await using (var db = NewDb())
         {
@@ -113,13 +116,13 @@ public class ProjectTaskTests : IAsyncLifetime
         int taskId;
         await using (var db = NewDb())
         {
-            var task = await new ProjectService(db).AddTaskAsync(projectId,
+            var task = await Projects(db).AddTaskAsync(projectId,
                 new ProjectTask { Title = "Cabling", Status = ProjectTaskStatus.Completed });
             taskId = task.Id;
         }
 
         await using (var db = NewDb())
-            await new ProjectService(db).SetTaskStatusAsync(taskId, ProjectTaskStatus.InProgress);
+            await Projects(db).SetTaskStatusAsync(taskId, ProjectTaskStatus.InProgress);
 
         await using (var db = NewDb())
         {
@@ -137,7 +140,7 @@ public class ProjectTaskTests : IAsyncLifetime
         var projectId = await SeedProjectAsync();
 
         await using var db = NewDb();
-        var task = await new ProjectService(db).AddTaskAsync(projectId, new ProjectTask
+        var task = await Projects(db).AddTaskAsync(projectId, new ProjectTask
         { Title = "Panel install", Status = ProjectTaskStatus.NotStarted, ProgressPercent = 25 });
 
         Assert.Equal(ProjectTaskStatus.InProgress, task.Status);
@@ -152,7 +155,7 @@ public class ProjectTaskTests : IAsyncLifetime
 
         await using (var db = NewDb())
         {
-            var svc = new ProjectService(db);
+            var svc = Projects(db);
             await svc.AddTaskAsync(projectId, new ProjectTask
             { Title = "Late", DueDate = yesterday });
             // Same date, but finished — not chased.
@@ -164,7 +167,7 @@ public class ProjectTaskTests : IAsyncLifetime
 
         await using (var db = NewDb())
         {
-            var overdue = await new ProjectService(db).ListOverdueTasksAsync();
+            var overdue = await Projects(db).ListOverdueTasksAsync();
             Assert.Single(overdue);
             Assert.Equal("Late", overdue[0].Title);
         }
@@ -178,7 +181,7 @@ public class ProjectTaskTests : IAsyncLifetime
 
         await using var db = NewDb();
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new ProjectService(db).CreateAsync(new Project { ProjectCode = "PRJ-001", Name = "Another" }));
+            Projects(db).CreateAsync(new Project { ProjectCode = "PRJ-001", Name = "Another" }));
     }
 
     [Fact]
@@ -190,7 +193,7 @@ public class ProjectTaskTests : IAsyncLifetime
         int milestoneId;
         await using (var db = NewDb())
         {
-            var milestone = await new ProjectService(db).AddMilestoneAsync(projectId,
+            var milestone = await Projects(db).AddMilestoneAsync(projectId,
                 new ProjectMilestone
                 {
                     Name = "First handover",
@@ -203,7 +206,7 @@ public class ProjectTaskTests : IAsyncLifetime
 
         await using (var db = NewDb())
         {
-            var svc = new ProjectService(db);
+            var svc = Projects(db);
             var milestone = await db.ProjectMilestones.FirstAsync(m => m.Id == milestoneId);
             milestone.Status = MilestoneStatus.Pending;
             var updated = await svc.UpdateMilestoneAsync(milestone);
@@ -219,19 +222,19 @@ public class ProjectTaskTests : IAsyncLifetime
 
         await using (var db = NewDb())
         {
-            var svc = new ProjectService(db);
+            var svc = Projects(db);
             await svc.AddTaskAsync(projectId, new ProjectTask { Title = "Survey" });
             await svc.AddMilestoneAsync(projectId, new ProjectMilestone
             { Name = "Handover", DueDate = DateOnly.FromDateTime(DateTime.UtcNow) });
         }
 
         await using (var db = NewDb())
-            await new ProjectService(db).DeleteAsync(projectId);
+            await Projects(db).DeleteAsync(projectId);
 
         await using (var db = NewDb())
         {
             // Soft delete: the rows survive, the query filter hides them.
-            Assert.Null(await new ProjectService(db).GetAsync(projectId));
+            Assert.Null(await Projects(db).GetAsync(projectId));
             Assert.Empty(await db.ProjectTasks.ToListAsync());
             Assert.Empty(await db.ProjectMilestones.ToListAsync());
         }
@@ -244,7 +247,7 @@ public class ProjectTaskTests : IAsyncLifetime
         var projectId = await SeedProjectAsync();
 
         await using var db = NewDb();
-        var svc = new ProjectService(db);
+        var svc = Projects(db);
         var first = await svc.AddTaskAsync(projectId, new ProjectTask { Title = "One" });
         var second = await svc.AddTaskAsync(projectId, new ProjectTask { Title = "Two" });
 

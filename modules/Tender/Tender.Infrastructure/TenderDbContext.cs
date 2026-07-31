@@ -15,6 +15,9 @@ public class TenderDbContext(DbContextOptions<TenderDbContext> options, ICurrent
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<ProjectTask> ProjectTasks => Set<ProjectTask>();
     public DbSet<ProjectMilestone> ProjectMilestones => Set<ProjectMilestone>();
+    public DbSet<PhysicalFile> Files => Set<PhysicalFile>();
+    public DbSet<FileMovement> FileMovements => Set<FileMovement>();
+    public DbSet<DocumentSequence> DocumentSequences => Set<DocumentSequence>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -142,6 +145,51 @@ public class TenderDbContext(DbContextOptions<TenderDbContext> options, ICurrent
             e.HasOne(x => x.Project).WithMany(x => x.Milestones)
                 .HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Cascade);
             e.HasQueryFilter(x => !x.IsDeleted && !x.Project.IsDeleted);
+        });
+
+        b.Entity<DocumentSequence>(e =>
+        {
+            e.HasIndex(x => new { x.Type, x.Year }).IsUnique();
+            e.Property(x => x.Type).HasMaxLength(50);
+            e.Property(x => x.Prefix).HasMaxLength(16);
+        });
+
+        b.Entity<PhysicalFile>(e =>
+        {
+            e.HasIndex(x => x.FileNumber).IsUnique();
+            // One file per owner record — the registry falls apart if a tender can
+            // sprout a second folder nobody knows about.
+            e.HasIndex(x => new { x.OwnerType, x.OwnerId }).IsUnique();
+            e.Property(x => x.FileNumber).HasMaxLength(32);
+            e.Property(x => x.OwnerReference).HasMaxLength(64);
+            e.Property(x => x.OwnerTitle).HasMaxLength(300);
+            e.Property(x => x.HolderUserId).HasMaxLength(450);
+            e.Property(x => x.HolderName).HasMaxLength(200);
+            e.Property(x => x.Location).HasMaxLength(200);
+            e.Property(x => x.VolumeNumber).HasMaxLength(50);
+            e.Property(x => x.Remarks).HasMaxLength(1000);
+            e.Ignore(x => x.IsOut);
+            e.Ignore(x => x.DaysOut);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<FileMovement>(e =>
+        {
+            e.HasIndex(x => x.PhysicalFileId);
+            e.HasIndex(x => x.MovedOn);
+            e.Property(x => x.FromHolderName).HasMaxLength(200);
+            e.Property(x => x.FromLocation).HasMaxLength(200);
+            e.Property(x => x.ToHolderUserId).HasMaxLength(450);
+            e.Property(x => x.ToHolderName).HasMaxLength(200);
+            e.Property(x => x.ToLocation).HasMaxLength(200);
+            e.Property(x => x.Purpose).HasMaxLength(300);
+            e.Property(x => x.Remarks).HasMaxLength(1000);
+            e.Property(x => x.RecordedById).HasMaxLength(450);
+            e.Property(x => x.RecordedByName).HasMaxLength(200);
+            e.Ignore(x => x.IsOverdue);
+            e.HasOne(x => x.PhysicalFile).WithMany(x => x.Movements)
+                .HasForeignKey(x => x.PhysicalFileId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(x => !x.IsDeleted && !x.PhysicalFile.IsDeleted);
         });
     }
 }

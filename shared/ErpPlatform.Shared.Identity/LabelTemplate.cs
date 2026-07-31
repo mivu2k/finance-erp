@@ -69,11 +69,15 @@ public static class LabelDocumentTypes
     public const string GatePassItem = "gatepass.item";
     public const string InventoryItem = "inventory.item";
 
+    /// <summary>The spine sticker on a tender or project folder.</summary>
+    public const string TenderFile = "tender.file";
+
     public static IReadOnlyList<(string Key, string Name)> All =>
     [
         (RepairDevice, "Repair — device label"),
         (GatePassItem, "Gate Pass — item label"),
-        (InventoryItem, "Inventory — item label")
+        (InventoryItem, "Inventory — item label"),
+        (TenderFile, "Tender & Projects — file sticker")
     ];
 
     public static string Describe(string key) =>

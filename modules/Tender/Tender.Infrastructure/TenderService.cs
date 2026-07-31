@@ -35,7 +35,7 @@ public interface ITenderService
     Task<List<TenderGuarantee>> ListAllGuaranteesAsync(CancellationToken ct = default);
 }
 
-public class TenderService(TenderDbContext db) : ITenderService
+public class TenderService(TenderDbContext db, IFileRegistryService files) : ITenderService
 {
     private static readonly List<TenderStatus> OpenStatuses =
     [
@@ -78,6 +78,11 @@ public class TenderService(TenderDbContext db) : ITenderService
 
         db.Tenders.Add(tender);
         await db.SaveChangesAsync(ct);
+
+        // Every tender gets its physical file the moment it exists, so a folder is
+        // never created without a number and a sticker to put on it.
+        await files.EnsureForAsync(FileOwnerType.Tender, tender.Id, tender.TenderNumber, tender.Title, ct);
+
         return tender;
     }
 
@@ -127,6 +132,10 @@ public class TenderService(TenderDbContext db) : ITenderService
         existing.Notes = tender.Notes;
 
         await db.SaveChangesAsync(ct);
+
+        // Keeps the registry's snapshot in step with a rename.
+        await files.EnsureForAsync(FileOwnerType.Tender, existing.Id, existing.TenderNumber, existing.Title, ct);
+
         return existing;
     }
 

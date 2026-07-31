@@ -21,6 +21,13 @@
         </MudNavGroup>
     </AuthorizeView>
 
+    <AuthorizeView Policy="@TenderPermissions.FilesView" Context="f">
+        <MudNavGroup Title="File Registry" Icon="@Icons.Material.Filled.FolderCopy" Expanded="true">
+            <MudNavLink Href="/tender/files" Icon="@Icons.Material.Filled.List">All Files</MudNavLink>
+            <MudNavLink Href="/tender/files/scan" Icon="@Icons.Material.Filled.QrCodeScanner">Find / Scan</MudNavLink>
+        </MudNavGroup>
+    </AuthorizeView>
+
     <AuthorizeView Policy="@TenderPermissions.ReportsView" Context="r">
         <MudNavLink Href="/tender/reports" Icon="@Icons.Material.Filled.Assessment">
             Reports

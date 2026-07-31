@@ -228,6 +228,36 @@ These apply to the **Finance** module specifically:
 - Assignee and manager are stored as an Identity user id **plus a name snapshot**,
   like everywhere else — no cross-database FK.
 
+### The file registry
+
+The physical folders behind those records — the ones with a sticker on the spine
+that people carry off and lose.
+
+- **Every tender and project gets a `PhysicalFile` automatically**, created by
+  `IFileRegistryService.EnsureForAsync` from inside `CreateAsync`. It is idempotent
+  and also runs on update, which is what keeps the registry's `OwnerReference` /
+  `OwnerTitle` snapshots in step with a rename. File numbers come from the shared
+  `DocumentSequence` (`FILE-26-0001`) — one sequence across both registers, so a
+  number identifies a file on its own.
+- **Every status change goes through the private `MoveAsync`**, which writes the
+  `FileMovement` row and the file's summary fields together. A status that moved
+  without leaving a dated history row is precisely the bug the register exists to
+  prevent, so don't add a path that sets `Status` directly.
+- **Movements are append-only.** Correcting a mistake means recording the opposite
+  movement, never editing history.
+- Issuing a file that is already out is refused — two holders is how a file goes
+  missing — as is archiving one that hasn't come back. A lost file must be marked
+  found before it can be issued again.
+- **Overdue is computed in memory**, not SQL: it depends on the newest issue/transfer
+  movement, which is awkward to express in a query and cheap at registry scale.
+- **Stickers reuse the platform's user-defined label templates**
+  (`LabelDocumentTypes.TenderFile`). `TenderPrintService.FileStickers` falls back to
+  a built-in 62mm layout when nobody has configured one, so stickers print on a fresh
+  install. Same barcode rule as everywhere: the stretching `Barcode()` inside a
+  fixed-width container, never `BarcodeFixed()`.
+- `/tender/files/scan` resolves a scanned sticker back to its file. A USB scanner is
+  a keyboard that types the number and presses Enter, so there is nothing to install.
+
 ## Plain Ledger — the hand-ledger module
 
 Single-entry books arranged in a tree, for the informal money-lending case: you
@@ -293,7 +323,7 @@ UI yet. Not ported: the customer-facing tracking page, Excel report exports.
 
 Known gaps, roughly in priority order:
 
-1. **Finance is barely tested.** 211 tests exist —
+1. **Finance is barely tested.** 231 tests exist —
    `tests/ErpPlatform.Shared.Tests` (37, Code 128 and QR round-trip through decoders —
    QR against ZXing, a test-only dependency),
    `tests/Hr.Tests` (42, the rotating attendance token and attendance arithmetic),
@@ -304,8 +334,9 @@ Known gaps, roughly in priority order:
    `tests/Ledger.Tests` (17, the worked 1-lac-to-two-people scenario: transfer
    pairing, tree rollup, re-parent cycle guard, head rollup and head deletion), and
    `tests/GatePass.Tests` (11), and
-   `tests/Tender.Tests` (9, project progress rollup, the task status/percentage/date
-   reconcile and the overdue query), and
+   `tests/Tender.Tests` (29, project progress rollup, the task status/percentage/date
+   reconcile, the overdue query, the file registry's movement chain and issue/return
+   guards, plus sticker and movement-register render smoke tests), and
    `tests/Finance.Tests` (7, third-party account placement and the debit/credit
    posting sides). The
    integration tests create and drop their own throwaway databases and skip when no

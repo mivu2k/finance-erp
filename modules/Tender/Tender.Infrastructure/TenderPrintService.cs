@@ -39,6 +39,16 @@ public interface ITenderPrintService
     /// signs off releasing or renewing a security.
     /// </summary>
     byte[] SecurityRegister(TenderRecord tender, CompanyBranding company);
+
+    /// <summary>
+    /// The spine sticker for a physical file. Falls back to a built-in 62mm layout
+    /// when nobody has configured a template, so stickers print on a fresh install.
+    /// </summary>
+    byte[] FileStickers(IReadOnlyList<PhysicalFile> files, CompanyBranding company,
+        LabelTemplateSpec? template = null);
+
+    /// <summary>The movement history of one file — the sheet an audit asks for.</summary>
+    byte[] FileMovementRegister(PhysicalFile file, CompanyBranding company);
 }
 
 public class TenderPrintService : ITenderPrintService
@@ -331,6 +341,158 @@ public class TenderPrintService : ITenderPrintService
             });
 
             page.Footer().CompanyFooter(company, tender.TenderNumber);
+        })).GeneratePdf();
+
+    public byte[] FileStickers(IReadOnlyList<PhysicalFile> files, CompanyBranding company,
+        LabelTemplateSpec? template = null) =>
+        template is null
+            ? Document.Create(doc =>
+            {
+                foreach (var file in files)
+                    doc.Page(page => FileSticker(page, file, company));
+            }).GeneratePdf()
+            : LabelRenderer.Render(template, files.Select(LabelDataFor).ToList(), company);
+
+    /// <summary>
+    /// Every field a file sticker could show, keyed as TenderModule advertises them.
+    /// The template picks which of these print, so offering all of them is free.
+    /// </summary>
+    private static LabelData LabelDataFor(PhysicalFile file) => new(
+        file.OwnerTitle,
+        file.FileNumber,
+        new Dictionary<string, string?>
+        {
+            ["file.number"] = file.FileNumber,
+            ["file.kind"] = file.OwnerType == FileOwnerType.Tender ? "TENDER" : "PROJECT",
+            ["owner.reference"] = file.OwnerReference,
+            ["owner.title"] = file.OwnerTitle,
+            ["file.opened"] = file.OpenedOn.ToString("yyyy-MM-dd"),
+            ["file.location"] = file.Location,
+            ["file.volume"] = string.IsNullOrWhiteSpace(file.VolumeNumber)
+                ? null : $"Vol. {file.VolumeNumber}",
+            ["file.status"] = file.Status.ToString(),
+            ["file.holder"] = file.HolderName
+        });
+
+    /// <summary>
+    /// The built-in 62mm spine sticker, used when no template is configured.
+    /// </summary>
+    /// <remarks>
+    /// The stretching <c>Barcode()</c> renderer inside a fixed-width container, not
+    /// <c>BarcodeFixed()</c>: a 62mm roll leaves roughly 159pt of usable width, and a
+    /// fixed-width Code 128 plus a QR does not fit in that.
+    /// </remarks>
+    private static void FileSticker(PageDescriptor page, PhysicalFile file, CompanyBranding company)
+    {
+        page.ContinuousSize(62, Unit.Millimetre);
+        page.Margin(3, Unit.Millimetre);
+        page.DefaultTextStyle(t => Letterhead.Thermal(t).FontSize(8));
+
+        page.Content().Column(col =>
+        {
+            col.Item().Row(r =>
+            {
+                r.RelativeItem().Row(brand =>
+                {
+                    if (company.HasLogo)
+                        brand.ConstantItem(34).PaddingRight(3).AlignMiddle()
+                            .MaxHeight(12).Image(company.Logo!).FitArea();
+                    brand.RelativeItem().AlignMiddle().Text(company.Name).Bold().FontSize(8);
+                });
+                r.ConstantItem(52).AlignRight().AlignMiddle()
+                    .Text(file.OwnerType == FileOwnerType.Tender ? "TENDER" : "PROJECT")
+                    .Bold().FontSize(7.5f).FontColor(Colors.Grey.Darken2);
+            });
+
+            col.Item().PaddingTop(2).Row(r =>
+            {
+                r.RelativeItem().AlignMiddle()
+                    .Element(c => c.Barcode(file.FileNumber, 26, showText: false));
+                r.ConstantItem(44).PaddingLeft(4).AlignMiddle()
+                    .Element(c => c.QrCode(file.FileNumber, 40));
+            });
+
+            col.Item().AlignCenter().Text(file.FileNumber)
+                .FontSize(10).Bold().FontFamily(Fonts.Consolas);
+
+            col.Item().PaddingTop(2).Text(file.OwnerReference).SemiBold().FontSize(8);
+            col.Item().Text(file.OwnerTitle).FontSize(7.5f);
+
+            if (!string.IsNullOrWhiteSpace(file.VolumeNumber))
+                col.Item().Text($"Vol. {file.VolumeNumber}").SemiBold();
+            if (!string.IsNullOrWhiteSpace(file.Location))
+                col.Item().Text($"Loc: {file.Location}");
+
+            col.Item().PaddingTop(1).Text($"Opened {file.OpenedOn:yyyy-MM-dd}")
+                .FontSize(7).FontColor(Colors.Grey.Darken1);
+        });
+    }
+
+    public byte[] FileMovementRegister(PhysicalFile file, CompanyBranding company) =>
+        Document.Create(doc => doc.Page(page =>
+        {
+            page.Size(PageSizes.A4);
+            page.Margin(1.2f, Unit.Centimetre);
+            page.DefaultTextStyle(t => t.FontSize(9));
+
+            page.Header().CompanyHeader(company, "FILE MOVEMENT REGISTER", right => right.Width(180)
+                .AlignRight().AlignMiddle().Text(file.FileNumber).FontSize(12).Bold());
+
+            page.Content().PaddingVertical(10).Column(col =>
+            {
+                col.Item().Text($"{file.OwnerReference} — {file.OwnerTitle}").FontSize(10).SemiBold();
+                col.Item().Text(file.OwnerType == FileOwnerType.Tender ? "Tender file" : "Project file")
+                    .FontSize(9).FontColor(Colors.Grey.Darken1);
+                col.Item().PaddingBottom(6).Text(
+                        $"Status: {file.Status}"
+                        + (string.IsNullOrWhiteSpace(file.HolderName) ? "" : $"  •  Held by {file.HolderName}")
+                        + (string.IsNullOrWhiteSpace(file.Location) ? "" : $"  •  {file.Location}"))
+                    .FontSize(9);
+
+                col.Item().Table(t =>
+                {
+                    t.ColumnsDefinition(c =>
+                    {
+                        c.ConstantColumn(62); c.ConstantColumn(66); c.RelativeColumn(2);
+                        c.RelativeColumn(2); c.ConstantColumn(62); c.RelativeColumn(2);
+                    });
+
+                    foreach (var h in new[] { "Date", "Action", "From", "To", "Due back", "Purpose / remarks" })
+                        t.Cell().Background(Colors.Grey.Lighten3)
+                            .BorderBottom(0.8f).BorderColor(Colors.Grey.Medium)
+                            .Padding(3).Text(h).SemiBold();
+
+                    foreach (var m in file.Movements.OrderBy(m => m.MovedOn).ThenBy(m => m.Id))
+                    {
+                        Cell2(t).Text(m.MovedOn.ToString("yyyy-MM-dd"));
+                        Cell2(t).Text(m.Action.ToString());
+                        Cell2(t).Text(m.FromHolderName ?? m.FromLocation ?? "-");
+                        Cell2(t).Text(m.ToHolderName ?? m.ToLocation ?? "-");
+                        Cell2(t).Text(m.DueBack?.ToString("yyyy-MM-dd") ?? "-");
+                        Cell2(t).Text(string.Join(" — ",
+                            new[] { m.Purpose, m.Remarks }.Where(s => !string.IsNullOrWhiteSpace(s))));
+                    }
+                });
+
+                if (file.Movements.Count == 0)
+                    col.Item().PaddingTop(8).Text("No movements recorded.")
+                        .FontSize(9).Italic().FontColor(Colors.Grey.Darken1);
+
+                col.Item().PaddingTop(30).Row(r =>
+                {
+                    foreach (var sig in new[] { "Records clerk", "Verified by" })
+                    {
+                        r.RelativeItem().Column(c =>
+                        {
+                            c.Item().LineHorizontal(0.8f);
+                            c.Item().PaddingTop(3).Text(sig).FontSize(9);
+                        });
+                        r.ConstantItem(20);
+                    }
+                });
+            });
+
+            page.Footer().CompanyFooter(company, file.FileNumber);
         })).GeneratePdf();
 
     private static IContainer Cell2(TableDescriptor t) =>

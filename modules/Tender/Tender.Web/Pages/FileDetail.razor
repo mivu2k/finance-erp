@@ -1,0 +1,340 @@
+@page "/tender/files/{Id:int}"
+@attribute [Authorize(Policy = TenderPermissions.FilesView)]
+@layout TenderLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>@(_file?.FileNumber ?? "File")</PageTitle>
+
+@if (_file is null)
+{
+    <MudText>Loading…</MudText>
+}
+else
+{
+    <div class="d-flex align-center mb-4 flex-wrap gap-2">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/tender/files" />
+        <MudText Typo="Typo.h5">@_file.FileNumber</MudText>
+        <MudChip T="string" Size="Size.Small" Color="@Files.StatusColor(_file.Status)">@_file.Status</MudChip>
+        @if (_file.Status == FileStatus.Issued && _file.DaysOut is { } d)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Default">@d day(s) out</MudChip>
+        }
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Label"
+                   Href="@($"/tender/print/file-sticker/{Id}")" Target="_blank">Sticker</MudButton>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Print"
+                   Href="@($"/tender/print/file-movements/{Id}")" Target="_blank">Movement Register</MudButton>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.OpenInNew"
+                   Href="@OwnerUrl">Open @_file.OwnerType</MudButton>
+    </div>
+
+    <MudGrid Spacing="3" Class="mb-3">
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.body2">Kind: @_file.OwnerType</MudText>
+            <MudText Typo="Typo.body2">Reference: @_file.OwnerReference</MudText>
+            <MudText Typo="Typo.body2">Title: @_file.OwnerTitle</MudText>
+            <MudText Typo="Typo.body2">Opened: @_file.OpenedOn.ToString("yyyy-MM-dd")</MudText>
+            @if (_file.ClosedOn is { } closed)
+            {
+                <MudText Typo="Typo.body2">Closed: @closed.ToString("yyyy-MM-dd")</MudText>
+            }
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.body2">Held by: @(_file.HolderName ?? "— in registry —")</MudText>
+            <MudText Typo="Typo.body2">Location: @_file.Location</MudText>
+            <MudText Typo="Typo.body2">Volume: @_file.VolumeNumber</MudText>
+            @if (!string.IsNullOrWhiteSpace(_file.Remarks))
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2">@_file.Remarks</MudText>
+            }
+        </MudItem>
+    </MudGrid>
+
+    <AuthorizeView Policy="@TenderPermissions.FilesManage">
+        <MudPaper Class="pa-3 mb-4 d-flex flex-wrap gap-2">
+            @if (_file.Status is FileStatus.InRegistry)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Outbox"
+                           OnClick="@(() => OpenMove(FileMovementAction.Issued))">Issue</MudButton>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Inventory2"
+                           OnClick="@(() => OpenMove(FileMovementAction.Archived))">Archive</MudButton>
+            }
+            @if (_file.Status == FileStatus.Issued)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Inbox"
+                           OnClick="@(() => OpenMove(FileMovementAction.Returned))">Return</MudButton>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.SwapHoriz"
+                           OnClick="@(() => OpenMove(FileMovementAction.Transferred))">Hand On</MudButton>
+            }
+            @if (_file.Status == FileStatus.Archived)
+            {
+                <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Unarchive"
+                           OnClick="@(() => OpenMove(FileMovementAction.Reopened))">Reopen</MudButton>
+            }
+            @if (_file.Status == FileStatus.Lost)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Search"
+                           OnClick="@(() => OpenMove(FileMovementAction.Found))">Mark Found</MudButton>
+            }
+            else
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.ReportProblem"
+                           OnClick="@(() => OpenMove(FileMovementAction.MarkedLost))">Mark Lost</MudButton>
+            }
+            <MudSpacer />
+            <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.Edit"
+                       OnClick="OpenDetails">Shelf Details</MudButton>
+        </MudPaper>
+    </AuthorizeView>
+
+    <MudText Typo="Typo.subtitle1" Class="mb-2">Movement history</MudText>
+    <MudPaper Class="pa-2" Style="overflow-x:auto">
+        <MudSimpleTable Dense="true" Hover="true" Striped="true">
+            <thead>
+                <tr>
+                    <th>Date</th><th>Action</th><th>From</th><th>To</th>
+                    <th>Due Back</th><th>Purpose / Remarks</th><th>Recorded By</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var m in _file.Movements)
+                {
+                    <tr>
+                        <td style="white-space:nowrap">@m.MovedOn.ToString("yyyy-MM-dd")</td>
+                        <td><MudChip T="string" Size="Size.Small" Color="@ActionColor(m.Action)">@m.Action</MudChip></td>
+                        <td>@(m.FromHolderName ?? m.FromLocation)</td>
+                        <td>@(m.ToHolderName ?? m.ToLocation)</td>
+                        <td>
+                            @m.DueBack?.ToString("yyyy-MM-dd")
+                            @if (m.IsOverdue)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Error" Class="ml-1">late</MudChip>
+                            }
+                        </td>
+                        <td>@(string.Join(" — ", new[] { m.Purpose, m.Remarks }.Where(s => !string.IsNullOrWhiteSpace(s))))</td>
+                        <td>@m.RecordedByName</td>
+                    </tr>
+                }
+                @if (_file.Movements.Count == 0)
+                {
+                    <tr><td colspan="7" class="mud-text-secondary pa-4">No movements recorded.</td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+
+@* --- movement overlay --- *@
+@if (_moveAction is { } action)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:520px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">@Title(action)</MudText>
+            <MudGrid Spacing="2">
+                @if (action is FileMovementAction.Issued or FileMovementAction.Transferred)
+                {
+                    <MudItem xs="12">
+                        <MudSelect T="string" Value="_holderUserId" ValueChanged="OnHolderChanged"
+                                   Label="Taken by" Margin="Margin.Dense" Clearable="true">
+                            @foreach (var u in _users)
+                            {
+                                <MudSelectItem T="string" Value="@u.UserId">@u.FullName</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_holderName" Label="…or a name not on the system"
+                                      Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_purpose" Label="Purpose" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudDatePicker @bind-Date="_dueBack" Label="Due back" Margin="Margin.Dense" />
+                    </MudItem>
+                }
+                @if (action is FileMovementAction.Returned or FileMovementAction.Archived
+                        or FileMovementAction.Found)
+                {
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_location" Label="Shelf / location" Margin="Margin.Dense" />
+                    </MudItem>
+                }
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_remarks" Label="Remarks" Lines="2" Margin="Margin.Dense" />
+                </MudItem>
+            </MudGrid>
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _moveAction = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveMoveAsync">Confirm</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@* --- shelf details overlay --- *@
+@if (_editingDetails)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:480px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-3">Shelf Details</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12"><MudTextField @bind-Value="_location" Label="Location" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12"><MudTextField @bind-Value="_volume" Label="Volume" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12"><MudTextField @bind-Value="_remarks" Label="Remarks" Lines="2" Margin="Margin.Dense" /></MudItem>
+            </MudGrid>
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _editingDetails = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDetailsAsync">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private PhysicalFile? _file;
+    private IReadOnlyList<PlatformUser> _users = [];
+
+    private FileMovementAction? _moveAction;
+    private bool _editingDetails;
+
+    private string? _holderUserId;
+    private string? _holderName;
+    private string? _purpose;
+    private DateTime? _dueBack;
+    private string? _location;
+    private string? _volume;
+    private string? _remarks;
+
+    private string _userId = string.Empty;
+    private string _userName = string.Empty;
+
+    private string OwnerUrl => _file is null
+        ? "/tender"
+        : _file.OwnerType == FileOwnerType.Tender
+            ? $"/tender/tenders/{_file.OwnerId}"
+            : $"/tender/projects/{_file.OwnerId}";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var state = await AuthState.GetAuthenticationStateAsync();
+        _userId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        _userName = state.User.Identity?.Name ?? "Unknown";
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _file = await scope.ServiceProvider.GetRequiredService<IFileRegistryService>().GetAsync(Id);
+        _users = await scope.ServiceProvider.GetRequiredService<IPlatformUserDirectory>()
+            .ListForModuleAsync(AppModules.Tender);
+        StateHasChanged();
+    }
+
+    private void OpenMove(FileMovementAction action)
+    {
+        _moveAction = action;
+        _holderUserId = null;
+        _holderName = null;
+        _purpose = null;
+        _dueBack = null;
+        _location = _file?.Location;
+        _remarks = null;
+    }
+
+    private void OpenDetails()
+    {
+        _editingDetails = true;
+        _location = _file?.Location;
+        _volume = _file?.VolumeNumber;
+        _remarks = _file?.Remarks;
+    }
+
+    // A file can go to someone who has no login — a lawyer, an auditor — so the typed
+    // name stands on its own when no user is picked.
+    private void OnHolderChanged(string? userId)
+    {
+        _holderUserId = userId;
+        _holderName = _users.FirstOrDefault(u => u.UserId == userId)?.FullName ?? _holderName;
+    }
+
+    private async Task SaveMoveAsync()
+    {
+        if (_moveAction is not { } action) return;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<IFileRegistryService>();
+            var due = _dueBack is { } d ? DateOnly.FromDateTime(d) : (DateOnly?)null;
+
+            _ = action switch
+            {
+                FileMovementAction.Issued => await svc.IssueAsync(Id, _holderUserId, _holderName ?? "",
+                    _purpose, due, _userId, _userName, _remarks),
+                FileMovementAction.Transferred => await svc.TransferAsync(Id, _holderUserId, _holderName ?? "",
+                    _purpose, due, _userId, _userName, _remarks),
+                FileMovementAction.Returned => await svc.ReturnAsync(Id, _location, _userId, _userName, _remarks),
+                FileMovementAction.Archived => await svc.ArchiveAsync(Id, _location, _userId, _userName, _remarks),
+                FileMovementAction.Reopened => await svc.ReopenAsync(Id, _userId, _userName, _remarks),
+                FileMovementAction.MarkedLost => await svc.MarkLostAsync(Id, _userId, _userName, _remarks),
+                FileMovementAction.Found => await svc.MarkFoundAsync(Id, _location, _userId, _userName, _remarks),
+                _ => throw new InvalidOperationException("Unsupported action.")
+            };
+
+            _moveAction = null;
+            Snackbar.Add("Movement recorded.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task SaveDetailsAsync()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IFileRegistryService>()
+                .UpdateDetailsAsync(Id, _location, _volume, _remarks);
+            _editingDetails = false;
+            Snackbar.Add("Saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private static string Title(FileMovementAction action) => action switch
+    {
+        FileMovementAction.Issued => "Issue File",
+        FileMovementAction.Transferred => "Hand File On",
+        FileMovementAction.Returned => "Return File",
+        FileMovementAction.Archived => "Archive File",
+        FileMovementAction.Reopened => "Reopen File",
+        FileMovementAction.MarkedLost => "Mark File Lost",
+        FileMovementAction.Found => "Mark File Found",
+        _ => "Record Movement"
+    };
+
+    private static Color ActionColor(FileMovementAction action) => action switch
+    {
+        FileMovementAction.Issued or FileMovementAction.Transferred => Color.Info,
+        FileMovementAction.Returned or FileMovementAction.Found => Color.Success,
+        FileMovementAction.MarkedLost => Color.Error,
+        FileMovementAction.Archived => Color.Default,
+        _ => Color.Default
+    };
+}

@@ -1,0 +1,67 @@
+@page "/tender/files/scan"
+@attribute [Authorize(Policy = TenderPermissions.FilesView)]
+@layout TenderLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>Find a File</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Find a File</MudText>
+
+<MudPaper Class="pa-6" MaxWidth="600px">
+    <MudText Typo="Typo.body2" Class="mb-3 mud-text-secondary">
+        Scan the sticker on the file spine, or type its number. A USB barcode scanner
+        types the number and presses Enter, so nothing needs installing.
+    </MudText>
+
+    <MudTextField @bind-Value="_number" Label="File number" Margin="Margin.Dense"
+                  Immediate="true" AutoFocus="true"
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.QrCodeScanner"
+                  OnKeyDown="OnKeyDown" />
+
+    <div class="d-flex gap-2 mt-3">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LookupAsync">Find</MudButton>
+        <MudButton Variant="Variant.Text" Href="/tender/files">Back to registry</MudButton>
+    </div>
+
+    @if (_notFound)
+    {
+        <MudAlert Severity="Severity.Error" Dense="true" Class="mt-4">
+            No file numbered <b>@_searched</b>. Check the sticker, or look it up in the registry.
+        </MudAlert>
+    }
+</MudPaper>
+
+@code {
+    private string? _number;
+    private string? _searched;
+    private bool _notFound;
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        // The scanner ends its payload with Enter, so this is the normal path.
+        if (e.Key is "Enter" or "NumpadEnter") await LookupAsync();
+    }
+
+    private async Task LookupAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_number)) return;
+
+        _searched = _number.Trim();
+        _notFound = false;
+
+        using var scope = ScopeFactory.CreateScope();
+        var file = await scope.ServiceProvider.GetRequiredService<IFileRegistryService>()
+            .GetByNumberAsync(_searched);
+
+        if (file is null)
+        {
+            _notFound = true;
+            _number = null;
+            return;
+        }
+
+        Nav.NavigateTo($"/tender/files/{file.Id}");
+    }
+}

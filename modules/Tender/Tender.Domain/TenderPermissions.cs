@@ -17,10 +17,18 @@ public static class TenderPermissions
     /// </summary>
     public const string TasksManage = "tender.tasks.manage";
 
+    public const string FilesView = "tender.files.view";
+
+    /// <summary>
+    /// Issuing and returning physical files. Held by the registry clerk, who is
+    /// usually not the person allowed to edit a tender's commercial figures.
+    /// </summary>
+    public const string FilesManage = "tender.files.manage";
+
     public static IReadOnlyList<string> All =>
     [
         TendersView, TendersManage, GuaranteesManage, DocumentsManage, ReportsView,
-        ProjectsView, ProjectsManage, TasksManage
+        ProjectsView, ProjectsManage, TasksManage, FilesView, FilesManage
     ];
 }
 
@@ -31,4 +39,5 @@ public static class TenderRoles
     public const string Viewer = "Tender Viewer";
     public const string ProjectManager = "Project Manager";
     public const string ProjectMember = "Project Member";
+    public const string RecordsClerk = "Records Clerk";
 }
