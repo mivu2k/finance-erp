@@ -1,0 +1,212 @@
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+@* One payment dialog, used by both the parties list and a party's own page. Two copies
+   would drift, and this is the screen people actually spend their day in. *@
+
+@if (Party is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:520px;max-width:95vw;max-height:92vh;overflow-y:auto">
+            <MudText Typo="Typo.h6">@Party.Name</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mb-3">
+                @(Party.Type == ThirdPartyType.Receivable ? "They owe us" : "We owe them")
+            </MudText>
+
+            @* Direction lives inside the dialog, where there is room to say what each
+               one means, instead of two unlabelled arrows in a table row. *@
+            <MudToggleGroup T="PartyMovement" Value="_movement" ValueChanged="OnMovementChanged"
+                            Color="@(_movement == PartyMovement.Debit ? Color.Error : Color.Success)"
+                            SelectionMode="SelectionMode.SingleSelection" Class="mb-3" FullWidth="true">
+                <MudToggleItem Value="@PartyMovement.Credit" Text="Received from them" />
+                <MudToggleItem Value="@PartyMovement.Debit" Text="Paid to them" />
+            </MudToggleGroup>
+
+            <MudGrid Spacing="2">
+                <MudItem xs="6">
+                    <MudDatePicker Date="_date" DateChanged="@(d => _date = d)" Label="Date" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField T="decimal" Value="_amount" ValueChanged="OnAmountChanged"
+                                     Label="Amount" Min="0.01M" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudSelect T="int?" @bind-Value="_headId" Margin="Margin.Dense"
+                               Label="@(_movement == PartyMovement.Debit ? "Paid from" : "Received into")"
+                               HelperText="@(_defaultedHead ? "Defaulted to the head you used last time" : null)">
+                        @foreach (var a in Heads)
+                        {
+                            <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_narration" Label="Narration" Margin="Margin.Dense"
+                                  HelperText="Optional — a default is used if left blank" />
+                </MudItem>
+            </MudGrid>
+
+            @* What this does to the figure, while you type — so you can see you are
+               settling the right amount rather than working it out on paper. *@
+            <MudPaper Class="pa-3 mt-3" Elevation="0" Style="background:var(--mud-palette-background-grey)">
+                <div class="d-flex justify-space-between">
+                    <MudText Typo="Typo.body2">@OutstandingLabel now</MudText>
+                    <MudText Typo="Typo.body2"><b>@Balance.ToString("N2")</b></MudText>
+                </div>
+                @if (_amount > 0)
+                {
+                    <div class="d-flex justify-space-between mt-1">
+                        <MudText Typo="Typo.body2">After this @(_movement == PartyMovement.Debit ? "payment" : "receipt")</MudText>
+                        <MudText Typo="Typo.body2" Color="@(Projected < 0 ? Color.Warning : Color.Default)">
+                            <b>@Projected.ToString("N2")</b>
+                        </MudText>
+                    </div>
+                    @if (Projected < 0)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Warning">
+                            This is more than outstanding — the balance flips to the other side.
+                        </MudText>
+                    }
+                    @if (Projected == 0)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Success">Settles them in full.</MudText>
+                    }
+                }
+                @if (Balance > 0)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Class="mt-1"
+                               OnClick="@(() => OnAmountChanged(Balance))">
+                        Settle in full (@Balance.ToString("N2"))
+                    </MudButton>
+                }
+            </MudPaper>
+
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="Close">Cancel</MudButton>
+                @* Keeps the dialog open for a run of receipts in one sitting. *@
+                <MudButton Variant="Variant.Outlined" OnClick="@(() => PostAsync(keepOpen: true))"
+                           Disabled="@(!CanPost)">Post &amp; add another</MudButton>
+                <MudButton Variant="Variant.Filled"
+                           Color="@(_movement == PartyMovement.Debit ? Color.Error : Color.Success)"
+                           OnClick="@(() => PostAsync(keepOpen: false))" Disabled="@(!CanPost)">Post</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    /// <summary>The party being paid or received from. Null hides the dialog.</summary>
+    [Parameter] public ThirdParty? Party { get; set; }
+
+    /// <summary>Their outstanding figure, so the dialog can show what this movement does to it.</summary>
+    [Parameter] public decimal Balance { get; set; }
+
+    /// <summary>Cash and bank heads the other side may post to.</summary>
+    [Parameter] public List<Account> Heads { get; set; } = [];
+
+    [Parameter] public EventCallback OnClosed { get; set; }
+
+    /// <summary>Raised after a successful post, so the caller can reload its figures.</summary>
+    [Parameter] public EventCallback OnPosted { get; set; }
+
+    private PartyMovement _movement = PartyMovement.Credit;
+    private decimal _amount;
+    private DateTime? _date = DateTime.Today;
+    private string? _narration;
+    private int? _headId;
+    private bool _defaultedHead;
+    private int _loadedForPartyId;
+
+    private bool CanPost => _headId is not null && _amount > 0;
+
+    private string OutstandingLabel =>
+        Party?.Type == ThirdPartyType.Receivable ? "They owe" : "We owe";
+
+    /// <summary>
+    /// A receipt from a receivable party reduces what they owe; a payment to a payable
+    /// party reduces what we owe. Either way the outstanding figure comes down.
+    /// </summary>
+    private decimal Projected
+    {
+        get
+        {
+            var reduces = Party?.Type == ThirdPartyType.Receivable
+                ? _movement == PartyMovement.Credit
+                : _movement == PartyMovement.Debit;
+            return reduces ? Balance - _amount : Balance + _amount;
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Party is null || Party.Id == _loadedForPartyId) return;
+
+        _loadedForPartyId = Party.Id;
+        Reset();
+
+        // Default to whatever head this party was last settled through.
+        using var scope = ScopeFactory.CreateScope();
+        var last = await scope.ServiceProvider.GetRequiredService<IThirdPartyService>()
+            .GetLastHeadAsync(Party.Id);
+
+        if (last is { } id && Heads.Any(h => h.Id == id))
+        {
+            _headId = id;
+            _defaultedHead = true;
+        }
+        else
+        {
+            _headId = Heads.FirstOrDefault()?.Id;
+            _defaultedHead = false;
+        }
+    }
+
+    private void Reset()
+    {
+        // A payable is usually money coming in first; a receivable usually money going out.
+        _movement = Party?.Type == ThirdPartyType.Receivable ? PartyMovement.Credit : PartyMovement.Credit;
+        _amount = 0;
+        _date = DateTime.Today;
+        _narration = null;
+    }
+
+    private void OnMovementChanged(PartyMovement movement) => _movement = movement;
+    private void OnAmountChanged(decimal amount) => _amount = amount;
+
+    private async Task Close()
+    {
+        _loadedForPartyId = 0;
+        await OnClosed.InvokeAsync();
+    }
+
+    private async Task PostAsync(bool keepOpen)
+    {
+        if (Party is null || _headId is not { } headId) return;
+
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IThirdPartyService>()
+                .RecordAsync(Party.Id, _movement, _amount, headId,
+                    DateOnly.FromDateTime(_date ?? DateTime.Today), _narration);
+
+            Snackbar.Add(
+                $"{(_movement == PartyMovement.Debit ? "Paid" : "Received")} {_amount:N2} — {Party.Name}",
+                Severity.Success);
+
+            await OnPosted.InvokeAsync();
+
+            if (keepOpen)
+            {
+                // Keep the party, direction and head; clear only what changes per entry.
+                _amount = 0;
+                _narration = null;
+            }
+            else
+            {
+                await Close();
+            }
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

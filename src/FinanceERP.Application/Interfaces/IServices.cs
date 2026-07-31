@@ -212,6 +212,12 @@ public interface IThirdPartyService
     /// </summary>
     Task<List<PartyHeadTotalDto>> GetHeadTotalsAsync(DateOnly? from = null, DateOnly? to = null);
 
+    /// <summary>
+    /// The cash/bank head last used with this party, so the payment screen can default to
+    /// it — in practice it is nearly always the same one every time.
+    /// </summary>
+    Task<int?> GetLastHeadAsync(int partyId);
+
     /// <summary>Current balance on the party's account. Zero when they have none yet.</summary>
     Task<decimal> GetBalanceAsync(int partyId);
 }

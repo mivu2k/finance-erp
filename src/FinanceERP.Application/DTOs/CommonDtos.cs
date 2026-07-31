@@ -41,7 +41,7 @@ public record LedgerRowDto(
 /// </param>
 public record PartyStatementRowDto(
     DateOnly Date, string VoucherNo, int VoucherId, string? Description,
-    string? ContraCode, string? ContraName,
+    string? ContraCode, string? ContraName, int? ContraAccountId,
     decimal Received, decimal Paid, decimal Balance);
 
 /// <summary>How much moved through one head, across every third party.</summary>

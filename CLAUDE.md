@@ -143,6 +143,16 @@ These apply to the **Finance** module specifically:
   heads" rather than inventing one. `Received`/`Paid` are the party's credit/debit, and
   `Balance` is signed per side, so it reads as what is still outstanding either way.
   `GetHeadTotalsAsync` answers the same question across every party at once.
+- **A party's own page is where they are managed** (`/finance/third-parties/{id}`):
+  details, balance, statement and **Add payment**, rather than the list being the only
+  place money can be recorded. `Components/Shared/PartyPaymentDialog.razor` is that one
+  dialog, used by both the list and the page — two copies of the screen people spend
+  their day in would drift. It picks direction *inside* the dialog (the list used to
+  carry two unlabelled arrows), shows what the balance becomes as you type with a
+  "settle in full" shortcut, defaults the head to whatever that party was last settled
+  through (`GetLastHeadAsync`, which returns null for a split entry since there is no
+  single head to reuse), and has **Post & add another** for entering a run of receipts
+  without reopening.
 
 - Every page, nav item and action is permission-gated — match that when adding UI.
 
@@ -391,7 +401,7 @@ UI yet. Not ported: the customer-facing tracking page, Excel report exports.
 
 Known gaps, roughly in priority order:
 
-1. **Finance is barely tested.** 261 tests exist —
+1. **Finance is barely tested.** 263 tests exist —
    `tests/ErpPlatform.Shared.Tests` (37, Code 128 and QR round-trip through decoders —
    QR against ZXing, a test-only dependency),
    `tests/Hr.Tests` (42, the rotating attendance token and attendance arithmetic),
@@ -407,8 +417,9 @@ Known gaps, roughly in priority order:
    reconcile, the overdue query across both registers, the tender schedule's totals and
    per-line margin, the file registry's movement chain and issue/return guards, plus
    sticker and movement-register render smoke tests), and
-   `tests/Finance.Tests` (10, third-party account placement, the debit/credit posting
-   sides, and the party statement's contra head, running balance and head totals). The
+   `tests/Finance.Tests` (12, third-party account placement, the debit/credit posting
+   sides, and the party statement's contra head, running balance, head totals and
+   remembered head). The
    integration tests create and drop their own throwaway databases and skip when no
    server is reachable. **A test suite that finishes suspiciously fast is skipping,
    not passing** — the throwaway name needs a wildcard grant in `dev.sh`'s

@@ -130,7 +130,7 @@ public class ThirdPartyService(
         var voucherIds = mine.Select(x => x.VoucherId).Distinct().ToList();
         var others = await db.VoucherLines.AsNoTracking()
             .Where(l => voucherIds.Contains(l.VoucherId) && l.AccountId != accountId)
-            .Select(l => new { l.VoucherId, l.Account.Code, l.Account.Name, l.Debit, l.Credit })
+            .Select(l => new { l.VoucherId, l.AccountId, l.Account.Code, l.Account.Name, l.Debit, l.Credit })
             .ToListAsync();
 
         var contra = others.GroupBy(o => o.VoucherId).ToDictionary(
@@ -141,8 +141,9 @@ public class ThirdPartyService(
                 // A simple two-line entry names its head; a split names how many, because
                 // inventing one head for a multi-line voucher would be a lie.
                 return distinct.Count == 1
-                    ? (Code: (string?)distinct[0].Key, Name: (string?)distinct[0].First().Name)
-                    : (Code: null, Name: (string?)$"Split — {distinct.Count} heads");
+                    ? (Code: (string?)distinct[0].Key, Name: (string?)distinct[0].First().Name,
+                       Id: (int?)distinct[0].First().AccountId)
+                    : (Code: null, Name: (string?)$"Split — {distinct.Count} heads", Id: (int?)null);
             });
 
         // The party's side, signed so the running figure reads as what is outstanding:
@@ -158,13 +159,36 @@ public class ThirdPartyService(
 
             rows.Add(new PartyStatementRowDto(
                 m.Date, m.VoucherNo, m.VoucherId, m.Description,
-                head.Code, head.Name,
+                head.Code, head.Name, head.Id,
                 Received: m.Credit,
                 Paid: m.Debit,
                 Balance: running));
         }
 
         return rows;
+    }
+
+    public async Task<int?> GetLastHeadAsync(int partyId)
+    {
+        var tp = await db.ThirdParties.AsNoTracking().FirstOrDefaultAsync(t => t.Id == partyId);
+        if (tp?.AccountId is not { } accountId) return null;
+
+        // The newest posted voucher that touched this party, then its other side.
+        var lastVoucherId = await db.VoucherLines.AsNoTracking()
+            .Where(l => l.AccountId == accountId
+                        && l.Voucher.Status == VoucherStatus.Posted && !l.Voucher.IsDeleted)
+            .OrderByDescending(l => l.Voucher.Date).ThenByDescending(l => l.VoucherId)
+            .Select(l => (int?)l.VoucherId)
+            .FirstOrDefaultAsync();
+
+        if (lastVoucherId is not { } vid) return null;
+
+        // Only when it was a clean two-sided entry; a split has no single head to reuse.
+        var otherIds = await db.VoucherLines.AsNoTracking()
+            .Where(l => l.VoucherId == vid && l.AccountId != accountId)
+            .Select(l => l.AccountId).Distinct().ToListAsync();
+
+        return otherIds.Count == 1 ? otherIds[0] : null;
     }
 
     public async Task<List<PartyHeadTotalDto>> GetHeadTotalsAsync(

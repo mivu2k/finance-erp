@@ -57,7 +57,8 @@ public class ThirdPartyPostingTests : IAsyncLifetime
 
     /// <summary>
     /// Only the handful of accounts the party flow touches: the two parents it hangs
-    /// parties under, and a cash account for the other side of each posting.
+    /// parties under, and two cash heads — two, so a test can tell "the head you used
+    /// last time" apart from "the first head in the list".
     /// </summary>
     private static async Task SeedMinimalChartAsync(AppDbContext db)
     {
@@ -68,6 +69,7 @@ public class ThirdPartyPostingTests : IAsyncLifetime
 
         db.Accounts.AddRange(
             new Account { Code = "1100", Name = "Cash in Hand", Type = AccountType.Asset, ParentId = assets.Id },
+            new Account { Code = "1300", Name = "Petty Cash", Type = AccountType.Asset, ParentId = assets.Id },
             new Account { Code = "1600", Name = "Receivables", Type = AccountType.Asset, ParentId = assets.Id, IsPostable = false },
             new Account { Code = "2100", Name = "Payables", Type = AccountType.Liability, ParentId = liabilities.Id, IsPostable = false });
         await db.SaveChangesAsync();
@@ -316,5 +318,40 @@ public class ThirdPartyPostingTests : IAsyncLifetime
         Assert.Equal(25_000, row.Paid);
         Assert.Equal(115_000, row.Net);
         Assert.Equal(3, row.Movements);
+    }
+
+    [SkippableFact]
+    public async Task The_last_head_used_is_remembered_for_next_time()
+    {
+        IntegrationDatabase.Require(_available);
+
+        await using var db = NewDb();
+        var (parties, _) = Services(db);
+
+        // Two different heads, settled through the second one most recently.
+        var cash = await db.Accounts.AsNoTracking().FirstAsync(a => a.Code == "1100");
+        var petty = await db.Accounts.AsNoTracking().FirstAsync(a => a.Code == "1300");
+
+        var tp = await parties.SaveAsync(new ThirdParty { Name = "Mr C", Type = ThirdPartyType.Payable });
+        Assert.Null(await parties.GetLastHeadAsync(tp.Id));   // nothing posted yet
+
+        await parties.RecordAsync(tp.Id, PartyMovement.Credit, 10_000, cash.Id, new DateOnly(2026, 7, 1));
+        await parties.RecordAsync(tp.Id, PartyMovement.Debit, 2_000, petty.Id, new DateOnly(2026, 7, 20));
+
+        Assert.Equal(petty.Id, await parties.GetLastHeadAsync(tp.Id));
+    }
+
+    [SkippableFact]
+    public async Task A_party_with_no_account_has_no_remembered_head()
+    {
+        IntegrationDatabase.Require(_available);
+
+        await using var db = NewDb();
+        var (parties, _) = Services(db);
+
+        // Nothing blows up on a party that was never posted against.
+        var tp = await parties.SaveAsync(new ThirdParty { Name = "Mr D", Type = ThirdPartyType.Receivable });
+        Assert.Null(await parties.GetLastHeadAsync(tp.Id));
+        Assert.Empty(await parties.GetStatementAsync(tp.Id));
     }
 }

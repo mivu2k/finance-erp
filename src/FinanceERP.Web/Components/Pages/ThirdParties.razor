@@ -95,17 +95,16 @@
             @if (context.AccountId is not null)
             {
                 <AuthorizeView Policy="@Permissions.VouchersCreate" Context="r">
-                    <MudTooltip Text="Money out to them">
-                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.ArrowUpward"
-                                       Color="Color.Error"
-                                       OnClick="@(() => OpenRecord(context, PartyMovement.Debit))" />
-                    </MudTooltip>
-                    <MudTooltip Text="Money in from them">
-                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.ArrowDownward"
-                                       Color="Color.Success"
-                                       OnClick="@(() => OpenRecord(context, PartyMovement.Credit))" />
-                    </MudTooltip>
+                    @* One labelled button; which way the money runs is chosen in the
+                       dialog, where there is room to say what each direction means. *@
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Payments"
+                               OnClick="@(() => OpenRecord(context))">Add payment</MudButton>
                 </AuthorizeView>
+                <MudTooltip Text="Open this party">
+                    <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.OpenInNew"
+                                   Href="@($"/finance/third-parties/{context.Id}")" />
+                </MudTooltip>
             }
             <AuthorizeView Policy="@Permissions.ThirdPartiesManage" Context="m">
                 <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit" OnClick="@(() => _editing = context)" />
@@ -140,41 +139,8 @@
     </MudOverlay>
 }
 
-@if (_recordParty is not null)
-{
-    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
-        <MudPaper Class="pa-6" Style="width:480px;max-width:95vw">
-            <MudText Typo="Typo.h6" Class="mb-1">
-                @(_movement == PartyMovement.Debit ? "Paid to" : "Received from") @_recordParty.Name
-            </MudText>
-            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
-                Posts a voucher against their account and the cash or bank account you pick,
-                so it shows in the ledger and the trial balance.
-            </MudText>
-
-            <MudDatePicker Date="_recordDate" DateChanged="@(d => _recordDate = d)"
-                           Label="Date" Class="mb-2" />
-            <MudNumericField T="decimal" @bind-Value="_recordAmount" Label="Amount"
-                             Min="0.01M" Class="mb-2" />
-            <MudSelect T="int?" @bind-Value="_cashAccountId" Class="mb-2"
-                       Label="@(_movement == PartyMovement.Debit ? "Paid from" : "Received into")">
-                @foreach (var a in _cashAccounts)
-                {
-                    <MudSelectItem T="int?" Value="@a.Id">@a.Code — @a.Name</MudSelectItem>
-                }
-            </MudSelect>
-            <MudTextField @bind-Value="_recordNarration" Label="Narration"
-                          HelperText="Optional — a default is used if left blank" />
-
-            <div class="d-flex justify-end gap-2 mt-4">
-                <MudButton OnClick="@(() => _recordParty = null)">Cancel</MudButton>
-                <MudButton Variant="Variant.Filled"
-                           Color="@(_movement == PartyMovement.Debit ? Color.Error : Color.Success)"
-                           OnClick="Record" Disabled="@(_cashAccountId is null)">Post</MudButton>
-            </div>
-        </MudPaper>
-    </MudOverlay>
-}
+<PartyPaymentDialog Party="_recordParty" Balance="@RecordBalance" Heads="_cashAccounts"
+                    OnClosed="@(() => _recordParty = null)" OnPosted="ReloadAsync" />
 
 @code {
     private MudTable<ThirdParty>? _table;
@@ -184,38 +150,17 @@
     private List<PartyHeadTotalDto> _headTotals = [];
 
     private ThirdParty? _recordParty;
-    private PartyMovement _movement = PartyMovement.Debit;
-    private decimal _recordAmount;
-    private DateTime? _recordDate = DateTime.Today;
-    private string? _recordNarration;
-    private int? _cashAccountId;
     private List<Account> _cashAccounts = [];
 
-    private void OpenRecord(ThirdParty party, PartyMovement movement)
-    {
-        _recordParty = party;
-        _movement = movement;
-        _recordAmount = 0;
-        _recordDate = DateTime.Today;
-        _recordNarration = null;
-        _cashAccountId = _cashAccounts.FirstOrDefault()?.Id;
-    }
+    /// <summary>Their outstanding figure, handed to the dialog so it can show the effect.</summary>
+    private decimal RecordBalance =>
+        _recordParty is not null && _balances.TryGetValue(_recordParty.Id, out var b) ? b : 0m;
 
-    private async Task Record()
-    {
-        try
-        {
-            using var scope = ScopeFactory.CreateScope();
-            await scope.ServiceProvider.GetRequiredService<IThirdPartyService>().RecordAsync(
-                _recordParty!.Id, _movement, _recordAmount, _cashAccountId!.Value,
-                _recordDate is { } d ? DateOnly.FromDateTime(d) : DateOnly.FromDateTime(DateTime.Today),
-                _recordNarration);
+    private void OpenRecord(ThirdParty party) => _recordParty = party;
 
-            Snackbar.Add("Posted.", Severity.Success);
-            _recordParty = null;
-            await _table!.ReloadServerData();
-        }
-        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    private async Task ReloadAsync()
+    {
+        if (_table is not null) await _table.ReloadServerData();
     }
 
     private async Task<TableData<ThirdParty>> LoadData(TableState state, CancellationToken ct)

@@ -19,6 +19,12 @@ else
             @(_party.Type == ThirdPartyType.Receivable ? "They owe us" : "We owe them")
         </MudChip>
         <MudSpacer />
+        <AuthorizeView Policy="@Permissions.VouchersCreate">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Payments"
+                       OnClick="@(() => _recordParty = _party)">Add payment</MudButton>
+        </AuthorizeView>
+        <MudSpacer />
         @if (_party.AccountId is not null)
         {
             <AuthorizeView Policy="@Permissions.ReportsExport">
@@ -54,7 +60,15 @@ else
             <MudPaper Class="pa-3">
                 <MudText Typo="Typo.overline" Class="mud-text-secondary">Contact</MudText>
                 <MudText Typo="Typo.body2">@_party.Phone</MudText>
-                <MudText Typo="Typo.caption" Class="mud-text-secondary">@_party.Email</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">@_party.Email</MudText>
+                @if (!string.IsNullOrWhiteSpace(_party.Address))
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">@_party.Address</MudText>
+                }
+                @if (!string.IsNullOrWhiteSpace(_party.TaxNumber))
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">NTN @_party.TaxNumber</MudText>
+                }
             </MudPaper>
         </MudItem>
     </MudGrid>
@@ -103,8 +117,8 @@ else
                 @if (_rows.Count == 0)
                 {
                     <tr><td colspan="7" class="mud-text-secondary pa-4">
-                        Nothing recorded in this period. Use the up/down arrows on the parties
-                        list to record money paid to or received from them.
+                        Nothing recorded in this period. Use <b>Add payment</b> above to record
+                        money received from or paid to them.
                     </td></tr>
                 }
             </tbody>
@@ -112,12 +126,18 @@ else
     </MudPaper>
 }
 
+<PartyPaymentDialog Party="_recordParty" Balance="@_balance" Heads="_cashAccounts"
+                    OnClosed="@(() => _recordParty = null)" OnPosted="LoadAsync" />
+
 @code {
     [Parameter] public int Id { get; set; }
 
     private ThirdParty? _party;
     private List<PartyStatementRowDto> _rows = [];
     private decimal _balance;
+
+    private ThirdParty? _recordParty;
+    private List<Account> _cashAccounts = [];
 
     private DateTime? _fromDate = DateTime.Today.AddYears(-1);
     private DateTime? _toDate = DateTime.Today;
@@ -141,6 +161,17 @@ else
 
             _rows = await svc.GetStatementAsync(Id, _from, _to);
             _balance = await svc.GetBalanceAsync(Id);
+
+            // Cash, bank and petty cash are the only sensible other side of a settlement;
+            // GetPostableAsync has already dropped the non-postable parent headings.
+            if (_cashAccounts.Count == 0)
+                _cashAccounts = (await scope.ServiceProvider.GetRequiredService<IAccountService>()
+                        .GetPostableAsync())
+                    .Where(a => a.Type == AccountType.Asset
+                                && (a.Code.StartsWith("11") || a.Code.StartsWith("12")
+                                    || a.Code.StartsWith("13")))
+                    .OrderBy(a => a.Code).ToList();
+
             StateHasChanged();
         }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
