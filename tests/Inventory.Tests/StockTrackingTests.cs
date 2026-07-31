@@ -1,3 +1,4 @@
+using ErpPlatform.TestSupport;
 using ErpPlatform.Shared.Kernel;
 using Inventory.Domain;
 using Inventory.Infrastructure;
@@ -33,7 +34,7 @@ public class StockTrackingTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (!_available) return;
+        if (!_available) return;   // nothing was created, so nothing to drop
         await using var db = NewDb();
         await db.Database.EnsureDeletedAsync();
     }
@@ -62,10 +63,10 @@ public class StockTrackingTests : IAsyncLifetime
         return (new StockTrackingService(db, stock), stock);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Receiving_a_serialised_item_creates_one_unit_per_serial()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (serialised, _, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -85,10 +86,10 @@ public class StockTrackingTests : IAsyncLifetime
         Assert.Equal(units.Count(u => u.CountsAsStock), model.CurrentQuantity);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_serialised_receipt_must_carry_one_serial_per_unit()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (serialised, _, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -105,10 +106,10 @@ public class StockTrackingTests : IAsyncLifetime
             "u1", "Tester"));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task The_same_serial_cannot_be_received_twice_for_one_item()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (serialised, _, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -122,10 +123,10 @@ public class StockTrackingTests : IAsyncLifetime
             "u1", "Tester"));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_non_serialised_item_refuses_serials()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (_, _, plain) = await SeedAsync();
 
         await using var db = NewDb();
@@ -136,10 +137,10 @@ public class StockTrackingTests : IAsyncLifetime
             "u1", "Tester"));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Issuing_serials_moves_those_units_out_and_the_quantity_with_them()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (serialised, _, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -160,10 +161,10 @@ public class StockTrackingTests : IAsyncLifetime
         Assert.Equal("SN-3", inStock[0].SerialNumber);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_serial_already_out_of_stock_cannot_be_issued_again()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (serialised, _, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -184,10 +185,10 @@ public class StockTrackingTests : IAsyncLifetime
             null, null, "u1", "Tester"));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_serial_can_be_found_from_anywhere_which_is_what_a_scanner_needs()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (serialised, _, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -200,10 +201,10 @@ public class StockTrackingTests : IAsyncLifetime
         Assert.Equal(serialised, found!.ItemId);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_batch_tracked_item_opens_a_batch_and_needs_a_batch_number()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (_, batched, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -222,10 +223,10 @@ public class StockTrackingTests : IAsyncLifetime
         Assert.Equal(10, batches[0].RemainingQuantity);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Expiring_batches_are_listed_before_they_lapse()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (_, batched, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -244,10 +245,10 @@ public class StockTrackingTests : IAsyncLifetime
         Assert.Equal("LOT-SOON", expiring[0].BatchNumber);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Average_cost_is_quantity_weighted_not_a_simple_mean()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (_, _, plain) = await SeedAsync();
 
         await using var db = NewDb();
@@ -266,10 +267,10 @@ public class StockTrackingTests : IAsyncLifetime
         Assert.Equal(Math.Round(101 * a.AverageCost!.Value, 4), Math.Round(a.StockValue, 4));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Valuation_prices_stock_at_cost_and_flags_what_is_low()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (serialised, _, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -291,10 +292,10 @@ public class StockTrackingTests : IAsyncLifetime
 
     // --- stock take ---
 
-    [Fact]
+    [SkippableFact]
     public async Task A_stock_take_snapshots_what_the_system_holds()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (serialised, _, plain) = await SeedAsync();
 
         await using var db = NewDb();
@@ -312,10 +313,10 @@ public class StockTrackingTests : IAsyncLifetime
         Assert.Contains(count.Lines, l => l.ItemType == StockItemType.Accessory && l.ItemId == plain);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Posting_a_count_writes_its_variances_through_the_ledger()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (serialised, _, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -347,10 +348,10 @@ public class StockTrackingTests : IAsyncLifetime
         Assert.Equal(StockCountStatus.Posted, posted!.Status);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task An_uncounted_line_is_left_alone_rather_than_treated_as_zero()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (serialised, _, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -373,10 +374,10 @@ public class StockTrackingTests : IAsyncLifetime
         Assert.Equal(5, model.CurrentQuantity);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Two_counts_cannot_be_open_at_once_and_a_posted_one_cannot_be_cancelled()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (serialised, _, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -398,10 +399,10 @@ public class StockTrackingTests : IAsyncLifetime
         await Assert.ThrowsAsync<InvalidOperationException>(() => counts.CancelAsync(first.Id));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_count_cannot_be_posted_before_it_is_finished()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (serialised, _, _) = await SeedAsync();
 
         await using var db = NewDb();

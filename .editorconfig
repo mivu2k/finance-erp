@@ -1,0 +1,35 @@
+# Shared formatting so a diff shows what changed, not who typed it.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.{cs,razor}]
+indent_size = 4
+max_line_length = 110
+
+# Nullability holes become NullReferenceException in production; treat them as errors
+# rather than warnings nobody reads.
+dotnet_diagnostic.CS8600.severity = error
+dotnet_diagnostic.CS8602.severity = error
+dotnet_diagnostic.CS8618.severity = error
+
+# An un-awaited Task silently drops both the work and its exceptions.
+dotnet_diagnostic.CS4014.severity = error
+
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_prefer_braces = when_multiline:suggestion
+dotnet_sort_system_directives_first = true
+
+[*.{json,yml,yaml,csproj,props,targets}]
+indent_size = 2
+
+[*.{sh,sql}]
+indent_size = 4
+
+[*.md]
+trim_trailing_whitespace = false

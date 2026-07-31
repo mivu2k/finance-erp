@@ -1,3 +1,4 @@
+using ErpPlatform.TestSupport;
 using ErpPlatform.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 using Tender.Domain;
@@ -17,6 +18,16 @@ public class FileRegistryTests : IAsyncLifetime
     private readonly string _database = $"erp_tender_test_{Guid.NewGuid():N}"[..30];
     private bool _available;
 
+    /// <summary>
+    /// Frozen at midday UTC on a fixed date, in the business timezone. Date-boundary
+    /// assertions are then a fixture rather than a race against when the suite runs —
+    /// which is the whole reason the clock is injected.
+    /// </summary>
+    private static readonly IBusinessClock Clock =
+        new FixedClock(new DateTime(2026, 7, 31, 12, 0, 0, DateTimeKind.Utc), TimeZoneInfo.Utc);
+
+    private static DateOnly Today => Clock.Today;
+
     private DbContextOptions<TenderDbContext> Opts() =>
         new DbContextOptionsBuilder<TenderDbContext>()
             .UseMySql($"{Server}Database={_database};", new MySqlServerVersion(new Version(10, 11, 0)))
@@ -33,27 +44,27 @@ public class FileRegistryTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (!_available) return;
+        if (!_available) return;   // nothing was created, so nothing to drop
         await using var db = NewDb();
         await db.Database.EnsureDeletedAsync();
     }
 
     private static ProjectService Projects(TenderDbContext db) =>
-        new(db, new FileRegistryService(db));
+        new(db, new FileRegistryService(db, Clock), Clock);
 
     private static TenderService Tenders(TenderDbContext db) =>
-        new(db, new FileRegistryService(db));
+        new(db, new FileRegistryService(db, Clock), Clock);
 
-    [Fact]
+    [SkippableFact]
     public async Task Creating_a_project_opens_its_file_with_a_number()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
 
         await using var db = NewDb();
         var project = await Projects(db).CreateAsync(new Project
         { ProjectCode = "PRJ-001", Name = "Head Office Rewiring" });
 
-        var file = await new FileRegistryService(db)
+        var file = await new FileRegistryService(db, Clock)
             .FindForOwnerAsync(FileOwnerType.Project, project.Id);
 
         Assert.NotNull(file);
@@ -65,17 +76,17 @@ public class FileRegistryTests : IAsyncLifetime
         Assert.Equal(FileMovementAction.Opened, file.Movements[0].Action);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Creating_a_tender_opens_its_file_too_and_numbers_run_on()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
 
         await using var db = NewDb();
         await Tenders(db).CreateAsync(new TenderRecord
         { TenderNumber = "T-001", Title = "Supply of pumps", IssuingAuthority = "KWSB" });
         await Projects(db).CreateAsync(new Project { ProjectCode = "PRJ-001", Name = "Rewiring" });
 
-        var files = await new FileRegistryService(db).ListAsync();
+        var files = await new FileRegistryService(db, Clock).ListAsync();
 
         Assert.Equal(2, files.Count);
         // One sequence across both registers — a file number is unique on its own.
@@ -84,13 +95,13 @@ public class FileRegistryTests : IAsyncLifetime
         Assert.Contains(files, f => f.OwnerType == FileOwnerType.Project);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_second_call_returns_the_same_file_rather_than_a_new_one()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
 
         await using var db = NewDb();
-        var files = new FileRegistryService(db);
+        var files = new FileRegistryService(db, Clock);
 
         var first = await files.EnsureForAsync(FileOwnerType.Project, 42, "PRJ-042", "Something");
         var second = await files.EnsureForAsync(FileOwnerType.Project, 42, "PRJ-042", "Something");
@@ -99,17 +110,17 @@ public class FileRegistryTests : IAsyncLifetime
         Assert.Equal(first.FileNumber, second.FileNumber);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Issuing_then_returning_writes_both_movements_and_ends_in_the_registry()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
 
         await using var db = NewDb();
-        var svc = new FileRegistryService(db);
+        var svc = new FileRegistryService(db, Clock);
         var file = await svc.EnsureForAsync(FileOwnerType.Project, 1, "PRJ-001", "Rewiring");
 
         await svc.IssueAsync(file.Id, "u1", "Ali", "Site visit",
-            DateOnly.FromDateTime(DateTime.UtcNow).AddDays(7), "u9", "Clerk");
+            Today.AddDays(7), "u9", "Clerk");
 
         var issued = await svc.GetAsync(file.Id);
         Assert.Equal(FileStatus.Issued, issued!.Status);
@@ -127,13 +138,13 @@ public class FileRegistryTests : IAsyncLifetime
                                                  && m.ToHolderName == "Ali");
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_file_that_is_already_out_cannot_be_issued_again()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
 
         await using var db = NewDb();
-        var svc = new FileRegistryService(db);
+        var svc = new FileRegistryService(db, Clock);
         var file = await svc.EnsureForAsync(FileOwnerType.Project, 1, "PRJ-001", "Rewiring");
 
         await svc.IssueAsync(file.Id, "u1", "Ali", null, null, "u9", "Clerk");
@@ -143,13 +154,13 @@ public class FileRegistryTests : IAsyncLifetime
             svc.IssueAsync(file.Id, "u2", "Bilal", null, null, "u9", "Clerk"));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Handing_on_keeps_it_out_and_records_who_it_came_from()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
 
         await using var db = NewDb();
-        var svc = new FileRegistryService(db);
+        var svc = new FileRegistryService(db, Clock);
         var file = await svc.EnsureForAsync(FileOwnerType.Project, 1, "PRJ-001", "Rewiring");
 
         await svc.IssueAsync(file.Id, "u1", "Ali", null, null, "u9", "Clerk");
@@ -164,13 +175,13 @@ public class FileRegistryTests : IAsyncLifetime
         Assert.Equal("Bilal", transfer.ToHolderName);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_file_still_out_cannot_be_archived()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
 
         await using var db = NewDb();
-        var svc = new FileRegistryService(db);
+        var svc = new FileRegistryService(db, Clock);
         var file = await svc.EnsureForAsync(FileOwnerType.Project, 1, "PRJ-001", "Rewiring");
 
         await svc.IssueAsync(file.Id, "u1", "Ali", null, null, "u9", "Clerk");
@@ -179,15 +190,15 @@ public class FileRegistryTests : IAsyncLifetime
             svc.ArchiveAsync(file.Id, "Basement", "u9", "Clerk"));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Overdue_counts_only_files_out_past_their_due_date()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
 
         await using var db = NewDb();
-        var svc = new FileRegistryService(db);
-        var yesterday = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
-        var nextWeek = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(7);
+        var svc = new FileRegistryService(db, Clock);
+        var yesterday = Today.AddDays(-1);
+        var nextWeek = Today.AddDays(7);
 
         var late = await svc.EnsureForAsync(FileOwnerType.Project, 1, "PRJ-001", "Late one");
         var fine = await svc.EnsureForAsync(FileOwnerType.Project, 2, "PRJ-002", "Fine one");
@@ -203,13 +214,13 @@ public class FileRegistryTests : IAsyncLifetime
         Assert.Equal("PRJ-001", overdue[0].OwnerReference);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_lost_file_must_be_found_before_it_can_be_issued()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
 
         await using var db = NewDb();
-        var svc = new FileRegistryService(db);
+        var svc = new FileRegistryService(db, Clock);
         var file = await svc.EnsureForAsync(FileOwnerType.Project, 1, "PRJ-001", "Rewiring");
 
         await svc.MarkLostAsync(file.Id, "u9", "Clerk", "Not on the shelf.");
@@ -225,13 +236,13 @@ public class FileRegistryTests : IAsyncLifetime
         Assert.Equal(FileStatus.Issued, (await svc.GetAsync(file.Id))!.Status);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_scanned_number_resolves_back_to_its_file()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
 
         await using var db = NewDb();
-        var svc = new FileRegistryService(db);
+        var svc = new FileRegistryService(db, Clock);
         var file = await svc.EnsureForAsync(FileOwnerType.Tender, 7, "T-007", "Supply of pumps");
 
         // Scanners often deliver trailing whitespace with the payload.
@@ -241,10 +252,10 @@ public class FileRegistryTests : IAsyncLifetime
         Assert.Equal(file.Id, found!.Id);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Renaming_the_owner_updates_the_registry_snapshot()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
 
         await using var db = NewDb();
         var projects = Projects(db);
@@ -254,7 +265,7 @@ public class FileRegistryTests : IAsyncLifetime
         project.Name = "Renamed";
         await projects.UpdateAsync(project);
 
-        var file = await new FileRegistryService(db)
+        var file = await new FileRegistryService(db, Clock)
             .FindForOwnerAsync(FileOwnerType.Project, project.Id);
 
         Assert.Equal("Renamed", file!.OwnerTitle);

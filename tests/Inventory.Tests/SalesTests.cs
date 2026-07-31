@@ -1,3 +1,4 @@
+using ErpPlatform.TestSupport;
 using ErpPlatform.Shared.Kernel;
 using Inventory.Domain;
 using Inventory.Infrastructure;
@@ -33,7 +34,7 @@ public class SalesTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (!_available) return;
+        if (!_available) return;   // nothing was created, so nothing to drop
         await using var db = NewDb();
         await db.Database.EnsureDeletedAsync();
     }
@@ -97,10 +98,10 @@ public class SalesTests : IAsyncLifetime
             ]
         };
 
-    [Fact]
+    [SkippableFact]
     public async Task Confirming_an_order_moves_no_stock()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (customerId, plainId, _, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -115,10 +116,10 @@ public class SalesTests : IAsyncLifetime
         Assert.StartsWith("SO-", order.OrderNumber);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Posting_a_delivery_issues_stock_and_closes_the_order()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (customerId, plainId, _, _) = await SeedAsync();
 
         int orderId;
@@ -152,10 +153,10 @@ public class SalesTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_partial_delivery_leaves_the_order_partly_delivered()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (customerId, plainId, _, _) = await SeedAsync();
 
         int orderId;
@@ -185,10 +186,10 @@ public class SalesTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_delivery_bigger_than_stock_is_refused_before_anything_moves()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (customerId, plainId, _, _) = await SeedAsync(plainQty: 5);
 
         await using var db = NewDb();
@@ -209,10 +210,10 @@ public class SalesTests : IAsyncLifetime
         Assert.Equal(DeliveryStatus.Draft, (await deliveries.GetAsync(saved.Id))!.Status);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task The_cost_of_what_went_out_is_snapshotted_at_posting()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (customerId, plainId, _, warehouseId) = await SeedAsync(plainQty: 100, plainCost: 10);
 
         int deliveryId;
@@ -250,10 +251,10 @@ public class SalesTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_serialised_line_must_name_exactly_the_serials_it_ships()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (customerId, _, serialId, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -288,10 +289,10 @@ public class SalesTests : IAsyncLifetime
             deliveries.PostAsync(saved.Id, "u2", "Storeman"));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Shipping_serialised_units_marks_them_sold()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (customerId, _, serialId, _) = await SeedAsync();
 
         await using (var db = NewDb())
@@ -332,10 +333,10 @@ public class SalesTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_posted_delivery_cannot_be_cancelled_or_edited()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (customerId, plainId, _, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -351,10 +352,10 @@ public class SalesTests : IAsyncLifetime
         await Assert.ThrowsAsync<InvalidOperationException>(() => deliveries.SaveAsync(saved));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task An_order_that_has_shipped_cannot_be_cancelled_or_re_scoped()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (customerId, plainId, _, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -373,10 +374,10 @@ public class SalesTests : IAsyncLifetime
         await Assert.ThrowsAsync<InvalidOperationException>(() => orders.SaveAsync(reloaded!));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_counter_sale_needs_no_order_behind_it()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (customerId, plainId, _, warehouseId) = await SeedAsync();
 
         await using var db = NewDb();
@@ -404,10 +405,10 @@ public class SalesTests : IAsyncLifetime
         Assert.Equal(97, model.CurrentQuantity);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_customer_with_history_cannot_be_deleted()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (customerId, plainId, _, _) = await SeedAsync();
 
         await using var db = NewDb();

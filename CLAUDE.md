@@ -74,6 +74,28 @@ Adding an app means: a `ModuleDefinition` in `AppModules.All`, a
 `ModuleRegistration` (permissions + default roles), an `AddXxxModule`, a connection
 string, and the two assembly lists in the host.
 
+## Engineering conventions
+
+Enforced by the build and CI; see [docs/ENGINEERING-REVIEW.md](docs/ENGINEERING-REVIEW.md)
+for the reasoning and what is still open.
+
+- **Never read the clock directly.** Inject `IBusinessClock` (Shared.Kernel) — `Today`
+  is the *business* date in `Platform:TimeZone`, `UtcNow` is for timestamps. Entities
+  take a `DateOnly today` parameter (`IsOverdueOn(today)`) instead of reading it, which
+  is what makes date-boundary behaviour testable with `FixedClock`. On a UTC server in a
+  UTC+5 business, `DateTime.Today` and `DateTime.UtcNow` disagree for five hours nightly.
+- **A test that cannot run must not report success.** Guard integration tests with
+  `IntegrationDatabase.Require(_available)` and mark them `[SkippableFact]`: skipped
+  locally, **failed in CI**. The old `if (!_available) return;` produced green runs that
+  asserted nothing.
+- **Some warnings are errors** (`Directory.Build.props`): `RZ10012`, `BL0008`, `CS4014`.
+  RZ10012 in particular means a component rendered as an unknown HTML element — the page
+  returns 200 with a section silently missing. This has happened twice.
+- **Add `IConcurrencyChecked`** to records where a lost update costs money, stock or
+  someone's work. `ModuleDbContext` re-stamps the token; MariaDB has no native rowversion.
+- **Secrets never go in `appsettings.json`.** Dev connection strings live in the
+  gitignored `appsettings.Development.json`, seeded by `./dev.sh up` from the `.example`.
+
 ## Rules that matter
 
 These apply to the **Finance** module specifically:

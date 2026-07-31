@@ -25,3 +25,4 @@ appsettings.Production.json
 appsettings.*.local.json
 uploads/
 keys/
+appsettings.Development.json

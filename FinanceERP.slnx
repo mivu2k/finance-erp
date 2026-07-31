@@ -1,4 +1,9 @@
 <Solution>
+  <Folder Name="/modules/Tender/">
+    <Project Path="modules/Tender/Tender.Domain/Tender.Domain.csproj" />
+    <Project Path="modules/Tender/Tender.Infrastructure/Tender.Infrastructure.csproj" />
+    <Project Path="modules/Tender/Tender.Web/Tender.Web.csproj" />
+  </Folder>
   <Folder Name="/shared/">
     <Project Path="shared/ErpPlatform.Shared.Kernel/ErpPlatform.Shared.Kernel.csproj" />
     <Project Path="shared/ErpPlatform.Shared.Persistence/ErpPlatform.Shared.Persistence.csproj" />
@@ -48,8 +53,10 @@
     <Project Path="tests/Repair.Tests/Repair.Tests.csproj" />
     <Project Path="tests/Inventory.Tests/Inventory.Tests.csproj" />
     <Project Path="tests/Ledger.Tests/Ledger.Tests.csproj" />
+    <Project Path="tests/ErpPlatform.TestSupport/ErpPlatform.TestSupport.csproj" />
     <Project Path="tests/Finance.Tests/Finance.Tests.csproj" />
     <Project Path="tests/GatePass.Tests/GatePass.Tests.csproj" />
+    <Project Path="tests/Tender.Tests/Tender.Tests.csproj" />
   </Folder>
   <Folder Name="/apps/">
     <Project Path="src/FinanceERP.Web/FinanceERP.Web.csproj" />

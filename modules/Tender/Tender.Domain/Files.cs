@@ -53,8 +53,11 @@ public enum FileMovementAction
 /// different tables on every row.
 /// </para>
 /// </remarks>
-public class PhysicalFile : AuditableEntity
+public class PhysicalFile : AuditableEntity, IConcurrencyChecked
 {
+    /// <summary>Optimistic lock: two clerks must not both issue the same folder.</summary>
+    public Guid ConcurrencyStamp { get; set; } = Guid.NewGuid();
+
     /// <summary>Allocated from the shared document sequence — <c>FILE-26-0001</c>.</summary>
     public string FileNumber { get; set; } = string.Empty;
 
@@ -91,13 +94,13 @@ public class PhysicalFile : AuditableEntity
     /// How long the current holder has had it, for the overdue list. Null when the
     /// file is not out.
     /// </summary>
-    public int? DaysOut =>
+    public int? DaysOutOn(DateOnly today) =>
         Status != FileStatus.Issued
             ? null
             : Movements
                 .Where(m => m.Action is FileMovementAction.Issued or FileMovementAction.Transferred)
                 .OrderByDescending(m => m.MovedOn).ThenByDescending(m => m.Id)
-                .Select(m => DateOnly.FromDateTime(DateTime.UtcNow).DayNumber - m.MovedOn.DayNumber)
+                .Select(m => today.DayNumber - m.MovedOn.DayNumber)
                 .FirstOrDefault();
 }
 
@@ -134,7 +137,7 @@ public class FileMovement : AuditableEntity
     public string RecordedByName { get; set; } = string.Empty;
 
     /// <summary>Still out past the date it was promised back.</summary>
-    public bool IsOverdue =>
+    public bool IsOverdueOn(DateOnly today) =>
         Action is FileMovementAction.Issued or FileMovementAction.Transferred
-        && DueBack is { } due && due < DateOnly.FromDateTime(DateTime.UtcNow);
+        && DueBack is { } due && due < today;
 }

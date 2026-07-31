@@ -27,3 +27,28 @@ public abstract class AuditableEntity : BaseEntity, ISoftDelete
     public DateTime? DeletedAtUtc { get; set; }
     public string? DeletedBy { get; set; }
 }
+
+/// <summary>
+/// Opt-in optimistic locking for records where a lost update costs money.
+/// </summary>
+/// <remarks>
+/// Without this, two people editing the same voucher, delivery or stock item silently
+/// last-write-wins: the second save overwrites the first with no warning to either.
+/// With it, the second save throws <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/>
+/// and the UI can say "somebody changed this while you were editing" instead of quietly
+/// destroying their work.
+/// <para>
+/// Deliberately an interface rather than a field on <see cref="BaseEntity"/>: putting it
+/// on everything would mean a migration on every table in all nine databases, and most
+/// tables are never edited concurrently. Add it where contention is real.
+/// </para>
+/// <para>
+/// MariaDB has no native <c>rowversion</c>, so the value is a GUID re-stamped on every
+/// save by <c>ModuleDbContext</c>. EF still compares the <em>original</em> value in the
+/// UPDATE's WHERE clause, which is what makes the check work.
+/// </para>
+/// </remarks>
+public interface IConcurrencyChecked
+{
+    Guid ConcurrencyStamp { get; set; }
+}

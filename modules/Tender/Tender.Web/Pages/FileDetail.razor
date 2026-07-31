@@ -2,6 +2,7 @@
 @attribute [Authorize(Policy = TenderPermissions.FilesView)]
 @layout TenderLayout
 @rendermode InteractiveServer
+@inject IBusinessClock Clock
 @inject IServiceScopeFactory ScopeFactory
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
@@ -19,7 +20,7 @@ else
         <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/tender/files" />
         <MudText Typo="Typo.h5">@_file.FileNumber</MudText>
         <MudChip T="string" Size="Size.Small" Color="@Files.StatusColor(_file.Status)">@_file.Status</MudChip>
-        @if (_file.Status == FileStatus.Issued && _file.DaysOut is { } d)
+        @if (_file.Status == FileStatus.Issued && _file.DaysOutOn(Clock.Today) is { } d)
         {
             <MudChip T="string" Size="Size.Small" Color="Color.Default">@d day(s) out</MudChip>
         }
@@ -117,7 +118,7 @@ else
                         <td>@(m.ToHolderName ?? m.ToLocation)</td>
                         <td>
                             @m.DueBack?.ToString("yyyy-MM-dd")
-                            @if (m.IsOverdue)
+                            @if (m.IsOverdueOn(Clock.Today))
                             {
                                 <MudChip T="string" Size="Size.Small" Color="Color.Error" Class="ml-1">late</MudChip>
                             }

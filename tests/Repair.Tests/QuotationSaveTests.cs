@@ -1,3 +1,4 @@
+using ErpPlatform.TestSupport;
 using ErpPlatform.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 using Repair.Domain;
@@ -33,15 +34,15 @@ public class QuotationSaveTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (!_available) return;
+        if (!_available) return;   // nothing was created, so nothing to drop
         await using var db = new RepairDbContext(Opts(), new TestUser());
         await db.Database.EnsureDeletedAsync();
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Combined_quotation_saves_when_two_jobs_share_a_part()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
 
         int intakeId;
         await using (var seedDb = new RepairDbContext(Opts(), new TestUser()))

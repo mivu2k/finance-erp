@@ -2,6 +2,7 @@
 @attribute [Authorize(Policy = TenderPermissions.FilesView)]
 @layout TenderLayout
 @rendermode InteractiveServer
+@inject IBusinessClock Clock
 @inject IServiceScopeFactory ScopeFactory
 @inject NavigationManager Nav
 
@@ -72,7 +73,7 @@
                     <td>@f.OwnerTitle</td>
                     <td>@f.HolderName</td>
                     <td>@f.Location</td>
-                    <td>@(f.DaysOut?.ToString() ?? "")</td>
+                    <td>@(f.DaysOutOn(Clock.Today)?.ToString() ?? "")</td>
                     <td>
                         <MudChip T="string" Size="Size.Small" Color="@StatusColor(f.Status)">@f.Status</MudChip>
                     </td>

@@ -1,3 +1,4 @@
+using ErpPlatform.TestSupport;
 using ErpPlatform.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 using Tender.Domain;
@@ -18,6 +19,16 @@ public class ProjectTaskTests : IAsyncLifetime
     private readonly string _database = $"erp_tender_test_{Guid.NewGuid():N}"[..30];
     private bool _available;
 
+    /// <summary>
+    /// Frozen at midday UTC on a fixed date, in the business timezone. Date-boundary
+    /// assertions are then a fixture rather than a race against when the suite runs —
+    /// which is the whole reason the clock is injected.
+    /// </summary>
+    private static readonly IBusinessClock Clock =
+        new FixedClock(new DateTime(2026, 7, 31, 12, 0, 0, DateTimeKind.Utc), TimeZoneInfo.Utc);
+
+    private static DateOnly Today => Clock.Today;
+
     private DbContextOptions<TenderDbContext> Opts() =>
         new DbContextOptionsBuilder<TenderDbContext>()
             .UseMySql($"{Server}Database={_database};", new MySqlServerVersion(new Version(10, 11, 0)))
@@ -26,9 +37,9 @@ public class ProjectTaskTests : IAsyncLifetime
     private TenderDbContext NewDb() => new(Opts(), new TestUser());
 
     /// <summary>Creating a project opens its physical file, so the registry comes along.</summary>
-    private static ProjectService Projects(TenderDbContext db) => new(db, new FileRegistryService(db));
+    private static ProjectService Projects(TenderDbContext db) => new(db, new FileRegistryService(db, Clock), Clock);
 
-    private static WorkTaskService Tasks(TenderDbContext db) => new(db);
+    private static WorkTaskService Tasks(TenderDbContext db) => new(db, Clock);
 
     public async Task InitializeAsync()
     {
@@ -39,7 +50,7 @@ public class ProjectTaskTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (!_available) return;
+        if (!_available) return;   // nothing was created, so nothing to drop
         await using var db = NewDb();
         await db.Database.EnsureDeletedAsync();
     }
@@ -56,10 +67,10 @@ public class ProjectTaskTests : IAsyncLifetime
         return project.Id;
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Progress_averages_the_tasks_and_ignores_cancelled_ones()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var projectId = await SeedProjectAsync();
 
         await using (var db = NewDb())
@@ -83,10 +94,10 @@ public class ProjectTaskTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Completing_a_task_fills_in_its_progress_and_completion_date()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var projectId = await SeedProjectAsync();
 
         int taskId;
@@ -109,10 +120,10 @@ public class ProjectTaskTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Reopening_a_completed_task_clears_the_completion_date()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var projectId = await SeedProjectAsync();
 
         int taskId;
@@ -135,10 +146,10 @@ public class ProjectTaskTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_task_with_progress_cannot_stay_NotStarted()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var projectId = await SeedProjectAsync();
 
         await using var db = NewDb();
@@ -148,12 +159,12 @@ public class ProjectTaskTests : IAsyncLifetime
         Assert.Equal(ProjectTaskStatus.InProgress, task.Status);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Overdue_lists_only_open_tasks_past_their_date()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var projectId = await SeedProjectAsync();
-        var yesterday = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
+        var yesterday = Today.AddDays(-1);
 
         await using (var db = NewDb())
         {
@@ -164,7 +175,7 @@ public class ProjectTaskTests : IAsyncLifetime
             await svc.AddAsync(WorkOwnerType.Project, projectId, new WorkTask
             { Title = "Done on time", DueDate = yesterday, Status = ProjectTaskStatus.Completed });
             await svc.AddAsync(WorkOwnerType.Project, projectId, new WorkTask
-            { Title = "Future", DueDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30) });
+            { Title = "Future", DueDate = Today.AddDays(30) });
         }
 
         await using (var db = NewDb())
@@ -175,10 +186,10 @@ public class ProjectTaskTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_duplicate_project_code_is_refused()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         await SeedProjectAsync();
 
         await using var db = NewDb();
@@ -186,10 +197,10 @@ public class ProjectTaskTests : IAsyncLifetime
             Projects(db).CreateAsync(new Project { ProjectCode = "PRJ-001", Name = "Another" }));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Achieving_a_milestone_stamps_the_date_and_pending_clears_it()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var projectId = await SeedProjectAsync();
 
         int milestoneId;
@@ -199,7 +210,7 @@ public class ProjectTaskTests : IAsyncLifetime
                 new ProjectMilestone
                 {
                     Name = "First handover",
-                    DueDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                    DueDate = Today,
                     Status = MilestoneStatus.Achieved
                 });
             milestoneId = milestone.Id;
@@ -216,17 +227,17 @@ public class ProjectTaskTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Deleting_a_project_takes_its_tasks_and_milestones_with_it()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var projectId = await SeedProjectAsync();
 
         await using (var db = NewDb())
         {
             await Tasks(db).AddAsync(WorkOwnerType.Project, projectId, new WorkTask { Title = "Survey" });
             await Projects(db).AddMilestoneAsync(projectId, new ProjectMilestone
-            { Name = "Handover", DueDate = DateOnly.FromDateTime(DateTime.UtcNow) });
+            { Name = "Handover", DueDate = Today });
         }
 
         await using (var db = NewDb())
@@ -241,10 +252,10 @@ public class ProjectTaskTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Tasks_are_numbered_in_the_order_they_are_added()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var projectId = await SeedProjectAsync();
 
         await using var db = NewDb();

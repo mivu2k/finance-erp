@@ -52,14 +52,19 @@
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
 
+    // No initializer: a form post binds this property, and an initializer can be
+    // overwritten with null on the way through (BL0008). Seeded in OnInitializedAsync
+    // instead, which runs before the GET renders the empty form.
     [SupplyParameterFromForm]
-    private InputModel Input { get; set; } = new();
+    private InputModel Input { get; set; } = default!;
 
     [SupplyParameterFromQuery]
     private string? ReturnUrl { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
+        Input ??= new InputModel();
+
         if (HttpMethods.IsGet(HttpContext.Request.Method))
         {
             await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);

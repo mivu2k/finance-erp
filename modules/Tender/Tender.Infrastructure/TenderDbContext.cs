@@ -1,3 +1,4 @@
+using ErpPlatform.Shared.Kernel;
 using ErpPlatform.Shared.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Tender.Domain;
@@ -23,6 +24,15 @@ public class TenderDbContext(DbContextOptions<TenderDbContext> options, ICurrent
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
+
+        // See InventoryDbContext for why the token is a re-stamped GUID rather than a
+        // native rowversion.
+        foreach (var type in b.Model.GetEntityTypes()
+                     .Where(t => typeof(IConcurrencyChecked).IsAssignableFrom(t.ClrType)))
+        {
+            b.Entity(type.ClrType).Property(nameof(IConcurrencyChecked.ConcurrencyStamp))
+                .IsConcurrencyToken();
+        }
 
         b.Entity<TenderRecord>(e =>
         {
@@ -156,7 +166,6 @@ public class TenderDbContext(DbContextOptions<TenderDbContext> options, ICurrent
             e.Property(x => x.EstimatedHours).HasPrecision(10, 2);
             e.Property(x => x.ActualHours).HasPrecision(10, 2);
             e.Property(x => x.Notes).HasMaxLength(1000);
-            e.Ignore(x => x.IsOverdue);
             e.Ignore(x => x.IsOpen);
             // Two real FKs rather than a type/id pair, so cascade delete still works.
             // "Exactly one is set" is a service rule; the database can't express it.
@@ -177,7 +186,6 @@ public class TenderDbContext(DbContextOptions<TenderDbContext> options, ICurrent
             e.Property(x => x.Description).HasMaxLength(1000);
             e.Property(x => x.PaymentAmount).HasPrecision(16, 2);
             e.Property(x => x.Notes).HasMaxLength(1000);
-            e.Ignore(x => x.IsOverdue);
             e.HasOne(x => x.Project).WithMany(x => x.Milestones)
                 .HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Cascade);
             e.HasQueryFilter(x => !x.IsDeleted && !x.Project.IsDeleted);
@@ -205,7 +213,6 @@ public class TenderDbContext(DbContextOptions<TenderDbContext> options, ICurrent
             e.Property(x => x.VolumeNumber).HasMaxLength(50);
             e.Property(x => x.Remarks).HasMaxLength(1000);
             e.Ignore(x => x.IsOut);
-            e.Ignore(x => x.DaysOut);
             e.HasQueryFilter(x => !x.IsDeleted);
         });
 
@@ -222,7 +229,6 @@ public class TenderDbContext(DbContextOptions<TenderDbContext> options, ICurrent
             e.Property(x => x.Remarks).HasMaxLength(1000);
             e.Property(x => x.RecordedById).HasMaxLength(450);
             e.Property(x => x.RecordedByName).HasMaxLength(200);
-            e.Ignore(x => x.IsOverdue);
             e.HasOne(x => x.PhysicalFile).WithMany(x => x.Movements)
                 .HasForeignKey(x => x.PhysicalFileId).OnDelete(DeleteBehavior.Cascade);
             e.HasQueryFilter(x => !x.IsDeleted && !x.PhysicalFile.IsDeleted);

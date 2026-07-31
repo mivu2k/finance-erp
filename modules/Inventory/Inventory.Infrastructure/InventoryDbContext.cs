@@ -1,5 +1,6 @@
 using ErpPlatform.Shared.Persistence;
 using Inventory.Domain;
+using ErpPlatform.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 
 namespace Inventory.Infrastructure;
@@ -35,6 +36,16 @@ public class InventoryDbContext(DbContextOptions<InventoryDbContext> options, IC
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
+
+        // Optimistic locking on the records where a lost update costs stock or money.
+        // MariaDB has no native rowversion; ModuleDbContext re-stamps the GUID on save
+        // and EF compares the original value in the UPDATE's WHERE clause.
+        foreach (var type in b.Model.GetEntityTypes()
+                     .Where(t => typeof(IConcurrencyChecked).IsAssignableFrom(t.ClrType)))
+        {
+            b.Entity(type.ClrType).Property(nameof(IConcurrencyChecked.ConcurrencyStamp))
+                .IsConcurrencyToken();
+        }
 
         b.Entity<Product>(e =>
         {

@@ -1,4 +1,5 @@
 using ErpPlatform.Shared.Persistence;
+using ErpPlatform.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 using Tender.Domain;
 
@@ -65,7 +66,7 @@ public interface IFileRegistryService
     Task<List<PhysicalFile>> ListOverdueAsync(CancellationToken ct = default);
 }
 
-public class FileRegistryService(TenderDbContext db) : IFileRegistryService
+public class FileRegistryService(TenderDbContext db, IBusinessClock clock) : IFileRegistryService
 {
     private const string SequenceType = "TenderFile";
     private const string SequencePrefix = "FILE";
@@ -85,7 +86,7 @@ public class FileRegistryService(TenderDbContext db) : IFileRegistryService
             return existing;
         }
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = clock.Today;
 
         // Allocating a number and writing the file must be one unit, or a crash
         // between them burns a number and leaves a file without one.
@@ -177,13 +178,13 @@ public class FileRegistryService(TenderDbContext db) : IFileRegistryService
         return files.Where(IsOverdue).OrderBy(f => f.FileNumber).ToList();
     }
 
-    private static bool IsOverdue(PhysicalFile file) =>
+    private bool IsOverdue(PhysicalFile file) =>
         file.Status == FileStatus.Issued
         && file.Movements
             .Where(m => m.Action is FileMovementAction.Issued or FileMovementAction.Transferred)
             .OrderByDescending(m => m.MovedOn).ThenByDescending(m => m.Id)
             .FirstOrDefault() is { } last
-        && last.DueBack is { } due && due < DateOnly.FromDateTime(DateTime.UtcNow);
+        && last.DueBack is { } due && due < clock.Today;
 
     public Task<PhysicalFile> IssueAsync(int fileId, string? holderUserId, string holderName,
         string? purpose, DateOnly? dueBack, string recordedById, string recordedByName,
@@ -271,7 +272,7 @@ public class FileRegistryService(TenderDbContext db) : IFileRegistryService
                 file.Status = FileStatus.Archived;
                 file.HolderUserId = null;
                 file.HolderName = null;
-                file.ClosedOn = DateOnly.FromDateTime(DateTime.UtcNow);
+                file.ClosedOn = clock.Today;
                 if (!string.IsNullOrWhiteSpace(location)) file.Location = location;
             });
 
@@ -352,7 +353,7 @@ public class FileRegistryService(TenderDbContext db) : IFileRegistryService
         {
             PhysicalFileId = file.Id,
             Action = action,
-            MovedOn = DateOnly.FromDateTime(DateTime.UtcNow),
+            MovedOn = clock.Today,
             FromHolderName = file.HolderName,
             FromLocation = file.Location,
             RecordedById = recordedById,

@@ -122,6 +122,7 @@ public class ProjectMilestone : AuditableEntity
     public int SortOrder { get; set; }
     public string? Notes { get; set; }
 
-    public bool IsOverdue =>
-        Status == MilestoneStatus.Pending && DueDate < DateOnly.FromDateTime(DateTime.UtcNow);
+    /// <summary>Takes the date rather than reading the clock — see <see cref="WorkTask.IsOverdueOn"/>.</summary>
+    public bool IsOverdueOn(DateOnly today) =>
+        Status == MilestoneStatus.Pending && DueDate < today;
 }

@@ -1,3 +1,4 @@
+using ErpPlatform.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 using Tender.Domain;
 
@@ -39,7 +40,7 @@ public interface ITenderService
     Task<List<TenderGuarantee>> ListAllGuaranteesAsync(CancellationToken ct = default);
 }
 
-public class TenderService(TenderDbContext db, IFileRegistryService files) : ITenderService
+public class TenderService(TenderDbContext db, IFileRegistryService files, IBusinessClock clock) : ITenderService
 {
     private static readonly List<TenderStatus> OpenStatuses =
     [
@@ -390,7 +391,7 @@ public class TenderService(TenderDbContext db, IFileRegistryService files) : ITe
     public async Task<List<TenderGuarantee>> ListExpiringGuaranteesAsync(
         int withinDays = 30, CancellationToken ct = default)
     {
-        var cutoff = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(withinDays);
+        var cutoff = clock.Today.AddDays(withinDays);
         return await db.Guarantees.Include(g => g.TenderRecord).AsNoTracking()
             .Where(g => g.Status == GuaranteeStatus.Active && g.ExpiryDate <= cutoff)
             .OrderBy(g => g.ExpiryDate)
@@ -400,7 +401,7 @@ public class TenderService(TenderDbContext db, IFileRegistryService files) : ITe
     public async Task<List<TenderRecord>> ListUpcomingDeadlinesAsync(
         int withinDays = 14, CancellationToken ct = default)
     {
-        var cutoff = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(withinDays);
+        var cutoff = clock.Today.AddDays(withinDays);
         return await db.Tenders.AsNoTracking()
             .Where(t => OpenStatuses.Contains(t.Status)
                         && t.SubmissionDeadline != null && t.SubmissionDeadline <= cutoff)

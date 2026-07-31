@@ -1,3 +1,4 @@
+using ErpPlatform.TestSupport;
 using ErpPlatform.Shared.Kernel;
 using Ledger.Domain;
 using Ledger.Infrastructure;
@@ -35,7 +36,7 @@ public class PlainLedgerTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (!_available) return;
+        if (!_available) return;   // nothing was created, so nothing to drop
         await using var db = NewDb();
         await db.Database.EnsureDeletedAsync();
     }
@@ -81,10 +82,10 @@ public class PlainLedgerTests : IAsyncLifetime
         return (main.Id, b.Id, c.Id);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_transfer_writes_both_halves_as_a_linked_pair()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (mainId, bId, _) = await SeedScenarioAsync();
 
         await using var db = NewDb();
@@ -110,10 +111,10 @@ public class PlainLedgerTests : IAsyncLifetime
         Assert.Equal(outHalf.Amount, inHalf.Amount);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Fully_distributing_a_main_ledger_leaves_it_unallocated_nil_but_the_tree_intact()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (mainId, _, _) = await SeedScenarioAsync();
 
         await using var db = NewDb();
@@ -130,10 +131,10 @@ public class PlainLedgerTests : IAsyncLifetime
         Assert.All(main.Children, c => Assert.Equal(50_000, c.Balance.Own));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_repayment_reduces_the_sub_ledger_and_the_tree_total()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (mainId, bId, _) = await SeedScenarioAsync();
 
         await using var db = NewDb();
@@ -155,10 +156,10 @@ public class PlainLedgerTests : IAsyncLifetime
         Assert.Equal(80_000, main.Balance.Rollup);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Nesting_goes_deeper_than_two_levels()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (mainId, bId, _) = await SeedScenarioAsync();
 
         await using var db = NewDb();
@@ -183,10 +184,10 @@ public class PlainLedgerTests : IAsyncLifetime
         Assert.Equal(100_000, main.Balance.Rollup);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Deleting_one_half_of_a_transfer_removes_the_other()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (_, bId, _) = await SeedScenarioAsync();
 
         await using var db = NewDb();
@@ -203,10 +204,10 @@ public class PlainLedgerTests : IAsyncLifetime
         Assert.Equal(0, left);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Amending_one_half_of_a_transfer_moves_both()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (_, bId, _) = await SeedScenarioAsync();
 
         await using var db = NewDb();
@@ -226,10 +227,10 @@ public class PlainLedgerTests : IAsyncLifetime
         Assert.All(both, e => Assert.Equal("Corrected advance", e.Description));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task The_statement_running_balance_ends_at_the_ledger_balance()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (mainId, _, _) = await SeedScenarioAsync();
 
         await using var db = NewDb();
@@ -242,10 +243,10 @@ public class PlainLedgerTests : IAsyncLifetime
         Assert.Equal(0, statement[2].RunningBalance);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task An_opening_balance_starts_the_running_balance()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
 
         await using var db = NewDb();
         var svc = NewService(db);
@@ -266,10 +267,10 @@ public class PlainLedgerTests : IAsyncLifetime
         Assert.Equal(10_000, statement.Single().RunningBalance);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_ledger_cannot_be_reparented_under_its_own_descendant()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (mainId, bId, _) = await SeedScenarioAsync();
 
         await using var db = NewDb();
@@ -282,10 +283,10 @@ public class PlainLedgerTests : IAsyncLifetime
         await Assert.ThrowsAsync<InvalidOperationException>(() => svc.UpdateAsync(main));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_ledger_with_entries_or_children_refuses_deletion()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (mainId, bId, _) = await SeedScenarioAsync();
 
         await using var db = NewDb();
@@ -299,10 +300,10 @@ public class PlainLedgerTests : IAsyncLifetime
         Assert.NotNull(await svc.GetAsync(mainId));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task An_empty_ledger_deletes()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
 
         await using var db = NewDb();
         var svc = NewService(db);
@@ -312,10 +313,10 @@ public class PlainLedgerTests : IAsyncLifetime
         Assert.Null(await svc.GetAsync(l.Id));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Transfers_and_entries_are_refused_on_a_closed_ledger()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (mainId, bId, _) = await SeedScenarioAsync();
 
         await using var db = NewDb();
@@ -337,10 +338,10 @@ public class PlainLedgerTests : IAsyncLifetime
             null, LedgerPaymentMethod.Cash, "u1", "Tester"));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Nonsense_amounts_and_self_transfers_are_refused()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (mainId, bId, _) = await SeedScenarioAsync();
 
         await using var db = NewDb();
@@ -362,10 +363,10 @@ public class PlainLedgerTests : IAsyncLifetime
             null, LedgerPaymentMethod.Cash, "u1", "Tester"));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Heads_nest_and_roll_child_totals_into_the_parent()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (mainId, bId, _) = await SeedScenarioAsync();
 
         await using var db = NewDb();
@@ -398,10 +399,10 @@ public class PlainLedgerTests : IAsyncLifetime
         Assert.Equal(4_000, totals[rent.Id].RollupOut);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Deleting_a_head_leaves_the_money_and_only_drops_the_classification()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (mainId, _, _) = await SeedScenarioAsync();
 
         await using var db = NewDb();
@@ -424,10 +425,10 @@ public class PlainLedgerTests : IAsyncLifetime
         Assert.Null(after.HeadId);          // just unclassified now
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_head_with_sub_heads_refuses_deletion_and_cannot_sit_under_its_own_child()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
 
         await using var db = NewDb();
         var heads = new LedgerHeadService(db);
@@ -441,10 +442,10 @@ public class PlainLedgerTests : IAsyncLifetime
         await Assert.ThrowsAsync<InvalidOperationException>(() => heads.SaveAsync(parent));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_transfer_puts_the_head_on_both_halves()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (mainId, bId, _) = await SeedScenarioAsync();
 
         await using var db = NewDb();

@@ -1,3 +1,4 @@
+using ErpPlatform.TestSupport;
 using ErpPlatform.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 using Tender.Domain;
@@ -17,6 +18,16 @@ public class TenderItemAndTaskTests : IAsyncLifetime
     private readonly string _database = $"erp_tender_test_{Guid.NewGuid():N}"[..30];
     private bool _available;
 
+    /// <summary>
+    /// Frozen at midday UTC on a fixed date, in the business timezone. Date-boundary
+    /// assertions are then a fixture rather than a race against when the suite runs —
+    /// which is the whole reason the clock is injected.
+    /// </summary>
+    private static readonly IBusinessClock Clock =
+        new FixedClock(new DateTime(2026, 7, 31, 12, 0, 0, DateTimeKind.Utc), TimeZoneInfo.Utc);
+
+    private static DateOnly Today => Clock.Today;
+
     private DbContextOptions<TenderDbContext> Opts() =>
         new DbContextOptionsBuilder<TenderDbContext>()
             .UseMySql($"{Server}Database={_database};", new MySqlServerVersion(new Version(10, 11, 0)))
@@ -24,9 +35,9 @@ public class TenderItemAndTaskTests : IAsyncLifetime
 
     private TenderDbContext NewDb() => new(Opts(), new TestUser());
 
-    private static TenderService Tenders(TenderDbContext db) => new(db, new FileRegistryService(db));
-    private static ProjectService Projects(TenderDbContext db) => new(db, new FileRegistryService(db));
-    private static WorkTaskService Tasks(TenderDbContext db) => new(db);
+    private static TenderService Tenders(TenderDbContext db) => new(db, new FileRegistryService(db, Clock), Clock);
+    private static ProjectService Projects(TenderDbContext db) => new(db, new FileRegistryService(db, Clock), Clock);
+    private static WorkTaskService Tasks(TenderDbContext db) => new(db, Clock);
 
     public async Task InitializeAsync()
     {
@@ -37,7 +48,7 @@ public class TenderItemAndTaskTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (!_available) return;
+        if (!_available) return;   // nothing was created, so nothing to drop
         await using var db = NewDb();
         await db.Database.EnsureDeletedAsync();
     }
@@ -56,10 +67,10 @@ public class TenderItemAndTaskTests : IAsyncLifetime
         return tender.Id;
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_tender_carries_many_item_lines_and_totals_them()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var tenderId = await SeedTenderAsync();
 
         await using (var db = NewDb())
@@ -83,10 +94,10 @@ public class TenderItemAndTaskTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_tender_with_no_schedule_is_perfectly_valid()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var tenderId = await SeedTenderAsync(estimate: 500_000);
 
         await using var db = NewDb();
@@ -99,10 +110,10 @@ public class TenderItemAndTaskTests : IAsyncLifetime
         Assert.Equal(500_000m, tender.EstimatedValue);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task The_schedule_total_is_kept_apart_from_the_estimate()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var tenderId = await SeedTenderAsync(estimate: 500_000);
 
         await using (var db = NewDb())
@@ -119,10 +130,10 @@ public class TenderItemAndTaskTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_line_reports_its_margin_only_when_a_cost_is_known()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var tenderId = await SeedTenderAsync();
 
         await using var db = NewDb();
@@ -144,10 +155,10 @@ public class TenderItemAndTaskTests : IAsyncLifetime
         Assert.Null(unpriced.MarginPercent);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Items_are_numbered_in_the_order_they_are_added()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var tenderId = await SeedTenderAsync();
 
         await using var db = NewDb();
@@ -159,10 +170,10 @@ public class TenderItemAndTaskTests : IAsyncLifetime
         Assert.Equal(2, second.SortOrder);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task An_item_needs_a_description_and_non_negative_figures()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var tenderId = await SeedTenderAsync();
 
         await using var db = NewDb();
@@ -176,10 +187,10 @@ public class TenderItemAndTaskTests : IAsyncLifetime
             svc.AddItemAsync(tenderId, new TenderItem { Description = "X", UnitRate = -1 }));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_tender_carries_its_own_tasks()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var tenderId = await SeedTenderAsync();
 
         await using (var db = NewDb())
@@ -200,10 +211,10 @@ public class TenderItemAndTaskTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Tender_and_project_tasks_stay_on_their_own_boards()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var tenderId = await SeedTenderAsync();
 
         int projectId;
@@ -233,10 +244,10 @@ public class TenderItemAndTaskTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task The_same_reconcile_rules_apply_to_a_tender_task()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var tenderId = await SeedTenderAsync();
 
         await using var db = NewDb();
@@ -251,11 +262,11 @@ public class TenderItemAndTaskTests : IAsyncLifetime
         Assert.NotNull(done.CompletedDate);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Overdue_spans_both_registers_but_skips_a_lost_tender()
     {
-        if (!_available) return;
-        var yesterday = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
+        IntegrationDatabase.Require(_available);
+        var yesterday = Today.AddDays(-1);
 
         var liveId = await SeedTenderAsync();
         int lostId, projectId;
@@ -295,10 +306,10 @@ public class TenderItemAndTaskTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Deleting_a_tender_takes_its_schedule_and_tasks_with_it()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var tenderId = await SeedTenderAsync();
 
         await using (var db = NewDb())

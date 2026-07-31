@@ -20,8 +20,11 @@ public class Product : AuditableEntity
 /// real stock-keeping unit: <see cref="CurrentQuantity"/> is a cache maintained by
 /// <c>IStockService</c>, always rebuildable from <see cref="StockTransaction"/> rows.
 /// </summary>
-public class ProductModel : AuditableEntity
+public class ProductModel : AuditableEntity, IConcurrencyChecked
 {
+    /// <summary>Optimistic lock: two clerks must not both decrement the same quantity.</summary>
+    public Guid ConcurrencyStamp { get; set; } = Guid.NewGuid();
+
     public int ProductId { get; set; }
     public Product Product { get; set; } = null!;
 
@@ -75,8 +78,11 @@ public class ProductModel : AuditableEntity
 /// An accessory that goes with a model (charger, bag, case, ...). Also a real
 /// stock-keeping unit with its own quantity, tracked independently of the model.
 /// </summary>
-public class Accessory : AuditableEntity
+public class Accessory : AuditableEntity, IConcurrencyChecked
 {
+    /// <summary>Optimistic lock: two clerks must not both decrement the same quantity.</summary>
+    public Guid ConcurrencyStamp { get; set; } = Guid.NewGuid();
+
     public int ProductModelId { get; set; }
     public ProductModel ProductModel { get; set; } = null!;
 

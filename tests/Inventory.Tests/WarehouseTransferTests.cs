@@ -1,3 +1,4 @@
+using ErpPlatform.TestSupport;
 using ErpPlatform.Shared.Kernel;
 using Inventory.Domain;
 using Inventory.Infrastructure;
@@ -33,7 +34,7 @@ public class WarehouseTransferTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (!_available) return;
+        if (!_available) return;   // nothing was created, so nothing to drop
         await using var db = NewDb();
         await db.Database.EnsureDeletedAsync();
     }
@@ -76,10 +77,10 @@ public class WarehouseTransferTests : IAsyncLifetime
         ]
     };
 
-    [Fact]
+    [SkippableFact]
     public async Task Stock_lands_in_the_warehouse_it_was_received_into()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (itemId, main, van) = await SeedAsync();
 
         await using var db = NewDb();
@@ -96,10 +97,10 @@ public class WarehouseTransferTests : IAsyncLifetime
         Assert.NotEqual(main, van);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Dispatch_removes_from_the_source_and_leaves_the_goods_in_transit()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (itemId, main, van) = await SeedAsync();
 
         await using var db = NewDb();
@@ -124,10 +125,10 @@ public class WarehouseTransferTests : IAsyncLifetime
         Assert.Equal(70, model.CurrentQuantity);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Receiving_puts_the_goods_into_the_destination()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (itemId, main, van) = await SeedAsync();
 
         await using var db = NewDb();
@@ -147,10 +148,10 @@ public class WarehouseTransferTests : IAsyncLifetime
         Assert.Equal(100, model.CurrentQuantity);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Receiving_short_is_allowed_and_the_shortfall_is_recorded()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (itemId, main, van) = await SeedAsync();
 
         await using var db = NewDb();
@@ -178,10 +179,10 @@ public class WarehouseTransferTests : IAsyncLifetime
         Assert.Equal(98, model.CurrentQuantity);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task More_cannot_arrive_than_was_sent()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (itemId, main, van) = await SeedAsync();
 
         await using var db = NewDb();
@@ -195,10 +196,10 @@ public class WarehouseTransferTests : IAsyncLifetime
             "u1", "Tester", null));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_transfer_cannot_move_more_than_the_source_holds()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (itemId, main, van) = await SeedAsync();
 
         await using var db = NewDb();
@@ -209,10 +210,10 @@ public class WarehouseTransferTests : IAsyncLifetime
             () => transfers.DispatchAsync(transfer.Id, "u1", "Tester", null));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Source_and_destination_have_to_differ()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (itemId, main, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -222,10 +223,10 @@ public class WarehouseTransferTests : IAsyncLifetime
             () => transfers.CreateAsync(Draft(itemId, main, main, 5), "u1", "Tester"));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Goods_already_in_transit_cannot_be_cancelled_away()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (itemId, main, van) = await SeedAsync();
 
         await using var db = NewDb();
@@ -245,10 +246,10 @@ public class WarehouseTransferTests : IAsyncLifetime
         await Assert.ThrowsAsync<InvalidOperationException>(() => transfers.CancelAsync(transfer.Id));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_warehouse_holding_stock_cannot_be_deleted()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (_, main, van) = await SeedAsync();
 
         await using var db = NewDb();
@@ -261,10 +262,10 @@ public class WarehouseTransferTests : IAsyncLifetime
         Assert.Null(await warehouses.GetAsync(van));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Exactly_one_warehouse_is_the_default()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (_, main, van) = await SeedAsync();
 
         await using var db = NewDb();
@@ -280,10 +281,10 @@ public class WarehouseTransferTests : IAsyncLifetime
         Assert.False(all.Single(w => w.Id == main).IsDefault);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task What_a_warehouse_holds_can_be_listed()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (itemId, main, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -295,10 +296,10 @@ public class WarehouseTransferTests : IAsyncLifetime
         Assert.Contains("3-core", row.ItemName);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Recalculate_repairs_per_warehouse_balances_too()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (itemId, main, _) = await SeedAsync();
 
         await using var db = NewDb();

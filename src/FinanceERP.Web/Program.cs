@@ -1,3 +1,6 @@
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using ErpPlatform.Shared.Identity;
 using ErpPlatform.Shared.Kernel;
 using ErpPlatform.Shared.Web.Security;
@@ -59,6 +62,18 @@ builder.Services.AddAuthentication(options =>
     .AddIdentityCookies();
 
 builder.Services.AddHttpContextAccessor();
+
+// Health checks, so a deploy can be verified for real rather than by curling / for a
+// 302. /health/live says the process is up; /health/ready says every database it needs
+// is actually reachable, which is the failure the update script most needs to catch.
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<PlatformIdentityDbContext>("identity", tags: ["ready"])
+    .AddDbContextCheck<AppDbContext>("finance", tags: ["ready"]);
+
+// One clock for the whole platform. "Today" is a business fact and must be read in the
+// business's timezone; timestamps stay UTC. Configure with Platform:TimeZone.
+builder.Services.AddSingleton<IBusinessClock>(
+    _ => new BusinessClock(builder.Configuration["Platform:TimeZone"]));
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
@@ -161,13 +176,57 @@ app.MapHrKioskEndpoints();
 app.MapInventoryPrintEndpoints();
 app.MapTenderPrintEndpoints();
 
-// Authenticated receipt downloads (files live outside wwwroot).
-app.MapGet("/files/receipts/{name}", (string name, FinanceERP.Web.Services.ReceiptStorage storage) =>
+// Receipt downloads. Files live outside wwwroot, so this endpoint is the only way to
+// reach them — which makes it the only place the ownership rule can be enforced.
+//
+// Being merely authenticated is not enough: a receipt is a scan of somebody's expense
+// and often carries a name, an amount and sometimes a bank detail. Until now any signed-in
+// user who knew a filename could fetch any receipt, and GUID filenames are obscurity
+// rather than a control. You may read a receipt when you can see the document it hangs
+// off — a payment request you raised, or one of those you are entitled to see anyway.
+// Liveness never touches a database: a slow query must not make the orchestrator
+// think the process is dead and restart it mid-request.
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false
+}).AllowAnonymous();
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready")
+}).AllowAnonymous();
+
+app.MapGet("/files/receipts/{name}", async (
+    string name,
+    FinanceERP.Web.Services.ReceiptStorage storage,
+    FinanceERP.Infrastructure.Persistence.AppDbContext db,
+    ClaimsPrincipal user,
+    CancellationToken ct) =>
 {
     var path = storage.Resolve(name);
-    return path is null
-        ? Results.NotFound()
-        : Results.File(path, FinanceERP.Web.Services.ReceiptStorage.ContentType(path));
+    if (path is null) return Results.NotFound();
+
+    // Whoever can see every request, or post to the ledger, can see the paperwork
+    // behind it — that is the same population that can already open the record itself.
+    var seesEverything =
+        user.HasClaim(PermissionCatalog.ClaimType, FinanceERP.Domain.Security.Permissions.RequestsViewAll)
+        || user.HasClaim(PermissionCatalog.ClaimType, FinanceERP.Domain.Security.Permissions.VouchersView);
+
+    if (!seesEverything)
+    {
+        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Results.Forbid();
+
+        var ownsIt = await db.PaymentRequests
+            .AsNoTracking()
+            .AnyAsync(r => r.RequesterId == userId
+                           && r.Lines.Any(l => l.AttachmentPath == name), ct);
+
+        // 404, not 403: a 403 confirms the file exists, which is itself a disclosure.
+        if (!ownsIt) return Results.NotFound();
+    }
+
+    return Results.File(path, FinanceERP.Web.Services.ReceiptStorage.ContentType(path));
 }).RequireAuthorization();
 
 app.Run();

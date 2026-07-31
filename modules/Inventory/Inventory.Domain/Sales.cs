@@ -113,8 +113,11 @@ public enum DeliveryStatus
 /// delivery is as traceable as any other movement and serialised units are issued by
 /// name rather than just decremented.
 /// </remarks>
-public class Delivery : AuditableEntity
+public class Delivery : AuditableEntity, IConcurrencyChecked
 {
+    /// <summary>Optimistic lock: posting the same note twice would issue the stock twice.</summary>
+    public Guid ConcurrencyStamp { get; set; } = Guid.NewGuid();
+
     public string DeliveryNumber { get; set; } = string.Empty;
     public DateOnly Date { get; set; }
     public DeliveryStatus Status { get; set; } = DeliveryStatus.Draft;

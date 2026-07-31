@@ -1,0 +1,16 @@
+{
+  "urls": "http://localhost:5080",
+  "DetailedErrors": true,
+  "ConnectionStrings": {
+    "IdentityConnection": "Server=localhost;Port=3306;Database=erp_identity;User=finance;Password=DevPassword1!;",
+    "AccountsConnection": "Server=localhost;Port=3306;Database=finance_erp;User=finance;Password=DevPassword1!;",
+    "RepairConnection": "Server=localhost;Port=3306;Database=erp_repair;User=finance;Password=DevPassword1!;",
+    "GatePassConnection": "Server=localhost;Port=3306;Database=erp_gatepass;User=finance;Password=DevPassword1!;",
+    "HrConnection": "Server=localhost;Port=3306;Database=erp_hr;User=finance;Password=DevPassword1!;",
+    "InventoryConnection": "Server=localhost;Port=3306;Database=erp_inventory;User=finance;Password=DevPassword1!;",
+    "AutoConnection": "Server=localhost;Port=3306;Database=erp_auto;User=finance;Password=DevPassword1!;",
+    "LedgerConnection": "Server=localhost;Port=3306;Database=erp_ledger;User=finance;Password=DevPassword1!;",
+    "TenderConnection": "Server=localhost;Port=3306;Database=erp_tender;User=finance;Password=DevPassword1!;"
+  },
+  "_comment": "Local development only. Copy to appsettings.Development.json (gitignored) \u2014 ./dev.sh up does this for you. The password here is the throwaway one dev.sh provisions; production config is generated separately, see DEPLOYMENT.md."
+}

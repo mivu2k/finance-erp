@@ -105,8 +105,11 @@ public enum GoodsReceiptStatus
 /// owed. Posting routes every line through the ordinary stock ledger, so a receipt
 /// is as traceable as any other movement and serials and batches come with it.
 /// </remarks>
-public class GoodsReceipt : AuditableEntity
+public class GoodsReceipt : AuditableEntity, IConcurrencyChecked
 {
+    /// <summary>Optimistic lock: posting the same receipt twice would book the stock twice.</summary>
+    public Guid ConcurrencyStamp { get; set; } = Guid.NewGuid();
+
     public string ReceiptNumber { get; set; } = string.Empty;
     public DateOnly Date { get; set; }
     public GoodsReceiptStatus Status { get; set; } = GoodsReceiptStatus.Draft;

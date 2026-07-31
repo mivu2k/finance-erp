@@ -1,3 +1,4 @@
+using ErpPlatform.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 using Tender.Domain;
 
@@ -17,7 +18,7 @@ public interface ITenderReportService
 /// Builds every tender report into the same flat <see cref="TenderReport"/> shape
 /// so the on-screen tables, the PDF and any future export can't drift apart.
 /// </summary>
-public class TenderReportService(TenderDbContext db) : ITenderReportService
+public class TenderReportService(TenderDbContext db, IBusinessClock clock) : ITenderReportService
 {
     public IReadOnlyList<TenderReportDefinition> Catalog { get; } =
     [
@@ -116,12 +117,12 @@ public class TenderReportService(TenderDbContext db) : ITenderReportService
 
     private async Task<TenderReport> ExpiryAsync(CancellationToken ct)
     {
-        var cutoff = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(60);
+        var cutoff = clock.Today.AddDays(60);
         var guarantees = await db.Guarantees.Include(g => g.TenderRecord).AsNoTracking()
             .Where(g => g.Status == GuaranteeStatus.Active && g.ExpiryDate <= cutoff)
             .OrderBy(g => g.ExpiryDate).ToListAsync(ct);
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = clock.Today;
         var rows = guarantees.Select(g => new[]
         {
             g.TenderRecord.TenderNumber, g.Type.ToString(), $"{g.BankName} {g.GuaranteeNumber}",

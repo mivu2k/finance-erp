@@ -13,6 +13,7 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageReference Include="Xunit.SkippableFact" Version="1.4.13" />
     <PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="9.0.0" />
+    <ProjectReference Include="..\ErpPlatform.TestSupport\ErpPlatform.TestSupport.csproj" />
   </ItemGroup>
 
   <ItemGroup>

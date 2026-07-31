@@ -59,6 +59,16 @@ public abstract class ModuleDbContext(DbContextOptions options, ICurrentUserServ
                 else if (entry.State == EntityState.Modified) { be.ModifiedAtUtc = now; be.ModifiedBy = user; }
             }
 
+            // Re-stamp the optimistic-locking token. MariaDB has no native rowversion,
+            // so we move it ourselves; EF still compares the ORIGINAL value in the
+            // UPDATE's WHERE clause, which is what makes a concurrent edit fail loudly
+            // instead of silently overwriting the other person's work.
+            if (entry.Entity is IConcurrencyChecked cc
+                && entry.State is EntityState.Added or EntityState.Modified)
+            {
+                cc.ConcurrencyStamp = Guid.NewGuid();
+            }
+
             // Soft delete: convert hard deletes into flag updates.
             if (entry.State == EntityState.Deleted && entry.Entity is ISoftDelete sd)
             {

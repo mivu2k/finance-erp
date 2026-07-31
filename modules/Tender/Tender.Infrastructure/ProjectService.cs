@@ -1,3 +1,4 @@
+using ErpPlatform.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 using Tender.Domain;
 
@@ -21,7 +22,7 @@ public interface IProjectService
     Task<List<ProjectMilestone>> ListUpcomingMilestonesAsync(int withinDays = 30, CancellationToken ct = default);
 }
 
-public class ProjectService(TenderDbContext db, IFileRegistryService files) : IProjectService
+public class ProjectService(TenderDbContext db, IFileRegistryService files, IBusinessClock clock) : IProjectService
 {
     public async Task<List<Project>> ListAsync(
         string? search = null, ProjectStatus? status = null, CancellationToken ct = default)
@@ -145,7 +146,7 @@ public class ProjectService(TenderDbContext db, IFileRegistryService files) : IP
             milestone.SortOrder = last + 1;
         }
 
-        Reconcile(milestone);
+        Reconcile(milestone, clock.Today);
         db.ProjectMilestones.Add(milestone);
         await db.SaveChangesAsync(ct);
         return milestone;
@@ -168,16 +169,16 @@ public class ProjectService(TenderDbContext db, IFileRegistryService files) : IP
         existing.SortOrder = milestone.SortOrder;
         existing.Notes = milestone.Notes;
 
-        Reconcile(existing);
+        Reconcile(existing, clock.Today);
         await db.SaveChangesAsync(ct);
         return existing;
     }
 
     /// <summary>An achieved milestone always carries the date it was achieved; a pending one never does.</summary>
-    private static void Reconcile(ProjectMilestone milestone)
+    private static void Reconcile(ProjectMilestone milestone, DateOnly today)
     {
         if (milestone.Status == MilestoneStatus.Achieved)
-            milestone.AchievedDate ??= DateOnly.FromDateTime(DateTime.UtcNow);
+            milestone.AchievedDate ??= today;
         else if (milestone.Status == MilestoneStatus.Pending)
             milestone.AchievedDate = null;
     }
@@ -201,7 +202,7 @@ public class ProjectService(TenderDbContext db, IFileRegistryService files) : IP
     public async Task<List<ProjectMilestone>> ListUpcomingMilestonesAsync(
         int withinDays = 30, CancellationToken ct = default)
     {
-        var cutoff = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(withinDays);
+        var cutoff = clock.Today.AddDays(withinDays);
         return await db.ProjectMilestones.Include(m => m.Project).AsNoTracking()
             .Where(m => m.Status == MilestoneStatus.Pending && m.DueDate <= cutoff
                         && (m.Project.Status == ProjectStatus.Planned

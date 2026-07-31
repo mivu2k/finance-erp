@@ -2,6 +2,7 @@
 @attribute [Authorize(Policy = TenderPermissions.TendersView)]
 @layout TenderLayout
 @rendermode InteractiveServer
+@inject IBusinessClock Clock
 @inject IServiceScopeFactory ScopeFactory
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
@@ -179,7 +180,7 @@ else
     <MudPaper Class="pa-4 mt-4">
         <MudText Typo="Typo.subtitle1" Class="mb-2">
             Bid checklist (@_tender.Tasks.Count)
-            @if (_tender.Tasks.Count(t => t.IsOverdue) is > 0 and var late)
+            @if (_tender.Tasks.Count(t => t.IsOverdueOn(Clock.Today)) is > 0 and var late)
             {
                 <MudChip T="string" Size="Size.Small" Color="Color.Error" Class="ml-2">@late late</MudChip>
             }

@@ -1,3 +1,4 @@
+using ErpPlatform.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 using Tender.Domain;
 
@@ -37,7 +38,7 @@ public interface IWorkTaskService
     Task<List<WorkTask>> ListForUserAsync(string userId, CancellationToken ct = default);
 }
 
-public class WorkTaskService(TenderDbContext db) : IWorkTaskService
+public class WorkTaskService(TenderDbContext db, IBusinessClock clock) : IWorkTaskService
 {
     private static readonly List<ProjectTaskStatus> OpenStatuses =
     [
@@ -84,7 +85,7 @@ public class WorkTaskService(TenderDbContext db) : IWorkTaskService
             task.SortOrder = last + 1;
         }
 
-        Reconcile(task);
+        Reconcile(task, clock.Today);
         db.WorkTasks.Add(task);
         await db.SaveChangesAsync(ct);
         return task;
@@ -114,7 +115,7 @@ public class WorkTaskService(TenderDbContext db) : IWorkTaskService
         existing.SortOrder = task.SortOrder;
         existing.Notes = task.Notes;
 
-        Reconcile(existing);
+        Reconcile(existing, clock.Today);
         await db.SaveChangesAsync(ct);
         return existing;
     }
@@ -126,7 +127,7 @@ public class WorkTaskService(TenderDbContext db) : IWorkTaskService
             ?? throw new InvalidOperationException("Task not found.");
 
         task.Status = status;
-        Reconcile(task);
+        Reconcile(task, clock.Today);
         await db.SaveChangesAsync(ct);
         return task;
     }
@@ -144,12 +145,12 @@ public class WorkTaskService(TenderDbContext db) : IWorkTaskService
     /// completing a task fills in its progress and completion date, and re-opening one
     /// clears the date so a finished-then-reopened task doesn't still read as delivered.
     /// </summary>
-    private static void Reconcile(WorkTask task)
+    private static void Reconcile(WorkTask task, DateOnly today)
     {
         if (task.Status == ProjectTaskStatus.Completed)
         {
             task.ProgressPercent = 100;
-            task.CompletedDate ??= DateOnly.FromDateTime(DateTime.UtcNow);
+            task.CompletedDate ??= today;
         }
         else
         {
@@ -172,7 +173,7 @@ public class WorkTaskService(TenderDbContext db) : IWorkTaskService
 
     public async Task<List<WorkTask>> ListOverdueAsync(CancellationToken ct = default)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = clock.Today;
         return await OpenOnLiveOwners()
             .Where(t => t.DueDate != null && t.DueDate < today)
             .OrderBy(t => t.DueDate)
@@ -182,7 +183,7 @@ public class WorkTaskService(TenderDbContext db) : IWorkTaskService
     public async Task<List<WorkTask>> ListUpcomingAsync(
         int withinDays = 14, CancellationToken ct = default)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = clock.Today;
         var cutoff = today.AddDays(withinDays);
         return await OpenOnLiveOwners()
             .Where(t => t.DueDate != null && t.DueDate >= today && t.DueDate <= cutoff)

@@ -2,6 +2,7 @@
 @attribute [Authorize(Policy = TenderPermissions.ProjectsView)]
 @layout TenderLayout
 @rendermode InteractiveServer
+@inject IBusinessClock Clock
 @inject IServiceScopeFactory ScopeFactory
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
@@ -102,7 +103,7 @@ else
                             </td>
                             <td>
                                 @m.DueDate.ToString("yyyy-MM-dd")
-                                @if (m.IsOverdue)
+                                @if (m.IsOverdueOn(Clock.Today))
                                 {
                                     <MudChip T="string" Size="Size.Small" Color="Color.Error" Class="ml-1">late</MudChip>
                                 }
@@ -223,7 +224,7 @@ else
         _project = await scope.ServiceProvider.GetRequiredService<IProjectService>().GetAsync(Id);
         _users = await scope.ServiceProvider.GetRequiredService<IPlatformUserDirectory>()
             .ListForModuleAsync(AppModules.Tender);
-        _overdueCount = _project?.Tasks.Count(t => t.IsOverdue) ?? 0;
+        _overdueCount = _project?.Tasks.Count(t => t.IsOverdueOn(Clock.Today)) ?? 0;
         StateHasChanged();
     }
 

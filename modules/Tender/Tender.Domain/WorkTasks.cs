@@ -49,11 +49,15 @@ public class WorkTask : AuditableEntity
 
     public string? Notes { get; set; }
 
-    /// <summary>Past its due date and not finished. Not persisted — it moves with the calendar, not an edit.</summary>
-    public bool IsOverdue =>
+    /// <summary>
+    /// Past its due date and not finished. Takes the date rather than reading the clock:
+    /// an entity that reads the machine clock is both untestable and, on a UTC server in
+    /// a UTC+5 business, wrong for the first five hours of every day.
+    /// </summary>
+    public bool IsOverdueOn(DateOnly today) =>
         DueDate is { } due
         && Status is not (ProjectTaskStatus.Completed or ProjectTaskStatus.Cancelled)
-        && due < DateOnly.FromDateTime(DateTime.UtcNow);
+        && due < today;
 
     public bool IsOpen =>
         Status is ProjectTaskStatus.NotStarted or ProjectTaskStatus.InProgress or ProjectTaskStatus.Blocked;

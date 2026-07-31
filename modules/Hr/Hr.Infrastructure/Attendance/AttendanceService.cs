@@ -1,4 +1,5 @@
 using Hr.Domain;
+using ErpPlatform.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 
 namespace Hr.Infrastructure.Attendance;
@@ -55,7 +56,7 @@ public interface IAttendanceService
     Task RevertToDeviceAsync(int attendanceDayId, CancellationToken ct = default);
 }
 
-public class AttendanceService(HrDbContext db, IAttendanceSyncService sync) : IAttendanceService
+public class AttendanceService(HrDbContext db, IAttendanceSyncService sync, IBusinessClock clock) : IAttendanceService
 {
     public Task<List<AttendanceDay>> GetDayRegisterAsync(
         DateOnly date, int? departmentId = null, CancellationToken ct = default) =>
@@ -152,7 +153,7 @@ public class AttendanceService(HrDbContext db, IAttendanceSyncService sync) : IA
         if (input.Date < employee.JoinedOn)
             throw new InvalidOperationException(
                 $"{employee.FullName} had not joined on {input.Date:yyyy-MM-dd}.");
-        if (input.Date > DateOnly.FromDateTime(DateTime.Today))
+        if (input.Date > clock.Today)
             throw new InvalidOperationException("Attendance can't be recorded for a future date.");
 
         var day = await db.AttendanceDays

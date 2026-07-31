@@ -1,3 +1,4 @@
+using ErpPlatform.TestSupport;
 using ErpPlatform.Shared.Kernel;
 using FinanceERP.Application.Interfaces;
 using FinanceERP.Domain.Entities;
@@ -49,7 +50,7 @@ public class ThirdPartyPostingTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (!_available) return;
+        if (!_available) return;   // nothing was created, so nothing to drop
         await using var db = NewDb();
         await db.Database.EnsureDeletedAsync();
     }
@@ -78,10 +79,10 @@ public class ThirdPartyPostingTests : IAsyncLifetime
         return (await db.Accounts.AsNoTracking().FirstAsync(a => a.Code == "1100")).Id;
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_receivable_party_gets_its_account_under_receivables()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
 
         await using var db = NewDb();
         var (parties, _) = Services(db);
@@ -97,10 +98,10 @@ public class ThirdPartyPostingTests : IAsyncLifetime
         Assert.Equal("1600", parent.Code);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_payable_party_gets_its_account_under_payables()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
 
         await using var db = NewDb();
         var (parties, _) = Services(db);
@@ -115,10 +116,10 @@ public class ThirdPartyPostingTests : IAsyncLifetime
         Assert.Equal("2100", parent.Code);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Debit_pays_them_out_of_cash()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var cashId = await CashAccountIdAsync();
 
         await using var db = NewDb();
@@ -138,10 +139,10 @@ public class ThirdPartyPostingTests : IAsyncLifetime
         Assert.Equal(lines.Sum(l => l.Debit), lines.Sum(l => l.Credit));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Credit_takes_money_in_from_them()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var cashId = await CashAccountIdAsync();
 
         await using var db = NewDb();
@@ -160,10 +161,10 @@ public class ThirdPartyPostingTests : IAsyncLifetime
         Assert.Equal(lines.Sum(l => l.Debit), lines.Sum(l => l.Credit));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task The_balance_and_statement_follow_the_postings()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var cashId = await CashAccountIdAsync();
 
         await using var db = NewDb();
@@ -183,10 +184,10 @@ public class ThirdPartyPostingTests : IAsyncLifetime
         Assert.Equal(30_000, statement.Last().RunningBalance);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Nonsense_postings_are_refused()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var cashId = await CashAccountIdAsync();
 
         await using var db = NewDb();
@@ -207,10 +208,10 @@ public class ThirdPartyPostingTests : IAsyncLifetime
             9999, PartyMovement.Debit, 100, cashId, new DateOnly(2026, 7, 30)));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_narration_defaults_to_the_party_and_direction_when_left_blank()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var cashId = await CashAccountIdAsync();
 
         await using var db = NewDb();

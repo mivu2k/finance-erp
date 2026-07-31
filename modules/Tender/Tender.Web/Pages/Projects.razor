@@ -2,6 +2,7 @@
 @attribute [Authorize(Policy = TenderPermissions.ProjectsView)]
 @layout TenderLayout
 @rendermode InteractiveServer
+@inject IBusinessClock Clock
 @inject IServiceScopeFactory ScopeFactory
 @inject NavigationManager Nav
 
@@ -50,7 +51,7 @@
             {
                 var openTasks = p.Tasks.Count(t => t.Status is ProjectTaskStatus.NotStarted
                     or ProjectTaskStatus.InProgress or ProjectTaskStatus.Blocked);
-                var overdue = p.Tasks.Count(t => t.IsOverdue);
+                var overdue = p.Tasks.Count(t => t.IsOverdueOn(Clock.Today));
 
                 <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/tender/projects/{p.Id}"))">
                     <td>@p.ProjectCode</td>

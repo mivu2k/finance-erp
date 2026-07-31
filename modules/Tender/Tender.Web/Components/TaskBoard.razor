@@ -1,5 +1,6 @@
 @* No @rendermode here: a child of an interactive page inherits the parent's mode,
    and declaring its own makes it a separate root that renders nothing inside one. *@
+@inject IBusinessClock Clock
 @inject IServiceScopeFactory ScopeFactory
 @inject ISnackbar Snackbar
 
@@ -45,7 +46,7 @@
                 <td>@task.StartDate?.ToString("yyyy-MM-dd")</td>
                 <td>
                     @task.DueDate?.ToString("yyyy-MM-dd")
-                    @if (task.IsOverdue)
+                    @if (task.IsOverdueOn(Clock.Today))
                     {
                         <MudChip T="string" Size="Size.Small" Color="Color.Error" Class="ml-1">late</MudChip>
                     }

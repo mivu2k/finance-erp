@@ -1,3 +1,4 @@
+using ErpPlatform.TestSupport;
 using ErpPlatform.Shared.Kernel;
 using Inventory.Domain;
 using Inventory.Infrastructure;
@@ -33,7 +34,7 @@ public class PurchasingTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (!_available) return;
+        if (!_available) return;   // nothing was created, so nothing to drop
         await using var db = NewDb();
         await db.Database.EnsureDeletedAsync();
     }
@@ -81,10 +82,10 @@ public class PurchasingTests : IAsyncLifetime
         ]
     };
 
-    [Fact]
+    [SkippableFact]
     public async Task An_order_totals_up_from_its_lines_and_charges()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (supplierId, plainId, _, warehouseId) = await SeedAsync();
 
         await using var db = NewDb();
@@ -103,10 +104,10 @@ public class PurchasingTests : IAsyncLifetime
         Assert.StartsWith("PO-", saved.OrderNumber);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Placing_an_order_moves_no_stock_at_all()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (supplierId, plainId, _, warehouseId) = await SeedAsync();
 
         await using var db = NewDb();
@@ -120,10 +121,10 @@ public class PurchasingTests : IAsyncLifetime
         Assert.Equal(0, model.CurrentQuantity);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_receipt_against_an_order_books_stock_and_draws_the_order_down()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (supplierId, plainId, _, warehouseId) = await SeedAsync();
 
         await using var db = NewDb();
@@ -151,10 +152,10 @@ public class PurchasingTests : IAsyncLifetime
         Assert.Equal(0, after.Lines[0].Outstanding);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_part_delivery_leaves_the_order_partly_received()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (supplierId, plainId, _, warehouseId) = await SeedAsync();
 
         await using var db = NewDb();
@@ -182,10 +183,10 @@ public class PurchasingTests : IAsyncLifetime
         Assert.DoesNotContain(await orders.OutstandingAsync(), o => o.Id == order.Id);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_receipt_for_a_serialised_item_carries_its_serials_into_stock()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (supplierId, _, serialId, warehouseId) = await SeedAsync();
 
         await using var db = NewDb();
@@ -214,10 +215,10 @@ public class PurchasingTests : IAsyncLifetime
         Assert.Contains(units, u => u.SerialNumber == "MTR-1");
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_serialised_receipt_still_has_to_balance_serials_against_quantity()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (supplierId, _, serialId, warehouseId) = await SeedAsync();
 
         await using var db = NewDb();
@@ -243,10 +244,10 @@ public class PurchasingTests : IAsyncLifetime
             () => receipts.PostAsync(saved.Id, "u1", "Tester"));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_posted_receipt_is_final_and_a_placed_order_is_locked()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (supplierId, plainId, _, warehouseId) = await SeedAsync();
 
         await using var db = NewDb();
@@ -272,10 +273,10 @@ public class PurchasingTests : IAsyncLifetime
         await Assert.ThrowsAsync<InvalidOperationException>(() => orders.CancelAsync(order.Id));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task An_order_with_nothing_left_cannot_be_received_again()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (supplierId, plainId, _, warehouseId) = await SeedAsync();
 
         await using var db = NewDb();
@@ -291,10 +292,10 @@ public class PurchasingTests : IAsyncLifetime
             () => receipts.BuildFromOrderAsync(order.Id));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_draft_order_cannot_be_received_against()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (supplierId, plainId, _, warehouseId) = await SeedAsync();
 
         await using var db = NewDb();
@@ -306,10 +307,10 @@ public class PurchasingTests : IAsyncLifetime
             () => receipts.BuildFromOrderAsync(order.Id));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_supplier_with_history_cannot_be_deleted()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (supplierId, plainId, _, warehouseId) = await SeedAsync();
 
         await using var db = NewDb();
@@ -324,10 +325,10 @@ public class PurchasingTests : IAsyncLifetime
         await Assert.ThrowsAsync<InvalidOperationException>(() => suppliers.DeleteAsync(supplierId));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_standalone_receipt_needs_no_order_behind_it()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (supplierId, plainId, _, warehouseId) = await SeedAsync();
 
         await using var db = NewDb();

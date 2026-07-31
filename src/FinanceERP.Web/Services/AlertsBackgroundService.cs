@@ -1,3 +1,4 @@
+using ErpPlatform.Shared.Kernel;
 using FinanceERP.Application.Interfaces;
 using FinanceERP.Domain.Entities;
 using FinanceERP.Domain.Enums;
@@ -38,7 +39,7 @@ public class AlertsBackgroundService(IServiceScopeFactory scopeFactory, ILogger<
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = scope.ServiceProvider.GetRequiredService<IBusinessClock>().Today;
         var since = DateTime.UtcNow.AddDays(-1);
 
         async Task<bool> AlreadySentToday(string title) =>

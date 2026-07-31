@@ -55,6 +55,14 @@ db_ensure() {
     sql+="FLUSH PRIVILEGES;"
     "$PKG/usr/bin/mariadb" --socket="$SOCK" -u root -e "$sql"
 }
+# The dev connection strings (with their throwaway password) live in a gitignored
+# override rather than in tracked config. Seed it on a fresh clone so `up` just works.
+seed_dev_config() {
+    local cfg="$REPO/src/FinanceERP.Web/appsettings.Development.json"
+    local example="$cfg.example"
+    [ -f "$cfg" ] || { [ -f "$example" ] && cp "$example" "$cfg" && echo "created appsettings.Development.json from example"; }
+}
+
 app_running() { pgrep -x FinanceERP.Web >/dev/null 2>&1; }
 
 db_up() {
@@ -90,7 +98,7 @@ app_up() {
 
 case "${1:-up}" in
     up)
-        check_env; db_up; db_ensure; app_up ;;
+        check_env; seed_dev_config; db_up; db_ensure; app_up ;;
     down)
         pkill -x FinanceERP.Web 2>/dev/null && echo "app stopped" || echo "app not running"
         if db_running; then

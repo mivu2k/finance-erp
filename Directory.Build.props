@@ -1,0 +1,48 @@
+<Project>
+
+  <!--
+    Settings every project in the tree inherits. Put anything here that should be
+    true of the whole solution, so a new module can't quietly opt out of it by
+    forgetting a line in its own .csproj.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- Deterministic, so the same source produces the same binary in CI. -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!--
+      A handful of warnings describe failures that are invisible at runtime, so they
+      are errors rather than noise in a 29-warning build nobody reads:
+
+        RZ10012  a component whose namespace isn't imported renders as an unknown
+                 HTML element — the page returns 200 with a section silently missing.
+                 This bit us for real; see the gotcha in CLAUDE.md.
+        BL0008   [SupplyParameterFromForm] with an initializer, which a form post can
+                 overwrite with null.
+        CS4014   an un-awaited Task: the work may never happen and exceptions vanish.
+        CS8600/8602/8618  nullability holes that turn into NullReferenceException.
+    -->
+    <WarningsAsErrors>$(WarningsAsErrors);RZ10012;BL0008;CS4014</WarningsAsErrors>
+
+    <!--
+      Cosmetic or third-party noise that would otherwise drown the signal above.
+      NU1510  the SDK pruning packages we reference deliberately.
+      MUD0002 MudBlazor's analyzer on attribute casing.
+      CS8524  non-exhaustive switch over an enum's unnamed values.
+    -->
+    <NoWarn>$(NoWarn);NU1510;MUD0002;CS8524</NoWarn>
+  </PropertyGroup>
+
+  <!-- Test projects share one set of versions, so they can't drift apart. -->
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('.Tests'))">
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+</Project>

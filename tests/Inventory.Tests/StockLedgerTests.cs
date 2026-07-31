@@ -1,3 +1,4 @@
+using ErpPlatform.TestSupport;
 using ErpPlatform.Shared.Kernel;
 using Inventory.Domain;
 using Inventory.Infrastructure;
@@ -34,7 +35,7 @@ public class StockLedgerTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (!_available) return;
+        if (!_available) return;   // nothing was created, so nothing to drop
         await using var db = NewDb();
         await db.Database.EnsureDeletedAsync();
     }
@@ -54,10 +55,10 @@ public class StockLedgerTests : IAsyncLifetime
         return (product.Id, model.Id, accessory.Id);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Stock_in_and_out_moves_the_cached_quantity_and_writes_the_ledger()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (_, modelId, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -82,10 +83,10 @@ public class StockLedgerTests : IAsyncLifetime
         Assert.Contains(ledger, t => t.Direction == StockDirection.Out && t.BalanceAfter == 7);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Stock_out_beyond_what_is_held_is_refused()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (_, modelId, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -102,10 +103,10 @@ public class StockLedgerTests : IAsyncLifetime
         Assert.Equal(5, model.CurrentQuantity);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Zero_or_negative_quantities_are_refused()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (_, modelId, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -119,10 +120,10 @@ public class StockLedgerTests : IAsyncLifetime
                 StockReason.Adjustment, null, null, "u1", "Tester"));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Accessory_stock_is_tracked_independently_of_its_model()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (_, modelId, accessoryId) = await SeedAsync();
 
         await using var db = NewDb();
@@ -139,10 +140,10 @@ public class StockLedgerTests : IAsyncLifetime
         Assert.Equal(9, accessory.CurrentQuantity);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Recalculate_rebuilds_cached_quantities_from_the_ledger()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (_, modelId, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -163,10 +164,10 @@ public class StockLedgerTests : IAsyncLifetime
         Assert.Equal(7, repaired.CurrentQuantity);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Low_stock_lists_what_sits_at_or_under_its_threshold()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (_, modelId, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -184,10 +185,10 @@ public class StockLedgerTests : IAsyncLifetime
             x => x.Type == StockItemType.Model && x.ItemId == modelId);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_model_holding_stock_cannot_be_deleted()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (_, modelId, _) = await SeedAsync();
 
         await using var db = NewDb();
@@ -200,10 +201,10 @@ public class StockLedgerTests : IAsyncLifetime
         Assert.NotNull(await products.GetModelAsync(modelId));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task An_emptied_model_can_be_deleted_and_takes_its_accessories_with_it()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (_, modelId, accessoryId) = await SeedAsync();
 
         await using var db = NewDb();
@@ -225,10 +226,10 @@ public class StockLedgerTests : IAsyncLifetime
         Assert.Equal(2, ledger.Count);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_product_whose_accessory_holds_stock_cannot_be_deleted()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (productId, _, accessoryId) = await SeedAsync();
 
         await using var db = NewDb();
@@ -241,10 +242,10 @@ public class StockLedgerTests : IAsyncLifetime
         Assert.NotNull(await products.GetAsync(productId));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task An_empty_product_deletes_with_its_models_and_accessories()
     {
-        if (!_available) return;
+        IntegrationDatabase.Require(_available);
         var (productId, modelId, accessoryId) = await SeedAsync();
 
         await using var db = NewDb();
