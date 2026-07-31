@@ -77,6 +77,117 @@ else
         </MudItem>
     </MudGrid>
 
+    @* --- Schedule of items (bill of quantities) --- *@
+    <MudPaper Class="pa-4 mt-4">
+        <div class="d-flex align-center mb-2 flex-wrap gap-2">
+            <MudText Typo="Typo.subtitle1">Schedule of items</MudText>
+            @if (_tender.HasSchedule)
+            {
+                <MudChip T="string" Size="Size.Small">@_tender.Items.Count line(s)</MudChip>
+                @* The estimate and the priced schedule are kept apart on purpose —
+                   seeing them disagree is how a mispriced line gets caught. *@
+                @if (Math.Abs(_tender.ItemsTotal - _tender.EstimatedValue) > 0.01m)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning">
+                        schedule @_tender.ItemsTotal.ToString("N2") vs estimate @_tender.EstimatedValue.ToString("N2")
+                    </MudChip>
+                }
+            }
+            <MudSpacer />
+            <AuthorizeView Policy="@TenderPermissions.TendersManage">
+                <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="@(() => OpenItem(null))">Add Item</MudButton>
+            </AuthorizeView>
+        </div>
+
+        @if (!_tender.HasSchedule)
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                No schedule — this tender is a single lump sum. Add lines only if the
+                notice itemises them.
+            </MudText>
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Hover="true" Striped="true" Style="overflow-x:auto">
+                <thead>
+                    <tr>
+                        <th>#</th><th>Item</th><th>Description</th><th>Unit</th>
+                        <th style="text-align:right">Qty</th><th style="text-align:right">Rate</th>
+                        <th style="text-align:right">Amount</th>
+                        <th style="text-align:right">Margin</th>
+                        <th style="width:96px"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var i in _tender.Items)
+                    {
+                        var item = i;
+                        <tr>
+                            <td>@item.SortOrder</td>
+                            <td>@item.ItemCode</td>
+                            <td>
+                                @item.Description
+                                @if (!string.IsNullOrWhiteSpace(item.Brand) || !string.IsNullOrWhiteSpace(item.CountryOfOrigin))
+                                {
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">
+                                        @item.Brand @item.CountryOfOrigin
+                                    </MudText>
+                                }
+                            </td>
+                            <td>@item.Unit</td>
+                            <td style="text-align:right">@item.Quantity.ToString("0.###")</td>
+                            <td style="text-align:right">@item.UnitRate.ToString("N2")</td>
+                            <td style="text-align:right">@item.Amount.ToString("N2")</td>
+                            <td style="text-align:right">
+                                @if (item.Margin is { } m)
+                                {
+                                    <span style="color:@(m >= 0 ? "inherit" : "var(--mud-palette-error)")">
+                                        @m.ToString("N2") (@item.MarginPercent?.ToString("0.#")%)
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="mud-text-secondary">—</span>
+                                }
+                            </td>
+                            <td>
+                                <AuthorizeView Policy="@TenderPermissions.TendersManage" Context="iCtx">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                                   OnClick="@(() => OpenItem(item))" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                                   Color="Color.Error"
+                                                   OnClick="@(() => _confirmDeleteItemId = item.Id)" />
+                                </AuthorizeView>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <th colspan="6" style="text-align:right">Schedule total</th>
+                        <th style="text-align:right">@_tender.ItemsTotal.ToString("N2")</th>
+                        <th colspan="2"></th>
+                    </tr>
+                </tfoot>
+            </MudSimpleTable>
+        }
+    </MudPaper>
+
+    @* --- Bid checklist --- *@
+    <MudPaper Class="pa-4 mt-4">
+        <MudText Typo="Typo.subtitle1" Class="mb-2">
+            Bid checklist (@_tender.Tasks.Count)
+            @if (_tender.Tasks.Count(t => t.IsOverdue) is > 0 and var late)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Error" Class="ml-2">@late late</MudChip>
+            }
+        </MudText>
+        <TaskBoard OwnerType="WorkOwnerType.Tender" OwnerId="Id"
+                   Tasks="_tender.Tasks" Users="_users" OnChanged="LoadAsync" />
+    </MudPaper>
+
     @* --- Comparative statement of bidders --- *@
     <MudPaper Class="pa-4 mt-4">
         <MudText Typo="Typo.subtitle1" Class="mb-2">Comparative statement of bidders</MudText>
@@ -267,6 +378,49 @@ else
     </MudOverlay>
 }
 
+@* --- schedule item editor overlay --- *@
+@if (_itemForm is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:640px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_editingItemId is null ? "Add Item" : "Edit Item")</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="4" md="2"><MudTextField @bind-Value="_itemForm.ItemCode" Label="Item no." Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="8" md="10"><MudTextField @bind-Value="_itemForm.Description" Label="Description" Required="true" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12"><MudTextField @bind-Value="_itemForm.Specification" Label="Specification" Lines="2" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"><MudTextField @bind-Value="_itemForm.Unit" Label="Unit" Margin="Margin.Dense" Placeholder="Nos / m / kg" /></MudItem>
+                <MudItem xs="6" md="3"><MudNumericField T="decimal" @bind-Value="_itemForm.Quantity" Label="Quantity" Min="0" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"><MudNumericField T="decimal" @bind-Value="_itemForm.UnitRate" Label="Our rate" Min="0" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"><MudNumericField T="decimal?" @bind-Value="_itemForm.EstimatedRate" Label="Their estimated rate" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"><MudNumericField T="decimal?" @bind-Value="_itemForm.CostRate" Label="Our cost rate" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"><MudTextField @bind-Value="_itemForm.Brand" Label="Brand" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"><MudTextField @bind-Value="_itemForm.CountryOfOrigin" Label="Country of origin" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"><MudNumericField T="int?" @bind-Value="_itemForm.DeliveryDays" Label="Delivery days" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"><MudNumericField T="int" @bind-Value="_itemForm.SortOrder" Label="Order" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12"><MudTextField @bind-Value="_itemForm.Remarks" Label="Remarks" Lines="2" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12">
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                        Amount: @((_itemForm.Quantity * _itemForm.UnitRate).ToString("N2"))
+                    </MudText>
+                </MudItem>
+            </MudGrid>
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _itemForm = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveItemAsync">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+<MudDialog Visible="_confirmDeleteItemId is not null" VisibleChanged="@(v => { if (!v) _confirmDeleteItemId = null; })">
+    <TitleContent><MudText Typo="Typo.h6">Delete item?</MudText></TitleContent>
+    <DialogContent><MudText>This line will be removed from the schedule.</MudText></DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _confirmDeleteItemId = null)">Cancel</MudButton>
+        <MudButton Color="Color.Error" OnClick="DeleteItemAsync">Delete</MudButton>
+    </DialogActions>
+</MudDialog>
+
 @* --- competitor editor overlay --- *@
 @if (_competitorForm is not null)
 {
@@ -394,6 +548,12 @@ else
     private int? _editingCompetitorId;
     private TenderCompetitor? _deleteCompetitor;
 
+    private TenderItem? _itemForm;
+    private int? _editingItemId;
+    private int? _confirmDeleteItemId;
+
+    private IReadOnlyList<PlatformUser> _users = [];
+
     private bool _confirmDeleteTender;
 
     protected override async Task OnParametersSetAsync() => await LoadAsync();
@@ -403,6 +563,60 @@ else
         using var scope = ScopeFactory.CreateScope();
         _tender = await scope.ServiceProvider.GetRequiredService<ITenderService>().GetAsync(Id);
         _renewableGuarantees = _tender?.Guarantees.ToList() ?? [];
+        _users = await scope.ServiceProvider.GetRequiredService<IPlatformUserDirectory>()
+            .ListForModuleAsync(AppModules.Tender);
+        StateHasChanged();
+    }
+
+    // ---- schedule items ----
+
+    private void OpenItem(TenderItem? item)
+    {
+        _editingItemId = item?.Id;
+        _itemForm = item is null
+            ? new TenderItem()
+            : new TenderItem
+            {
+                Id = item.Id, TenderRecordId = item.TenderRecordId,
+                ItemCode = item.ItemCode, Description = item.Description,
+                Specification = item.Specification, Unit = item.Unit,
+                Quantity = item.Quantity, UnitRate = item.UnitRate,
+                EstimatedRate = item.EstimatedRate, CostRate = item.CostRate,
+                Brand = item.Brand, CountryOfOrigin = item.CountryOfOrigin,
+                DeliveryDays = item.DeliveryDays, SortOrder = item.SortOrder,
+                Remarks = item.Remarks
+            };
+    }
+
+    private async Task SaveItemAsync()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<ITenderService>();
+
+            if (_editingItemId is null) await svc.AddItemAsync(Id, _itemForm!);
+            else await svc.UpdateItemAsync(_itemForm!);
+
+            _itemForm = null;
+            Snackbar.Add("Item saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DeleteItemAsync()
+    {
+        if (_confirmDeleteItemId is not { } itemId) return;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<ITenderService>().DeleteItemAsync(itemId);
+            _confirmDeleteItemId = null;
+            Snackbar.Add("Item deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
     }
 
     private static Color StatusColor(TenderStatus status) => status switch

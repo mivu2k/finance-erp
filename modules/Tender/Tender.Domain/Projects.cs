@@ -78,7 +78,7 @@ public class Project : AuditableEntity
     public string? ContactEmail { get; set; }
     public string? Notes { get; set; }
 
-    public List<ProjectTask> Tasks { get; set; } = [];
+    public List<WorkTask> Tasks { get; set; } = [];
     public List<ProjectMilestone> Milestones { get; set; } = [];
 
     /// <summary>
@@ -96,47 +96,6 @@ public class Project : AuditableEntity
     }
 
     public bool IsOpen => Status is ProjectStatus.Planned or ProjectStatus.Active or ProjectStatus.OnHold;
-}
-
-/// <summary>
-/// One unit of work on a project. The assignee is stored as an Identity user id plus
-/// a name snapshot, the same way every other module refers to a person, so the row
-/// still reads correctly after that user is renamed or removed.
-/// </summary>
-public class ProjectTask : AuditableEntity
-{
-    public int ProjectId { get; set; }
-    public Project Project { get; set; } = null!;
-
-    public string Title { get; set; } = string.Empty;
-    public string? Description { get; set; }
-
-    public string? AssignedToUserId { get; set; }
-    public string? AssignedToName { get; set; }
-
-    public DateOnly? StartDate { get; set; }
-    public DateOnly? DueDate { get; set; }
-    public DateOnly? CompletedDate { get; set; }
-
-    public ProjectTaskStatus Status { get; set; } = ProjectTaskStatus.NotStarted;
-    public ProjectPriority Priority { get; set; } = ProjectPriority.Normal;
-
-    /// <summary>0–100. Kept per task; the project's own figure averages these.</summary>
-    public int ProgressPercent { get; set; }
-
-    public decimal? EstimatedHours { get; set; }
-    public decimal? ActualHours { get; set; }
-
-    /// <summary>Manual ordering within the project, so a work programme reads in sequence.</summary>
-    public int SortOrder { get; set; }
-
-    public string? Notes { get; set; }
-
-    /// <summary>Past its due date and not finished. Not persisted — it changes with the calendar, not with an edit.</summary>
-    public bool IsOverdue =>
-        DueDate is { } due
-        && Status is not (ProjectTaskStatus.Completed or ProjectTaskStatus.Cancelled)
-        && due < DateOnly.FromDateTime(DateTime.UtcNow);
 }
 
 /// <summary>

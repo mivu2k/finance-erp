@@ -22,7 +22,7 @@ public static class TenderModule
             P(TenderPermissions.ReportsView, "Reports", "Pipeline, win-rate and guarantee-expiry reports"),
             P(TenderPermissions.ProjectsView, "Projects", "View projects, their tasks and milestones"),
             P(TenderPermissions.ProjectsManage, "Projects", "Add and edit projects and their milestones"),
-            P(TenderPermissions.TasksManage, "Projects", "Add, assign and progress project tasks"),
+            P(TenderPermissions.TasksManage, "Tasks", "Add, assign and progress tasks on tenders and projects"),
             P(TenderPermissions.FilesView, "File Registry", "View the physical file register and its movements"),
             P(TenderPermissions.FilesManage, "File Registry", "Issue, return, transfer and archive physical files")
         ],
@@ -35,7 +35,7 @@ public static class TenderModule
                 TenderPermissions.TendersView, TenderPermissions.TendersManage,
                 TenderPermissions.GuaranteesManage, TenderPermissions.DocumentsManage,
                 TenderPermissions.ReportsView, TenderPermissions.ProjectsView,
-                TenderPermissions.FilesView
+                TenderPermissions.FilesView, TenderPermissions.TasksManage
             ]),
 
             // Runs the physical registry without being able to edit what the files
@@ -79,6 +79,7 @@ public static class TenderModule
         services.AddScoped<ITenderService, TenderService>();
         services.AddScoped<IProjectService, ProjectService>();
         services.AddScoped<IFileRegistryService, FileRegistryService>();
+        services.AddScoped<IWorkTaskService, WorkTaskService>();
 
         // What a file sticker may carry. Registered here so the admin screen can only
         // ever offer fields the print service is able to fill.

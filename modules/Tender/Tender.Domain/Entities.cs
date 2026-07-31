@@ -124,6 +124,76 @@ public class TenderRecord : AuditableEntity
     public List<TenderGuarantee> Guarantees { get; set; } = [];
     public List<TenderDocument> Documents { get; set; } = [];
     public List<TenderCompetitor> Competitors { get; set; } = [];
+    public List<TenderItem> Items { get; set; } = [];
+    public List<WorkTask> Tasks { get; set; } = [];
+
+    /// <summary>
+    /// The priced schedule's own total. Kept apart from <see cref="EstimatedValue"/>
+    /// rather than overwriting it: the estimate is what the notice or our own costing
+    /// says, and the schedule is what the lines actually add up to. Seeing the two
+    /// disagree is the point — it is how a mispriced line gets caught before submission.
+    /// </summary>
+    public decimal ItemsTotal => Items.Sum(i => i.Amount);
+
+    /// <summary>True once anything has been scheduled, so screens can stay quiet until then.</summary>
+    public bool HasSchedule => Items.Count > 0;
+}
+
+/// <summary>
+/// One line of a tender's schedule of items — the bill of quantities.
+/// </summary>
+/// <remarks>
+/// A tender is very often a list of items rather than a single figure, so this is a
+/// list and never a fixed set of columns on the tender. It is also **entirely
+/// optional**: plenty of tenders are a lump sum with nothing to itemise, and those
+/// carry no lines at all rather than one dummy line standing in for the whole bid.
+/// </remarks>
+public class TenderItem : AuditableEntity
+{
+    public int TenderRecordId { get; set; }
+    public TenderRecord TenderRecord { get; set; } = null!;
+
+    /// <summary>The authority's own item number from the schedule — "3", "3.1", "B-04".</summary>
+    public string? ItemCode { get; set; }
+
+    public string Description { get; set; } = string.Empty;
+    public string? Specification { get; set; }
+
+    /// <summary>Nos, metres, kg, lump sum — free text, because every authority words it differently.</summary>
+    public string? Unit { get; set; }
+
+    public decimal Quantity { get; set; }
+
+    /// <summary>What we are quoting per unit.</summary>
+    public decimal UnitRate { get; set; }
+
+    /// <summary>
+    /// What the authority estimated per unit, where the schedule publishes it. Kept so
+    /// the comparison against our own rate survives on the record.
+    /// </summary>
+    public decimal? EstimatedRate { get; set; }
+
+    /// <summary>Our own expected cost per unit — what the margin on this line is read against.</summary>
+    public decimal? CostRate { get; set; }
+
+    public string? Brand { get; set; }
+    public string? CountryOfOrigin { get; set; }
+
+    /// <summary>Delivery period for this line, where it differs from the contract's.</summary>
+    public int? DeliveryDays { get; set; }
+
+    public int SortOrder { get; set; }
+    public string? Remarks { get; set; }
+
+    public decimal Amount => Math.Round(Quantity * UnitRate, 2);
+
+    public decimal? CostAmount => CostRate is { } c ? Math.Round(Quantity * c, 2) : null;
+
+    /// <summary>Null rather than zero when no cost is known — an unpriced line has no margin, not a nil one.</summary>
+    public decimal? Margin => CostAmount is { } cost ? Amount - cost : null;
+
+    public decimal? MarginPercent =>
+        Margin is { } m && Amount != 0 ? Math.Round(m / Amount * 100, 2) : null;
 }
 
 /// <summary>

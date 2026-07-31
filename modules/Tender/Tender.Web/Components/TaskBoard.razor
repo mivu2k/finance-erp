@@ -1,0 +1,272 @@
+@* No @rendermode here: a child of an interactive page inherits the parent's mode,
+   and declaring its own makes it a separate root that renders nothing inside one. *@
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+@* The one task board, used by both the tender and the project detail pages. Two
+   copies would drift; the owner is the only thing that differs. *@
+
+<div class="d-flex align-center mb-3 flex-wrap gap-2">
+    <MudSelect T="ProjectTaskStatus?" @bind-Value="_filter" Label="Filter by status"
+               Margin="Margin.Dense" Clearable="true" Style="max-width:240px">
+        @foreach (var s in Enum.GetValues<ProjectTaskStatus>())
+        {
+            <MudSelectItem T="ProjectTaskStatus?" Value="@((ProjectTaskStatus?)s)">@s</MudSelectItem>
+        }
+    </MudSelect>
+    <MudSpacer />
+    <AuthorizeView Policy="@TenderPermissions.TasksManage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Open(null))">Add Task</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudSimpleTable Dense="true" Hover="true" Striped="true" Style="overflow-x:auto">
+    <thead>
+        <tr>
+            <th>#</th><th>Task</th><th>Assigned To</th><th>Start</th><th>Due</th>
+            <th>Progress</th><th>Priority</th><th>Status</th><th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var t in Filtered)
+        {
+            var task = t;
+            <tr>
+                <td>@task.SortOrder</td>
+                <td>
+                    @task.Title
+                    @if (!string.IsNullOrWhiteSpace(task.Description))
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">@task.Description</MudText>
+                    }
+                </td>
+                <td>@task.AssignedToName</td>
+                <td>@task.StartDate?.ToString("yyyy-MM-dd")</td>
+                <td>
+                    @task.DueDate?.ToString("yyyy-MM-dd")
+                    @if (task.IsOverdue)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Error" Class="ml-1">late</MudChip>
+                    }
+                </td>
+                <td style="min-width:110px">
+                    <MudProgressLinear Color="Color.Primary" Value="@task.ProgressPercent" Size="Size.Small" />
+                    <MudText Typo="Typo.caption">@task.ProgressPercent%</MudText>
+                </td>
+                <td>@task.Priority</td>
+                <td>
+                    <MudChip T="string" Size="Size.Small" Color="@StatusColor(task.Status)">@task.Status</MudChip>
+                </td>
+                <td style="white-space:nowrap">
+                    <AuthorizeView Policy="@TenderPermissions.TasksManage" Context="tc">
+                        @if (task.Status is not (ProjectTaskStatus.Completed or ProjectTaskStatus.Cancelled))
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Done" Size="Size.Small" Color="Color.Success"
+                                           OnClick="@(() => SetStatusAsync(task.Id, ProjectTaskStatus.Completed))" />
+                        }
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       OnClick="@(() => Open(task))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       OnClick="@(() => _confirmDeleteId = task.Id)" />
+                    </AuthorizeView>
+                </td>
+            </tr>
+        }
+        @if (Filtered.Count == 0)
+        {
+            <tr><td colspan="9" class="mud-text-secondary pa-4">No tasks yet.</td></tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+@if (_form is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:640px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_editingId is null ? "Add Task" : "Edit Task")</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_form.Title" Label="Title" Required="true" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_form.Description" Label="Description" Lines="2" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="string" Value="_form.AssignedToUserId" ValueChanged="OnAssigneeChanged"
+                               Label="Assigned to" Margin="Margin.Dense" Clearable="true">
+                        @foreach (var u in Users)
+                        {
+                            <MudSelectItem T="string" Value="@u.UserId">@u.FullName</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudSelect T="ProjectTaskStatus" @bind-Value="_form.Status" Label="Status" Margin="Margin.Dense">
+                        @foreach (var s in Enum.GetValues<ProjectTaskStatus>())
+                        {
+                            <MudSelectItem T="ProjectTaskStatus" Value="@s">@s</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudSelect T="ProjectPriority" @bind-Value="_form.Priority" Label="Priority" Margin="Margin.Dense">
+                        @foreach (var p in Enum.GetValues<ProjectPriority>())
+                        {
+                            <MudSelectItem T="ProjectPriority" Value="@p">@p</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="4">
+                    <MudDatePicker @bind-Date="_startDate" Label="Start date" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6" md="4">
+                    <MudDatePicker @bind-Date="_dueDate" Label="Due date" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField T="int" @bind-Value="_form.ProgressPercent" Label="Progress %"
+                                     Min="0" Max="100" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField T="decimal?" @bind-Value="_form.EstimatedHours" Label="Estimated hours" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField T="decimal?" @bind-Value="_form.ActualHours" Label="Actual hours" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField T="int" @bind-Value="_form.SortOrder" Label="Order" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_form.Notes" Label="Notes" Lines="2" Margin="Margin.Dense" />
+                </MudItem>
+            </MudGrid>
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _form = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+<MudDialog Visible="_confirmDeleteId is not null" VisibleChanged="@(v => { if (!v) _confirmDeleteId = null; })">
+    <TitleContent><MudText Typo="Typo.h6">Delete task?</MudText></TitleContent>
+    <DialogContent><MudText>This task will be removed.</MudText></DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _confirmDeleteId = null)">Cancel</MudButton>
+        <MudButton Color="Color.Error" OnClick="DeleteAsync">Delete</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter, EditorRequired] public WorkOwnerType OwnerType { get; set; }
+    [Parameter, EditorRequired] public int OwnerId { get; set; }
+    [Parameter] public List<WorkTask> Tasks { get; set; } = [];
+    [Parameter] public IReadOnlyList<PlatformUser> Users { get; set; } = [];
+
+    /// <summary>Raised after any change, so the owning page can reload its own totals.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private ProjectTaskStatus? _filter;
+    private WorkTask? _form;
+    private int? _editingId;
+    private int? _confirmDeleteId;
+    private DateTime? _startDate;
+    private DateTime? _dueDate;
+
+    private List<WorkTask> Filtered =>
+        _filter is { } f ? Tasks.Where(t => t.Status == f).ToList() : Tasks;
+
+    private static DateTime? ToDateTime(DateOnly? d) => d?.ToDateTime(TimeOnly.MinValue);
+    private static DateOnly? ToDateOnly(DateTime? d) => d is { } v ? DateOnly.FromDateTime(v) : null;
+
+    private void Open(WorkTask? task)
+    {
+        _editingId = task?.Id;
+        _form = task is null
+            ? new WorkTask()
+            : new WorkTask
+            {
+                Id = task.Id,
+                TenderRecordId = task.TenderRecordId,
+                ProjectId = task.ProjectId,
+                Title = task.Title,
+                Description = task.Description,
+                AssignedToUserId = task.AssignedToUserId,
+                AssignedToName = task.AssignedToName,
+                Status = task.Status,
+                Priority = task.Priority,
+                ProgressPercent = task.ProgressPercent,
+                EstimatedHours = task.EstimatedHours,
+                ActualHours = task.ActualHours,
+                SortOrder = task.SortOrder,
+                Notes = task.Notes,
+                StartDate = task.StartDate,
+                DueDate = task.DueDate,
+                CompletedDate = task.CompletedDate
+            };
+
+        _startDate = ToDateTime(_form.StartDate);
+        _dueDate = ToDateTime(_form.DueDate);
+    }
+
+    private void OnAssigneeChanged(string? userId)
+    {
+        if (_form is null) return;
+        _form.AssignedToUserId = userId;
+        _form.AssignedToName = Users.FirstOrDefault(u => u.UserId == userId)?.FullName;
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            _form!.StartDate = ToDateOnly(_startDate);
+            _form.DueDate = ToDateOnly(_dueDate);
+
+            using var scope = ScopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<IWorkTaskService>();
+
+            if (_editingId is null) await svc.AddAsync(OwnerType, OwnerId, _form);
+            else await svc.UpdateAsync(_form);
+
+            _form = null;
+            Snackbar.Add("Task saved.", Severity.Success);
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task SetStatusAsync(int id, ProjectTaskStatus status)
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IWorkTaskService>().SetStatusAsync(id, status);
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_confirmDeleteId is not { } id) return;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IWorkTaskService>().DeleteAsync(id);
+            _confirmDeleteId = null;
+            Snackbar.Add("Task deleted.", Severity.Success);
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    internal static Color StatusColor(ProjectTaskStatus status) => status switch
+    {
+        ProjectTaskStatus.Completed => Color.Success,
+        ProjectTaskStatus.InProgress => Color.Info,
+        ProjectTaskStatus.Blocked => Color.Warning,
+        ProjectTaskStatus.Cancelled => Color.Error,
+        _ => Color.Default
+    };
+}

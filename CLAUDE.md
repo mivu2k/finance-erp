@@ -236,7 +236,22 @@ These apply to the **Finance** module specifically:
   averages its tasks and is `Ignore()`d in the model — a stored percentage and a task
   list disagree the moment either moves. **Cancelled tasks are excluded rather than
   counted as done**, so dropping scope can't flatter the figure.
-- **`ProjectService.Reconcile` is what stops status, percentage and date
+- **A tender is a list of priced lines, not one figure.** `TenderItem` is the schedule
+  of items / bill of quantities, and it is **entirely optional** — a lump-sum bid
+  carries no lines rather than one dummy line standing in for the whole thing.
+  `ItemsTotal` is deliberately kept apart from `EstimatedValue` instead of overwriting
+  it: seeing the two disagree is how a mispriced line gets caught before submission,
+  and the detail page flags the gap. A line's margin is `null` rather than zero when no
+  cost rate is known — an unpriced line has no margin, not a nil one.
+- **Tasks are shared by both registers.** `WorkTask` hangs off either a tender (a bid
+  checklist — chase the guarantee, collect the certificate) or a project, via two real
+  nullable FKs rather than a type/id pair, so cascade delete and the query filters
+  still work; `WorkTaskService` enforces the "exactly one owner" rule the database
+  can't express, and ownership is fixed at creation so a task can't silently move off
+  someone's board. `Components/TaskBoard.razor` is the one board both detail pages
+  use. Overdue skips tasks whose owner is closed — nobody chases a checklist on a lost
+  bid.
+- **`WorkTaskService.Reconcile` is what stops status, percentage and date
   contradicting each other**: completing a task forces 100% and stamps the completion
   date; re-opening one clears that date and caps the percentage below 100; any
   progress on a `NotStarted` task moves it to `InProgress`. Every write path goes
@@ -345,7 +360,7 @@ UI yet. Not ported: the customer-facing tracking page, Excel report exports.
 
 Known gaps, roughly in priority order:
 
-1. **Finance is barely tested.** 242 tests exist —
+1. **Finance is barely tested.** 253 tests exist —
    `tests/ErpPlatform.Shared.Tests` (37, Code 128 and QR round-trip through decoders —
    QR against ZXing, a test-only dependency),
    `tests/Hr.Tests` (42, the rotating attendance token and attendance arithmetic),
@@ -357,9 +372,10 @@ Known gaps, roughly in priority order:
    `tests/Ledger.Tests` (17, the worked 1-lac-to-two-people scenario: transfer
    pairing, tree rollup, re-parent cycle guard, head rollup and head deletion), and
    `tests/GatePass.Tests` (11), and
-   `tests/Tender.Tests` (29, project progress rollup, the task status/percentage/date
-   reconcile, the overdue query, the file registry's movement chain and issue/return
-   guards, plus sticker and movement-register render smoke tests), and
+   `tests/Tender.Tests` (40, project progress rollup, the task status/percentage/date
+   reconcile, the overdue query across both registers, the tender schedule's totals and
+   per-line margin, the file registry's movement chain and issue/return guards, plus
+   sticker and movement-register render smoke tests), and
    `tests/Finance.Tests` (7, third-party account placement and the debit/credit
    posting sides). The
    integration tests create and drop their own throwaway databases and skip when no
@@ -455,6 +471,12 @@ in full screen.
   on `/hr/devices` warns when the terminal is more than 5 minutes off.
 - Changing a shift or holiday doesn't retro-fix past days — hit **Recompute Month**
   on the monthly report.
+- **A component whose namespace isn't in `_Imports.razor` renders as nothing at all.**
+  Razor treats `<TaskBoard />` as an unknown HTML element, the build only *warns*
+  (`RZ10012: Found markup element with unexpected name`), and the page returns 200 with
+  a silently missing section. Add the `@using` for any new `Components/` folder. Also
+  don't put `@rendermode` on a child of an already-interactive page — it inherits the
+  parent's mode.
 - **`array.Contains(x)` inside an EF predicate binds to the `ReadOnlySpan` overload**
   and throws at query time. Use a `List<T>` — that's why `JobWorkflow.Open` is one.
 - **A manual `BeginTransactionAsync` needs the execution strategy.** Every module

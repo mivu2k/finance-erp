@@ -13,7 +13,8 @@ public class TenderDbContext(DbContextOptions<TenderDbContext> options, ICurrent
     public DbSet<TenderDocument> Documents => Set<TenderDocument>();
     public DbSet<TenderCompetitor> Competitors => Set<TenderCompetitor>();
     public DbSet<Project> Projects => Set<Project>();
-    public DbSet<ProjectTask> ProjectTasks => Set<ProjectTask>();
+    public DbSet<WorkTask> WorkTasks => Set<WorkTask>();
+    public DbSet<TenderItem> TenderItems => Set<TenderItem>();
     public DbSet<ProjectMilestone> ProjectMilestones => Set<ProjectMilestone>();
     public DbSet<PhysicalFile> Files => Set<PhysicalFile>();
     public DbSet<FileMovement> FileMovements => Set<FileMovement>();
@@ -46,6 +47,9 @@ public class TenderDbContext(DbContextOptions<TenderDbContext> options, ICurrent
             e.Property(x => x.ContactPhone).HasMaxLength(50);
             e.Property(x => x.ContactEmail).HasMaxLength(200);
             e.Property(x => x.Notes).HasMaxLength(2000);
+            // Read off the schedule lines, never stored beside them.
+            e.Ignore(x => x.ItemsTotal);
+            e.Ignore(x => x.HasSchedule);
             e.HasQueryFilter(x => !x.IsDeleted);
         });
 
@@ -115,8 +119,33 @@ public class TenderDbContext(DbContextOptions<TenderDbContext> options, ICurrent
             e.HasQueryFilter(x => !x.IsDeleted);
         });
 
-        b.Entity<ProjectTask>(e =>
+        b.Entity<TenderItem>(e =>
         {
+            e.HasIndex(x => x.TenderRecordId);
+            e.Property(x => x.ItemCode).HasMaxLength(32);
+            e.Property(x => x.Description).HasMaxLength(1000);
+            e.Property(x => x.Specification).HasMaxLength(2000);
+            e.Property(x => x.Unit).HasMaxLength(32);
+            e.Property(x => x.Brand).HasMaxLength(200);
+            e.Property(x => x.CountryOfOrigin).HasMaxLength(100);
+            e.Property(x => x.Remarks).HasMaxLength(1000);
+            e.Property(x => x.Quantity).HasPrecision(16, 3);
+            e.Property(x => x.UnitRate).HasPrecision(18, 4);
+            e.Property(x => x.EstimatedRate).HasPrecision(18, 4);
+            e.Property(x => x.CostRate).HasPrecision(18, 4);
+            // Derived from quantity x rate — never stored, or the line and its total drift.
+            e.Ignore(x => x.Amount);
+            e.Ignore(x => x.CostAmount);
+            e.Ignore(x => x.Margin);
+            e.Ignore(x => x.MarginPercent);
+            e.HasOne(x => x.TenderRecord).WithMany(x => x.Items)
+                .HasForeignKey(x => x.TenderRecordId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(x => !x.IsDeleted && !x.TenderRecord.IsDeleted);
+        });
+
+        b.Entity<WorkTask>(e =>
+        {
+            e.HasIndex(x => x.TenderRecordId);
             e.HasIndex(x => x.ProjectId);
             e.HasIndex(x => x.DueDate);
             e.HasIndex(x => x.AssignedToUserId);
@@ -128,9 +157,16 @@ public class TenderDbContext(DbContextOptions<TenderDbContext> options, ICurrent
             e.Property(x => x.ActualHours).HasPrecision(10, 2);
             e.Property(x => x.Notes).HasMaxLength(1000);
             e.Ignore(x => x.IsOverdue);
+            e.Ignore(x => x.IsOpen);
+            // Two real FKs rather than a type/id pair, so cascade delete still works.
+            // "Exactly one is set" is a service rule; the database can't express it.
+            e.HasOne(x => x.TenderRecord).WithMany(x => x.Tasks)
+                .HasForeignKey(x => x.TenderRecordId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Project).WithMany(x => x.Tasks)
                 .HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Cascade);
-            e.HasQueryFilter(x => !x.IsDeleted && !x.Project.IsDeleted);
+            e.HasQueryFilter(x => !x.IsDeleted
+                                  && (x.TenderRecord == null || !x.TenderRecord.IsDeleted)
+                                  && (x.Project == null || !x.Project.IsDeleted));
         });
 
         b.Entity<ProjectMilestone>(e =>

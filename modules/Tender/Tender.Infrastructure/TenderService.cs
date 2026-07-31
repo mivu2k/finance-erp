@@ -21,6 +21,10 @@ public interface ITenderService
     Task<TenderDocument> UpdateDocumentAsync(TenderDocument document, CancellationToken ct = default);
     Task DeleteDocumentAsync(int id, CancellationToken ct = default);
 
+    Task<TenderItem> AddItemAsync(int tenderId, TenderItem item, CancellationToken ct = default);
+    Task<TenderItem> UpdateItemAsync(TenderItem item, CancellationToken ct = default);
+    Task DeleteItemAsync(int id, CancellationToken ct = default);
+
     Task<TenderCompetitor> AddCompetitorAsync(int tenderId, TenderCompetitor competitor, CancellationToken ct = default);
     Task<TenderCompetitor> UpdateCompetitorAsync(TenderCompetitor competitor, CancellationToken ct = default);
     Task DeleteCompetitorAsync(int id, CancellationToken ct = default);
@@ -67,6 +71,9 @@ public class TenderService(TenderDbContext db, IFileRegistryService files) : ITe
             .Include(t => t.Guarantees.OrderByDescending(g => g.IssueDate))
             .Include(t => t.Documents.OrderByDescending(d => d.DocumentDate))
             .Include(t => t.Competitors.OrderBy(c => c.Rank))
+            .Include(t => t.Items.OrderBy(i => i.SortOrder).ThenBy(i => i.Id))
+            .Include(t => t.Tasks.OrderBy(x => x.SortOrder).ThenBy(x => x.Id))
+            .AsSplitQuery()
             .FirstOrDefaultAsync(t => t.Id == id, ct);
 
     public async Task<TenderRecord> CreateAsync(TenderRecord tender, CancellationToken ct = default)
@@ -153,9 +160,13 @@ public class TenderService(TenderDbContext db, IFileRegistryService files) : ITe
     {
         var tender = await db.Tenders
             .Include(t => t.Guarantees).Include(t => t.Documents).Include(t => t.Competitors)
+            .Include(t => t.Items).Include(t => t.Tasks)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(t => t.Id == id, ct);
         if (tender is null) return;
 
+        db.TenderItems.RemoveRange(tender.Items);
+        db.WorkTasks.RemoveRange(tender.Tasks);
         db.Guarantees.RemoveRange(tender.Guarantees);
         db.Documents.RemoveRange(tender.Documents);
         db.Competitors.RemoveRange(tender.Competitors);
@@ -262,6 +273,71 @@ public class TenderService(TenderDbContext db, IFileRegistryService files) : ITe
         var document = await db.Documents.FirstOrDefaultAsync(d => d.Id == id, ct);
         if (document is null) return;
         db.Documents.Remove(document);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<TenderItem> AddItemAsync(
+        int tenderId, TenderItem item, CancellationToken ct = default)
+    {
+        ValidateItem(item);
+
+        var tender = await db.Tenders.FirstOrDefaultAsync(t => t.Id == tenderId, ct)
+            ?? throw new InvalidOperationException("Tender not found.");
+
+        item.TenderRecordId = tender.Id;
+
+        if (item.SortOrder == 0)
+        {
+            var last = await db.TenderItems.Where(i => i.TenderRecordId == tender.Id)
+                .MaxAsync(i => (int?)i.SortOrder, ct) ?? 0;
+            item.SortOrder = last + 1;
+        }
+
+        db.TenderItems.Add(item);
+        await db.SaveChangesAsync(ct);
+        return item;
+    }
+
+    public async Task<TenderItem> UpdateItemAsync(TenderItem item, CancellationToken ct = default)
+    {
+        var existing = await db.TenderItems.FirstOrDefaultAsync(i => i.Id == item.Id, ct)
+            ?? throw new InvalidOperationException("Item not found.");
+
+        ValidateItem(item);
+
+        existing.ItemCode = item.ItemCode;
+        existing.Description = item.Description;
+        existing.Specification = item.Specification;
+        existing.Unit = item.Unit;
+        existing.Quantity = item.Quantity;
+        existing.UnitRate = item.UnitRate;
+        existing.EstimatedRate = item.EstimatedRate;
+        existing.CostRate = item.CostRate;
+        existing.Brand = item.Brand;
+        existing.CountryOfOrigin = item.CountryOfOrigin;
+        existing.DeliveryDays = item.DeliveryDays;
+        existing.SortOrder = item.SortOrder;
+        existing.Remarks = item.Remarks;
+
+        await db.SaveChangesAsync(ct);
+        return existing;
+    }
+
+    private static void ValidateItem(TenderItem item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Description))
+            throw new InvalidOperationException("Item description is required.");
+        if (item.Quantity < 0)
+            throw new InvalidOperationException("Quantity cannot be negative.");
+        if (item.UnitRate < 0)
+            throw new InvalidOperationException("Unit rate cannot be negative.");
+    }
+
+    public async Task DeleteItemAsync(int id, CancellationToken ct = default)
+    {
+        var item = await db.TenderItems.FirstOrDefaultAsync(i => i.Id == id, ct);
+        if (item is null) return;
+        db.TenderItems.Remove(item);
         await db.SaveChangesAsync(ct);
     }
 
