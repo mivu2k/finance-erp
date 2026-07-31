@@ -1,0 +1,181 @@
+@page "/tender/projects/new"
+@page "/tender/projects/{Id:int}/edit"
+@attribute [Authorize(Policy = TenderPermissions.ProjectsManage)]
+@layout TenderLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_isNew ? "New Project" : $"Edit {_project.ProjectCode}")</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack"
+                   Href="@(_isNew ? "/tender/projects" : $"/tender/projects/{Id}")" />
+    <MudText Typo="Typo.h5">@(_isNew ? "New Project" : "Edit Project")</MudText>
+</div>
+
+<MudPaper Class="pa-4" MaxWidth="900px">
+    <MudText Typo="Typo.subtitle2" Class="mb-2">Identification</MudText>
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_project.ProjectCode" Label="Project code" Required="true" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="8">
+            <MudTextField @bind-Value="_project.Name" Label="Project name" Required="true" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudTextField @bind-Value="_project.Client" Label="Client" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudTextField @bind-Value="_project.Location" Label="Location / site" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudSelect T="string" Value="_project.ManagerUserId" ValueChanged="OnManagerChanged"
+                       Label="Project manager" Margin="Margin.Dense" Clearable="true">
+                @foreach (var u in _users)
+                {
+                    <MudSelectItem T="string" Value="@u.UserId">@u.FullName</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSelect T="ProjectStatus" @bind-Value="_project.Status" Label="Status" Margin="Margin.Dense">
+                @foreach (var s in Enum.GetValues<ProjectStatus>())
+                {
+                    <MudSelectItem T="ProjectStatus" Value="@s">@s</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSelect T="ProjectPriority" @bind-Value="_project.Priority" Label="Priority" Margin="Margin.Dense">
+                @foreach (var p in Enum.GetValues<ProjectPriority>())
+                {
+                    <MudSelectItem T="ProjectPriority" Value="@p">@p</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12">
+            <MudTextField @bind-Value="_project.Description" Label="Description" Lines="3" Margin="Margin.Dense" />
+        </MudItem>
+    </MudGrid>
+
+    <MudDivider Class="my-4" />
+    <MudText Typo="Typo.subtitle2" Class="mb-2">Commercial</MudText>
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="6">
+            <MudNumericField T="decimal?" @bind-Value="_project.ContractValue" Label="Contract value" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudNumericField T="decimal?" @bind-Value="_project.Budget" Label="Internal budget" Margin="Margin.Dense" />
+        </MudItem>
+    </MudGrid>
+
+    <MudDivider Class="my-4" />
+    <MudText Typo="Typo.subtitle2" Class="mb-2">Schedule</MudText>
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="4">
+            <MudDatePicker @bind-Date="_startDate" Label="Start date" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudDatePicker @bind-Date="_targetEndDate" Label="Target end date" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudDatePicker @bind-Date="_actualEndDate" Label="Actual end date" Margin="Margin.Dense" />
+        </MudItem>
+    </MudGrid>
+
+    <MudDivider Class="my-4" />
+    <MudText Typo="Typo.subtitle2" Class="mb-2">Contact</MudText>
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_project.ContactPerson" Label="Contact person" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_project.ContactPhone" Label="Contact phone" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_project.ContactEmail" Label="Contact email" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12">
+            <MudTextField @bind-Value="_project.Notes" Label="Notes" Lines="3" Margin="Margin.Dense" />
+        </MudItem>
+    </MudGrid>
+
+    <div class="d-flex justify-end gap-2 mt-4">
+        <MudButton Href="@(_isNew ? "/tender/projects" : $"/tender/projects/{Id}")">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
+    </div>
+</MudPaper>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private Project _project = new();
+    private IReadOnlyList<PlatformUser> _users = [];
+    private bool _isNew => Id is null;
+
+    private DateTime? _startDate;
+    private DateTime? _targetEndDate;
+    private DateTime? _actualEndDate;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+
+        _users = await scope.ServiceProvider.GetRequiredService<IPlatformUserDirectory>()
+            .ListForModuleAsync(AppModules.Tender);
+
+        if (Id is { } id)
+        {
+            _project = await scope.ServiceProvider.GetRequiredService<IProjectService>().GetAsync(id)
+                       ?? throw new InvalidOperationException("Project not found.");
+        }
+        else
+        {
+            _project = new Project();
+        }
+
+        _startDate = ToDateTime(_project.StartDate);
+        _targetEndDate = ToDateTime(_project.TargetEndDate);
+        _actualEndDate = ToDateTime(_project.ActualEndDate);
+    }
+
+    private static DateTime? ToDateTime(DateOnly? d) => d?.ToDateTime(TimeOnly.MinValue);
+    private static DateOnly? ToDateOnly(DateTime? d) => d is { } v ? DateOnly.FromDateTime(v) : null;
+
+    // The name is snapshotted alongside the id, so the row still reads correctly
+    // after that user is renamed or deactivated.
+    private void OnManagerChanged(string? userId)
+    {
+        _project.ManagerUserId = userId;
+        _project.ManagerName = _users.FirstOrDefault(u => u.UserId == userId)?.FullName;
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            _project.StartDate = ToDateOnly(_startDate);
+            _project.TargetEndDate = ToDateOnly(_targetEndDate);
+            _project.ActualEndDate = ToDateOnly(_actualEndDate);
+
+            using var scope = ScopeFactory.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<IProjectService>();
+
+            if (_isNew)
+            {
+                var saved = await service.CreateAsync(_project);
+                Snackbar.Add("Project created.", Severity.Success);
+                Nav.NavigateTo($"/tender/projects/{saved.Id}");
+            }
+            else
+            {
+                await service.UpdateAsync(_project);
+                Snackbar.Add("Project saved.", Severity.Success);
+                Nav.NavigateTo($"/tender/projects/{Id}");
+            }
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

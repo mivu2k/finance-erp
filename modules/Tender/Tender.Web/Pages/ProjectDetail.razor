@@ -1,0 +1,571 @@
+@page "/tender/projects/{Id:int}"
+@attribute [Authorize(Policy = TenderPermissions.ProjectsView)]
+@layout TenderLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_project?.ProjectCode ?? "Project")</PageTitle>
+
+@if (_project is null)
+{
+    <MudText>Loading…</MudText>
+}
+else
+{
+    <div class="d-flex align-center mb-4 flex-wrap gap-2">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/tender/projects" />
+        <MudText Typo="Typo.h5">@_project.ProjectCode — @_project.Name</MudText>
+        <MudChip T="string" Size="Size.Small" Color="@Projects.StatusColor(_project.Status)">@_project.Status</MudChip>
+        @if (_project.Priority >= ProjectPriority.High)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Warning">@_project.Priority</MudChip>
+        }
+        <MudSpacer />
+        <AuthorizeView Policy="@TenderPermissions.ProjectsManage">
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Edit"
+                       Href="@($"/tender/projects/{Id}/edit")">Edit</MudButton>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Error"
+                       StartIcon="@Icons.Material.Filled.Delete"
+                       OnClick="@(() => _confirmDeleteProject = true)">Delete</MudButton>
+        </AuthorizeView>
+    </div>
+
+    <MudGrid Spacing="3" Class="mb-2">
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.body2">Client: @_project.Client</MudText>
+            <MudText Typo="Typo.body2">Location: @_project.Location</MudText>
+            <MudText Typo="Typo.body2">Manager: @_project.ManagerName</MudText>
+            <MudText Typo="Typo.body2">Contract value: @_project.ContractValue?.ToString("N2")</MudText>
+            <MudText Typo="Typo.body2">Budget: @_project.Budget?.ToString("N2")</MudText>
+            @if (!string.IsNullOrWhiteSpace(_project.Description))
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2">@_project.Description</MudText>
+            }
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.body2">Start: @_project.StartDate?.ToString("yyyy-MM-dd")</MudText>
+            <MudText Typo="Typo.body2">Target end: @_project.TargetEndDate?.ToString("yyyy-MM-dd")</MudText>
+            <MudText Typo="Typo.body2">Actual end: @_project.ActualEndDate?.ToString("yyyy-MM-dd")</MudText>
+            <MudText Typo="Typo.body2" Class="mt-2">Progress (from tasks)</MudText>
+            <MudProgressLinear Color="Color.Primary" Value="@_project.ProgressPercent" Size="Size.Large" Class="my-1" />
+            <MudText Typo="Typo.caption">
+                @_project.ProgressPercent% — @_project.Tasks.Count(t => t.Status == ProjectTaskStatus.Completed)
+                of @_project.Tasks.Count task(s) complete
+            </MudText>
+            @if (_overdueCount > 0)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">
+                    @_overdueCount task(s) past their due date.
+                </MudAlert>
+            }
+        </MudItem>
+    </MudGrid>
+
+    <MudTabs Elevation="1" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4" Class="mt-2">
+
+        @* ---------------- tasks ---------------- *@
+        <MudTabPanel Text="@($"Tasks ({_project.Tasks.Count})")" Icon="@Icons.Material.Filled.Checklist">
+            <div class="d-flex align-center mb-3 flex-wrap gap-2">
+                <MudSelect T="ProjectTaskStatus?" @bind-Value="_taskFilter" Label="Filter by status"
+                           Margin="Margin.Dense" Clearable="true" Style="max-width:240px">
+                    @foreach (var s in Enum.GetValues<ProjectTaskStatus>())
+                    {
+                        <MudSelectItem T="ProjectTaskStatus?" Value="@((ProjectTaskStatus?)s)">@s</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudSpacer />
+                <AuthorizeView Policy="@TenderPermissions.TasksManage">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Add"
+                               OnClick="@(() => OpenTask(null))">Add Task</MudButton>
+                </AuthorizeView>
+            </div>
+
+            <MudSimpleTable Dense="true" Hover="true" Striped="true" Style="overflow-x:auto">
+                <thead>
+                    <tr>
+                        <th>#</th><th>Task</th><th>Assigned To</th><th>Start</th><th>Due</th>
+                        <th>Progress</th><th>Priority</th><th>Status</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var t in FilteredTasks)
+                    {
+                        <tr>
+                            <td>@t.SortOrder</td>
+                            <td>
+                                @t.Title
+                                @if (!string.IsNullOrWhiteSpace(t.Description))
+                                {
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">@t.Description</MudText>
+                                }
+                            </td>
+                            <td>@t.AssignedToName</td>
+                            <td>@t.StartDate?.ToString("yyyy-MM-dd")</td>
+                            <td>
+                                @t.DueDate?.ToString("yyyy-MM-dd")
+                                @if (t.IsOverdue)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Error" Class="ml-1">late</MudChip>
+                                }
+                            </td>
+                            <td style="min-width:110px">
+                                <MudProgressLinear Color="Color.Primary" Value="@t.ProgressPercent" Size="Size.Small" />
+                                <MudText Typo="Typo.caption">@t.ProgressPercent%</MudText>
+                            </td>
+                            <td>@t.Priority</td>
+                            <td>
+                                <MudChip T="string" Size="Size.Small" Color="@TaskColor(t.Status)">@t.Status</MudChip>
+                            </td>
+                            <td style="white-space:nowrap">
+                                <AuthorizeView Policy="@TenderPermissions.TasksManage" Context="tc">
+                                    @if (t.Status is not (ProjectTaskStatus.Completed or ProjectTaskStatus.Cancelled))
+                                    {
+                                        <MudIconButton Icon="@Icons.Material.Filled.Done" Size="Size.Small" Color="Color.Success"
+                                                       OnClick="@(() => SetTaskStatusAsync(t.Id, ProjectTaskStatus.Completed))" />
+                                    }
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                                   OnClick="@(() => OpenTask(t))" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                                   OnClick="@(() => _confirmDeleteTaskId = t.Id)" />
+                                </AuthorizeView>
+                            </td>
+                        </tr>
+                    }
+                    @if (FilteredTasks.Count == 0)
+                    {
+                        <tr><td colspan="9" class="mud-text-secondary pa-4">No tasks yet.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudTabPanel>
+
+        @* ---------------- milestones ---------------- *@
+        <MudTabPanel Text="@($"Milestones ({_project.Milestones.Count})")" Icon="@Icons.Material.Filled.Flag">
+            <div class="d-flex align-center mb-3">
+                <MudSpacer />
+                <AuthorizeView Policy="@TenderPermissions.ProjectsManage">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Add"
+                               OnClick="@(() => OpenMilestone(null))">Add Milestone</MudButton>
+                </AuthorizeView>
+            </div>
+
+            <MudSimpleTable Dense="true" Hover="true" Striped="true" Style="overflow-x:auto">
+                <thead>
+                    <tr>
+                        <th>#</th><th>Milestone</th><th>Due</th><th>Achieved</th>
+                        <th>Payment</th><th>Status</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var m in _project.Milestones)
+                    {
+                        <tr>
+                            <td>@m.SortOrder</td>
+                            <td>
+                                @m.Name
+                                @if (!string.IsNullOrWhiteSpace(m.Description))
+                                {
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">@m.Description</MudText>
+                                }
+                            </td>
+                            <td>
+                                @m.DueDate.ToString("yyyy-MM-dd")
+                                @if (m.IsOverdue)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Error" Class="ml-1">late</MudChip>
+                                }
+                            </td>
+                            <td>@m.AchievedDate?.ToString("yyyy-MM-dd")</td>
+                            <td>@m.PaymentAmount?.ToString("N2")</td>
+                            <td>
+                                <MudChip T="string" Size="Size.Small" Color="@MilestoneColor(m.Status)">@m.Status</MudChip>
+                            </td>
+                            <td style="white-space:nowrap">
+                                <AuthorizeView Policy="@TenderPermissions.ProjectsManage" Context="mc">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                                   OnClick="@(() => OpenMilestone(m))" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                                   OnClick="@(() => _confirmDeleteMilestoneId = m.Id)" />
+                                </AuthorizeView>
+                            </td>
+                        </tr>
+                    }
+                    @if (_project.Milestones.Count == 0)
+                    {
+                        <tr><td colspan="7" class="mud-text-secondary pa-4">No milestones yet.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudTabPanel>
+    </MudTabs>
+}
+
+@* --- task editor overlay --- *@
+@if (_taskForm is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:640px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_editingTaskId is null ? "Add Task" : "Edit Task")</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_taskForm.Title" Label="Title" Required="true" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_taskForm.Description" Label="Description" Lines="2" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="string" Value="_taskForm.AssignedToUserId" ValueChanged="OnAssigneeChanged"
+                               Label="Assigned to" Margin="Margin.Dense" Clearable="true">
+                        @foreach (var u in _users)
+                        {
+                            <MudSelectItem T="string" Value="@u.UserId">@u.FullName</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudSelect T="ProjectTaskStatus" @bind-Value="_taskForm.Status" Label="Status" Margin="Margin.Dense">
+                        @foreach (var s in Enum.GetValues<ProjectTaskStatus>())
+                        {
+                            <MudSelectItem T="ProjectTaskStatus" Value="@s">@s</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudSelect T="ProjectPriority" @bind-Value="_taskForm.Priority" Label="Priority" Margin="Margin.Dense">
+                        @foreach (var p in Enum.GetValues<ProjectPriority>())
+                        {
+                            <MudSelectItem T="ProjectPriority" Value="@p">@p</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="4">
+                    <MudDatePicker @bind-Date="_taskStartDate" Label="Start date" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6" md="4">
+                    <MudDatePicker @bind-Date="_taskDueDate" Label="Due date" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField T="int" @bind-Value="_taskForm.ProgressPercent" Label="Progress %"
+                                     Min="0" Max="100" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField T="decimal?" @bind-Value="_taskForm.EstimatedHours" Label="Estimated hours" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField T="decimal?" @bind-Value="_taskForm.ActualHours" Label="Actual hours" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField T="int" @bind-Value="_taskForm.SortOrder" Label="Order" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_taskForm.Notes" Label="Notes" Lines="2" Margin="Margin.Dense" />
+                </MudItem>
+            </MudGrid>
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _taskForm = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveTaskAsync">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@* --- milestone editor overlay --- *@
+@if (_milestoneForm is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:520px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_editingMilestoneId is null ? "Add Milestone" : "Edit Milestone")</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_milestoneForm.Name" Label="Name" Required="true" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_milestoneForm.Description" Label="Description" Lines="2" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudDatePicker @bind-Date="_milestoneDueDate" Label="Due date" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudDatePicker @bind-Date="_milestoneAchievedDate" Label="Achieved date" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudSelect T="MilestoneStatus" @bind-Value="_milestoneForm.Status" Label="Status" Margin="Margin.Dense">
+                        @foreach (var s in Enum.GetValues<MilestoneStatus>())
+                        {
+                            <MudSelectItem T="MilestoneStatus" Value="@s">@s</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField T="decimal?" @bind-Value="_milestoneForm.PaymentAmount" Label="Payment amount" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField T="int" @bind-Value="_milestoneForm.SortOrder" Label="Order" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_milestoneForm.Notes" Label="Notes" Lines="2" Margin="Margin.Dense" />
+                </MudItem>
+            </MudGrid>
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _milestoneForm = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveMilestoneAsync">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@* --- confirmations --- *@
+<MudDialog Visible="_confirmDeleteProject" VisibleChanged="@(v => _confirmDeleteProject = v)">
+    <TitleContent><MudText Typo="Typo.h6">Delete project?</MudText></TitleContent>
+    <DialogContent>
+        <MudText>This removes the project along with its tasks and milestones. It can be restored by an administrator.</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _confirmDeleteProject = false)">Cancel</MudButton>
+        <MudButton Color="Color.Error" OnClick="DeleteProjectAsync">Delete</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog Visible="_confirmDeleteTaskId is not null" VisibleChanged="@(v => { if (!v) _confirmDeleteTaskId = null; })">
+    <TitleContent><MudText Typo="Typo.h6">Delete task?</MudText></TitleContent>
+    <DialogContent><MudText>This task will be removed from the project.</MudText></DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _confirmDeleteTaskId = null)">Cancel</MudButton>
+        <MudButton Color="Color.Error" OnClick="DeleteTaskAsync">Delete</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog Visible="_confirmDeleteMilestoneId is not null" VisibleChanged="@(v => { if (!v) _confirmDeleteMilestoneId = null; })">
+    <TitleContent><MudText Typo="Typo.h6">Delete milestone?</MudText></TitleContent>
+    <DialogContent><MudText>This milestone will be removed from the project.</MudText></DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _confirmDeleteMilestoneId = null)">Cancel</MudButton>
+        <MudButton Color="Color.Error" OnClick="DeleteMilestoneAsync">Delete</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Project? _project;
+    private IReadOnlyList<PlatformUser> _users = [];
+
+    private ProjectTaskStatus? _taskFilter;
+    private int _overdueCount;
+
+    private ProjectTask? _taskForm;
+    private int? _editingTaskId;
+    private DateTime? _taskStartDate;
+    private DateTime? _taskDueDate;
+
+    private ProjectMilestone? _milestoneForm;
+    private int? _editingMilestoneId;
+    private DateTime? _milestoneDueDate;
+    private DateTime? _milestoneAchievedDate;
+
+    private bool _confirmDeleteProject;
+    private int? _confirmDeleteTaskId;
+    private int? _confirmDeleteMilestoneId;
+
+    private List<ProjectTask> FilteredTasks =>
+        _project is null
+            ? []
+            : _taskFilter is { } f
+                ? _project.Tasks.Where(t => t.Status == f).ToList()
+                : _project.Tasks;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _project = await scope.ServiceProvider.GetRequiredService<IProjectService>().GetAsync(Id);
+        _users = await scope.ServiceProvider.GetRequiredService<IPlatformUserDirectory>()
+            .ListForModuleAsync(AppModules.Tender);
+        _overdueCount = _project?.Tasks.Count(t => t.IsOverdue) ?? 0;
+        StateHasChanged();
+    }
+
+    private static DateTime? ToDateTime(DateOnly? d) => d?.ToDateTime(TimeOnly.MinValue);
+    private static DateOnly? ToDateOnly(DateTime? d) => d is { } v ? DateOnly.FromDateTime(v) : null;
+
+    // ---- tasks ----
+
+    private void OpenTask(ProjectTask? task)
+    {
+        _editingTaskId = task?.Id;
+        _taskForm = task is null
+            ? new ProjectTask()
+            : new ProjectTask
+            {
+                Id = task.Id,
+                ProjectId = task.ProjectId,
+                Title = task.Title,
+                Description = task.Description,
+                AssignedToUserId = task.AssignedToUserId,
+                AssignedToName = task.AssignedToName,
+                Status = task.Status,
+                Priority = task.Priority,
+                ProgressPercent = task.ProgressPercent,
+                EstimatedHours = task.EstimatedHours,
+                ActualHours = task.ActualHours,
+                SortOrder = task.SortOrder,
+                Notes = task.Notes,
+                StartDate = task.StartDate,
+                DueDate = task.DueDate,
+                CompletedDate = task.CompletedDate
+            };
+
+        _taskStartDate = ToDateTime(_taskForm.StartDate);
+        _taskDueDate = ToDateTime(_taskForm.DueDate);
+    }
+
+    private void OnAssigneeChanged(string? userId)
+    {
+        if (_taskForm is null) return;
+        _taskForm.AssignedToUserId = userId;
+        _taskForm.AssignedToName = _users.FirstOrDefault(u => u.UserId == userId)?.FullName;
+    }
+
+    private async Task SaveTaskAsync()
+    {
+        try
+        {
+            _taskForm!.StartDate = ToDateOnly(_taskStartDate);
+            _taskForm.DueDate = ToDateOnly(_taskDueDate);
+
+            using var scope = ScopeFactory.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<IProjectService>();
+
+            if (_editingTaskId is null) await service.AddTaskAsync(Id, _taskForm);
+            else await service.UpdateTaskAsync(_taskForm);
+
+            _taskForm = null;
+            Snackbar.Add("Task saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task SetTaskStatusAsync(int taskId, ProjectTaskStatus status)
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IProjectService>()
+                .SetTaskStatusAsync(taskId, status);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DeleteTaskAsync()
+    {
+        if (_confirmDeleteTaskId is not { } taskId) return;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IProjectService>().DeleteTaskAsync(taskId);
+            _confirmDeleteTaskId = null;
+            Snackbar.Add("Task deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    // ---- milestones ----
+
+    private void OpenMilestone(ProjectMilestone? milestone)
+    {
+        _editingMilestoneId = milestone?.Id;
+        _milestoneForm = milestone is null
+            ? new ProjectMilestone { DueDate = DateOnly.FromDateTime(DateTime.Today) }
+            : new ProjectMilestone
+            {
+                Id = milestone.Id,
+                ProjectId = milestone.ProjectId,
+                Name = milestone.Name,
+                Description = milestone.Description,
+                DueDate = milestone.DueDate,
+                AchievedDate = milestone.AchievedDate,
+                Status = milestone.Status,
+                PaymentAmount = milestone.PaymentAmount,
+                SortOrder = milestone.SortOrder,
+                Notes = milestone.Notes
+            };
+
+        _milestoneDueDate = _milestoneForm.DueDate.ToDateTime(TimeOnly.MinValue);
+        _milestoneAchievedDate = ToDateTime(_milestoneForm.AchievedDate);
+    }
+
+    private async Task SaveMilestoneAsync()
+    {
+        try
+        {
+            _milestoneForm!.DueDate = ToDateOnly(_milestoneDueDate)
+                                      ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            _milestoneForm.AchievedDate = ToDateOnly(_milestoneAchievedDate);
+
+            using var scope = ScopeFactory.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<IProjectService>();
+
+            if (_editingMilestoneId is null) await service.AddMilestoneAsync(Id, _milestoneForm);
+            else await service.UpdateMilestoneAsync(_milestoneForm);
+
+            _milestoneForm = null;
+            Snackbar.Add("Milestone saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DeleteMilestoneAsync()
+    {
+        if (_confirmDeleteMilestoneId is not { } milestoneId) return;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IProjectService>()
+                .DeleteMilestoneAsync(milestoneId);
+            _confirmDeleteMilestoneId = null;
+            Snackbar.Add("Milestone deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    // ---- project ----
+
+    private async Task DeleteProjectAsync()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IProjectService>().DeleteAsync(Id);
+            Snackbar.Add("Project deleted.", Severity.Success);
+            Nav.NavigateTo("/tender/projects");
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private static Color TaskColor(ProjectTaskStatus status) => status switch
+    {
+        ProjectTaskStatus.Completed => Color.Success,
+        ProjectTaskStatus.InProgress => Color.Info,
+        ProjectTaskStatus.Blocked => Color.Warning,
+        ProjectTaskStatus.Cancelled => Color.Error,
+        _ => Color.Default
+    };
+
+    private static Color MilestoneColor(MilestoneStatus status) => status switch
+    {
+        MilestoneStatus.Achieved => Color.Success,
+        MilestoneStatus.Missed => Color.Error,
+        MilestoneStatus.Cancelled => Color.Error,
+        _ => Color.Default
+    };
+}

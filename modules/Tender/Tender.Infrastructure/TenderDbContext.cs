@@ -12,6 +12,9 @@ public class TenderDbContext(DbContextOptions<TenderDbContext> options, ICurrent
     public DbSet<TenderGuarantee> Guarantees => Set<TenderGuarantee>();
     public DbSet<TenderDocument> Documents => Set<TenderDocument>();
     public DbSet<TenderCompetitor> Competitors => Set<TenderCompetitor>();
+    public DbSet<Project> Projects => Set<Project>();
+    public DbSet<ProjectTask> ProjectTasks => Set<ProjectTask>();
+    public DbSet<ProjectMilestone> ProjectMilestones => Set<ProjectMilestone>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -85,6 +88,60 @@ public class TenderDbContext(DbContextOptions<TenderDbContext> options, ICurrent
             e.HasOne(x => x.TenderRecord).WithMany(x => x.Competitors)
                 .HasForeignKey(x => x.TenderRecordId).OnDelete(DeleteBehavior.Cascade);
             e.HasQueryFilter(x => !x.IsDeleted && !x.TenderRecord.IsDeleted);
+        });
+
+        b.Entity<Project>(e =>
+        {
+            e.HasIndex(x => x.ProjectCode).IsUnique();
+            e.Property(x => x.ProjectCode).HasMaxLength(64);
+            e.Property(x => x.Name).HasMaxLength(300);
+            e.Property(x => x.Client).HasMaxLength(300);
+            e.Property(x => x.Description).HasMaxLength(2000);
+            e.Property(x => x.Location).HasMaxLength(300);
+            e.Property(x => x.ManagerUserId).HasMaxLength(450);
+            e.Property(x => x.ManagerName).HasMaxLength(200);
+            e.Property(x => x.ContractValue).HasPrecision(16, 2);
+            e.Property(x => x.Budget).HasPrecision(16, 2);
+            e.Property(x => x.ContactPerson).HasMaxLength(200);
+            e.Property(x => x.ContactPhone).HasMaxLength(50);
+            e.Property(x => x.ContactEmail).HasMaxLength(200);
+            e.Property(x => x.Notes).HasMaxLength(2000);
+            // Derived from the task list — never a column, or the two drift apart.
+            e.Ignore(x => x.ProgressPercent);
+            e.Ignore(x => x.IsOpen);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        b.Entity<ProjectTask>(e =>
+        {
+            e.HasIndex(x => x.ProjectId);
+            e.HasIndex(x => x.DueDate);
+            e.HasIndex(x => x.AssignedToUserId);
+            e.Property(x => x.Title).HasMaxLength(300);
+            e.Property(x => x.Description).HasMaxLength(2000);
+            e.Property(x => x.AssignedToUserId).HasMaxLength(450);
+            e.Property(x => x.AssignedToName).HasMaxLength(200);
+            e.Property(x => x.EstimatedHours).HasPrecision(10, 2);
+            e.Property(x => x.ActualHours).HasPrecision(10, 2);
+            e.Property(x => x.Notes).HasMaxLength(1000);
+            e.Ignore(x => x.IsOverdue);
+            e.HasOne(x => x.Project).WithMany(x => x.Tasks)
+                .HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(x => !x.IsDeleted && !x.Project.IsDeleted);
+        });
+
+        b.Entity<ProjectMilestone>(e =>
+        {
+            e.HasIndex(x => x.ProjectId);
+            e.HasIndex(x => x.DueDate);
+            e.Property(x => x.Name).HasMaxLength(300);
+            e.Property(x => x.Description).HasMaxLength(1000);
+            e.Property(x => x.PaymentAmount).HasPrecision(16, 2);
+            e.Property(x => x.Notes).HasMaxLength(1000);
+            e.Ignore(x => x.IsOverdue);
+            e.HasOne(x => x.Project).WithMany(x => x.Milestones)
+                .HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(x => !x.IsDeleted && !x.Project.IsDeleted);
         });
     }
 }

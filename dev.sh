@@ -48,7 +48,7 @@ db_ensure() {
         sql+="GRANT ALL PRIVILEGES ON $d.* TO 'finance'@'127.0.0.1';"
     done
     # Integration tests spin up and drop their own throwaway databases.
-    for t in erp_hr_test erp_repair_test erp_inventory_test erp_ledger_test finance_erp_test; do
+    for t in erp_hr_test erp_repair_test erp_inventory_test erp_ledger_test erp_tender_test finance_erp_test; do
         sql+="GRANT ALL PRIVILEGES ON \`${t}%\`.* TO 'finance'@'localhost';"
         sql+="GRANT ALL PRIVILEGES ON \`${t}%\`.* TO 'finance'@'127.0.0.1';"
     done

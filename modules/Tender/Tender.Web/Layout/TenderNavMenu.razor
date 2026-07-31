@@ -12,6 +12,15 @@
         </MudNavGroup>
     </AuthorizeView>
 
+    <AuthorizeView Policy="@TenderPermissions.ProjectsView" Context="p">
+        <MudNavGroup Title="Projects" Icon="@Icons.Material.Filled.Engineering" Expanded="true">
+            <MudNavLink Href="/tender/projects" Icon="@Icons.Material.Filled.List">All Projects</MudNavLink>
+            <AuthorizeView Policy="@TenderPermissions.ProjectsManage" Context="pc">
+                <MudNavLink Href="/tender/projects/new" Icon="@Icons.Material.Filled.AddBox">New Project</MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
+    </AuthorizeView>
+
     <AuthorizeView Policy="@TenderPermissions.ReportsView" Context="r">
         <MudNavLink Href="/tender/reports" Icon="@Icons.Material.Filled.Assessment">
             Reports

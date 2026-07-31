@@ -200,6 +200,34 @@ These apply to the **Finance** module specifically:
 - **Leave balances hold days while a request is open** (`Pending`), so two
   requests can't spend the same entitlement before either is decided.
 
+## Tender & Projects — two registers, one module
+
+`/tender` holds two things that share a database and nothing else.
+
+- **Tenders** run notice → submission → opening → award, with `TenderGuarantee`
+  carrying every EMD, bid bond and performance guarantee lodged against them (a
+  tender accumulates several over its life, so it's a list, not fields on the tender).
+- **Projects are deliberately standalone** — `Project` has no FK to `TenderRecord`.
+  Plenty of work never went to tender, and a project's schedule has nothing to do
+  with a bid's. Don't "helpfully" link them; it was an explicit decision.
+- **A project's progress is derived, never stored.** `Project.ProgressPercent`
+  averages its tasks and is `Ignore()`d in the model — a stored percentage and a task
+  list disagree the moment either moves. **Cancelled tasks are excluded rather than
+  counted as done**, so dropping scope can't flatter the figure.
+- **`ProjectService.Reconcile` is what stops status, percentage and date
+  contradicting each other**: completing a task forces 100% and stamps the completion
+  date; re-opening one clears that date and caps the percentage below 100; any
+  progress on a `NotStarted` task moves it to `InProgress`. Every write path goes
+  through it — that's the invariant to preserve.
+- **A milestone is a date that is met or missed, not work carried out.** That's why
+  it's separate from a task and is what payment stages hang off.
+- **`tender.tasks.manage` is separate from `tender.projects.manage`** so a team
+  member can progress their own work (and `SetTaskStatusAsync` moves a task from the
+  board without touching the rest of the row) without being able to re-scope or
+  delete the project. `Project Member` is that role.
+- Assignee and manager are stored as an Identity user id **plus a name snapshot**,
+  like everywhere else — no cross-database FK.
+
 ## Plain Ledger — the hand-ledger module
 
 Single-entry books arranged in a tree, for the informal money-lending case: you
@@ -243,7 +271,7 @@ Seven apps behind one login, chosen from the portal at `/`:
 | Inventory | `/inventory` | `erp_inventory` | products → models → accessories, stock ledger, full CRUD |
 | Auto | `/auto` | `erp_auto` | company vehicle fleet + maintenance history, full CRUD |
 | Plain Ledger | `/ledger` | `erp_ledger` | hand-ledger tree: main/sub ledgers, paired transfers, own nested heads |
-| Tender & Projects | `/tender` | `erp_tender` | tender records, EMDs, bank guarantees and other securities |
+| Tender & Projects | `/tender` | `erp_tender` | tenders + EMDs/guarantees, and a standalone project register with tasks and milestones |
 
 
 Implemented and wired end-to-end (service + page + nav): accounts, vouchers, ledger,
@@ -265,20 +293,26 @@ UI yet. Not ported: the customer-facing tracking page, Excel report exports.
 
 Known gaps, roughly in priority order:
 
-1. **Finance is barely tested.** 142 tests exist —
-   `tests/ErpPlatform.Shared.Tests` (27, Code 128 and QR round-trip through decoders —
+1. **Finance is barely tested.** 211 tests exist —
+   `tests/ErpPlatform.Shared.Tests` (37, Code 128 and QR round-trip through decoders —
    QR against ZXing, a test-only dependency),
    `tests/Hr.Tests` (42, the rotating attendance token and attendance arithmetic),
    `tests/Repair.Tests` (39, job workflow, quotation and purchase pricing, the
    collective-quotation save path, plus PDF render smoke tests) and
-   `tests/Inventory.Tests` (10, stock ledger arithmetic, cache rebuild and the
+   `tests/Inventory.Tests` (49, stock ledger arithmetic, cache rebuild and the
    delete-while-holding-stock guards), and
    `tests/Ledger.Tests` (17, the worked 1-lac-to-two-people scenario: transfer
    pairing, tree rollup, re-parent cycle guard, head rollup and head deletion), and
+   `tests/GatePass.Tests` (11), and
+   `tests/Tender.Tests` (9, project progress rollup, the task status/percentage/date
+   reconcile and the overdue query), and
    `tests/Finance.Tests` (7, third-party account placement and the debit/credit
    posting sides). The
    integration tests create and drop their own throwaway databases and skip when no
-   server is reachable. Most of Finance is still uncovered, and Auto entirely:
+   server is reachable. **A test suite that finishes suspiciously fast is skipping,
+   not passing** — the throwaway name needs a wildcard grant in `dev.sh`'s
+   `db_ensure`, or `EnsureCreatedAsync` fails and every test silently returns.
+   Most of Finance is still uncovered, and Auto entirely:
    `VoucherService`, `PaymentRequestService.SettleAsync`,
    `PayrollService.GenerateAsync`/`PayRunAsync` and `CloseFiscalYearAsync` remain
    subtle and unverified.

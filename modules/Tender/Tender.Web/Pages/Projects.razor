@@ -1,0 +1,115 @@
+@page "/tender/projects"
+@attribute [Authorize(Policy = TenderPermissions.ProjectsView)]
+@layout TenderLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>Projects</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Projects</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@TenderPermissions.ProjectsManage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.AddBox"
+                   Href="/tender/projects/new">New Project</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="8">
+            <MudTextField @bind-Value="_search" Label="Search code, name, client or manager" Margin="Margin.Dense"
+                          Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="LoadAsync"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudSelect T="ProjectStatus?" Value="_status" ValueChanged="OnStatusChanged" Label="Status"
+                       Margin="Margin.Dense" Clearable="true">
+                @foreach (var s in Enum.GetValues<ProjectStatus>())
+                {
+                    <MudSelectItem T="ProjectStatus?" Value="@((ProjectStatus?)s)">@s</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr>
+                <th>Code</th><th>Name</th><th>Client</th><th>Manager</th>
+                <th>Contract Value</th><th>Target End</th><th>Progress</th>
+                <th>Tasks</th><th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in _projects)
+            {
+                var openTasks = p.Tasks.Count(t => t.Status is ProjectTaskStatus.NotStarted
+                    or ProjectTaskStatus.InProgress or ProjectTaskStatus.Blocked);
+                var overdue = p.Tasks.Count(t => t.IsOverdue);
+
+                <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/tender/projects/{p.Id}"))">
+                    <td>@p.ProjectCode</td>
+                    <td>@p.Name</td>
+                    <td>@p.Client</td>
+                    <td>@p.ManagerName</td>
+                    <td>@p.ContractValue?.ToString("N0")</td>
+                    <td>@p.TargetEndDate?.ToString("yyyy-MM-dd")</td>
+                    <td style="min-width:120px">
+                        <MudProgressLinear Color="Color.Primary" Value="@p.ProgressPercent" Size="Size.Small" />
+                        <MudText Typo="Typo.caption">@p.ProgressPercent%</MudText>
+                    </td>
+                    <td>
+                        @openTasks open / @p.Tasks.Count
+                        @if (overdue > 0)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error" Class="ml-1">@overdue late</MudChip>
+                        }
+                    </td>
+                    <td>
+                        <MudChip T="string" Size="Size.Small" Color="@StatusColor(p.Status)">@p.Status</MudChip>
+                    </td>
+                </tr>
+            }
+            @if (_projects.Count == 0)
+            {
+                <tr><td colspan="9" class="mud-text-secondary pa-4">No projects match this filter.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private List<Project> _projects = [];
+    private string? _search;
+    private ProjectStatus? _status;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task OnStatusChanged(ProjectStatus? status)
+    {
+        _status = status;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _projects = await scope.ServiceProvider.GetRequiredService<IProjectService>()
+            .ListAsync(_search, _status);
+        StateHasChanged();
+    }
+
+    internal static Color StatusColor(ProjectStatus status) => status switch
+    {
+        ProjectStatus.Completed => Color.Success,
+        ProjectStatus.Active => Color.Info,
+        ProjectStatus.OnHold => Color.Warning,
+        ProjectStatus.Cancelled => Color.Error,
+        _ => Color.Default
+    };
+}

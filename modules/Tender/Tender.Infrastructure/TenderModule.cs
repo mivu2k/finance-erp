@@ -19,21 +19,38 @@ public static class TenderModule
             P(TenderPermissions.TendersManage, "Tenders", "Add and edit tender records"),
             P(TenderPermissions.GuaranteesManage, "Guarantees", "Record EMDs, bank guarantees and other securities"),
             P(TenderPermissions.DocumentsManage, "Documents", "Log tender-related documents"),
-            P(TenderPermissions.ReportsView, "Reports", "Pipeline, win-rate and guarantee-expiry reports")
+            P(TenderPermissions.ReportsView, "Reports", "Pipeline, win-rate and guarantee-expiry reports"),
+            P(TenderPermissions.ProjectsView, "Projects", "View projects, their tasks and milestones"),
+            P(TenderPermissions.ProjectsManage, "Projects", "Add and edit projects and their milestones"),
+            P(TenderPermissions.TasksManage, "Projects", "Add, assign and progress project tasks")
         ],
         [
-            new(TenderRoles.Manager, "Full control of tenders, guarantees and documents.", TenderPermissions.All),
+            new(TenderRoles.Manager, "Full control of tenders, guarantees, documents and projects.",
+                TenderPermissions.All),
 
             new(TenderRoles.Officer, "Prepares and tracks tenders day to day.",
             [
                 TenderPermissions.TendersView, TenderPermissions.TendersManage,
                 TenderPermissions.GuaranteesManage, TenderPermissions.DocumentsManage,
-                TenderPermissions.ReportsView
+                TenderPermissions.ReportsView, TenderPermissions.ProjectsView
+            ]),
+
+            new(TenderRoles.ProjectManager, "Runs projects: full control of projects, tasks and milestones.",
+            [
+                TenderPermissions.ProjectsView, TenderPermissions.ProjectsManage,
+                TenderPermissions.TasksManage, TenderPermissions.ReportsView
+            ]),
+
+            // Works the task board without being able to re-scope or delete the project.
+            new(TenderRoles.ProjectMember, "Progresses tasks on projects they are assigned to.",
+            [
+                TenderPermissions.ProjectsView, TenderPermissions.TasksManage
             ]),
 
             new(TenderRoles.Viewer, "Read-only.",
             [
-                TenderPermissions.TendersView, TenderPermissions.ReportsView
+                TenderPermissions.TendersView, TenderPermissions.ProjectsView,
+                TenderPermissions.ReportsView
             ])
         ]);
 
@@ -48,6 +65,7 @@ public static class TenderModule
             o.UseMySql(cs, ServerVersion.AutoDetect(cs), my => my.EnableRetryOnFailure(3)));
 
         services.AddScoped<ITenderService, TenderService>();
+        services.AddScoped<IProjectService, ProjectService>();
         services.AddScoped<ITenderReportService, TenderReportService>();
         services.AddScoped<ITenderPrintService, TenderPrintService>();
 
