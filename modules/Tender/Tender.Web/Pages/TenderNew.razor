@@ -1,0 +1,195 @@
+@page "/tender/tenders/new"
+@page "/tender/tenders/{Id:int}/edit"
+@attribute [Authorize(Policy = TenderPermissions.TendersManage)]
+@layout TenderLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_isNew ? "New Tender" : $"Edit {_tender.TenderNumber}")</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack"
+                   Href="@(_isNew ? "/tender/tenders" : $"/tender/tenders/{Id}")" />
+    <MudText Typo="Typo.h5">@(_isNew ? "New Tender" : "Edit Tender")</MudText>
+</div>
+
+<MudPaper Class="pa-4" MaxWidth="900px">
+    <MudText Typo="Typo.subtitle2" Class="mb-2">Identification</MudText>
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_tender.TenderNumber" Label="Tender reference number" Required="true" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="8">
+            <MudTextField @bind-Value="_tender.Title" Label="Title" Required="true" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudTextField @bind-Value="_tender.IssuingAuthority" Label="Issuing authority" Required="true" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudTextField @bind-Value="_tender.Department" Label="Department" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12">
+            <MudTextField @bind-Value="_tender.Description" Label="Description / scope" Lines="3" Margin="Margin.Dense" />
+        </MudItem>
+    </MudGrid>
+
+    <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Commercials</MudText>
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="4">
+            <MudNumericField T="decimal" @bind-Value="_tender.EstimatedValue" Label="Estimated value" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudNumericField T="decimal?" @bind-Value="_tender.TenderFee" Label="Tender fee" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudSelect T="SubmissionMode" @bind-Value="_tender.SubmissionMode" Label="Submission mode" Margin="Margin.Dense">
+                @foreach (var m in Enum.GetValues<SubmissionMode>())
+                {
+                    <MudSelectItem T="SubmissionMode" Value="@m">@m</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="12" md="3">
+            <MudCheckBox @bind-Value="_tender.IsEmdExempted" Label="EMD exempted" Dense="true" />
+        </MudItem>
+        @if (!_tender.IsEmdExempted)
+        {
+            <MudItem xs="12" md="3">
+                <MudNumericField T="decimal?" @bind-Value="_tender.EmdAmount" Label="EMD amount" Margin="Margin.Dense" />
+            </MudItem>
+        }
+        else
+        {
+            <MudItem xs="12" md="5">
+                <MudTextField @bind-Value="_tender.EmdExemptionReason" Label="Exemption reason" Margin="Margin.Dense" />
+            </MudItem>
+        }
+        <MudItem xs="12" md="3">
+            <MudNumericField T="decimal?" @bind-Value="_tender.PerformanceGuaranteePercentage"
+                              Label="Performance guarantee %" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudNumericField T="decimal?" @bind-Value="_tender.RetentionMoneyPercentage"
+                              Label="Retention money %" Margin="Margin.Dense" />
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_tender.PortalReference" Label="Portal reference / URL" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudNumericField T="int?" @bind-Value="_tender.BidValidityDays" Label="Bid validity (days)" Margin="Margin.Dense" />
+        </MudItem>
+    </MudGrid>
+
+    <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Timeline</MudText>
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="3"><MudDatePicker @bind-Date="_publishDate" Label="Publish date" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12" md="3"><MudDatePicker @bind-Date="_submissionDeadline" Label="Submission deadline" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12" md="3"><MudDatePicker @bind-Date="_technicalOpeningDate" Label="Technical opening" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12" md="3"><MudDatePicker @bind-Date="_financialOpeningDate" Label="Financial opening" Margin="Margin.Dense" /></MudItem>
+    </MudGrid>
+
+    <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Status &amp; outcome</MudText>
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="3">
+            <MudSelect T="TenderStatus" @bind-Value="_tender.Status" Label="Status" Margin="Margin.Dense">
+                @foreach (var s in Enum.GetValues<TenderStatus>())
+                {
+                    <MudSelectItem T="TenderStatus" Value="@s">@s</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3"><MudNumericField T="int?" @bind-Value="_tender.OurRank" Label="Our rank at opening" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12" md="3"><MudNumericField T="decimal?" @bind-Value="_tender.L1Amount" Label="L1 amount" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12" md="3"></MudItem>
+
+        <MudItem xs="12" md="3"><MudNumericField T="decimal?" @bind-Value="_tender.AwardedValue" Label="Awarded value" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12" md="3"><MudDatePicker @bind-Date="_awardDate" Label="Award date" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12" md="6"><MudTextField @bind-Value="_tender.WorkOrderNumber" Label="Work order number" Margin="Margin.Dense" /></MudItem>
+
+        <MudItem xs="12" md="3"><MudDatePicker @bind-Date="_contractStartDate" Label="Contract start" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12" md="3"><MudDatePicker @bind-Date="_contractEndDate" Label="Contract end" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12" md="3"><MudNumericField T="int?" @bind-Value="_tender.CompletionPeriodDays" Label="Completion period (days)" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12" md="3"><MudNumericField T="int?" @bind-Value="_tender.DefectLiabilityPeriodMonths" Label="Defect liability (months)" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12"><MudTextField @bind-Value="_tender.PaymentTerms" Label="Payment terms" Lines="2" Margin="Margin.Dense" /></MudItem>
+    </MudGrid>
+
+    <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Contact</MudText>
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="4"><MudTextField @bind-Value="_tender.ContactPerson" Label="Contact person" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12" md="4"><MudTextField @bind-Value="_tender.ContactPhone" Label="Contact phone" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12" md="4"><MudTextField @bind-Value="_tender.ContactEmail" Label="Contact email" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12"><MudTextField @bind-Value="_tender.Notes" Label="Notes" Lines="2" Margin="Margin.Dense" /></MudItem>
+    </MudGrid>
+
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Class="mt-4">Save</MudButton>
+</MudPaper>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private TenderRecord _tender = new();
+    private bool _isNew => Id is null;
+
+    private DateTime? _publishDate, _submissionDeadline, _technicalOpeningDate, _financialOpeningDate;
+    private DateTime? _awardDate, _contractStartDate, _contractEndDate;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Id is { } id)
+        {
+            using var scope = ScopeFactory.CreateScope();
+            _tender = await scope.ServiceProvider.GetRequiredService<ITenderService>().GetAsync(id)
+                       ?? throw new InvalidOperationException("Tender not found.");
+        }
+        else
+        {
+            _tender = new TenderRecord();
+        }
+
+        _publishDate = ToDateTime(_tender.PublishDate);
+        _submissionDeadline = ToDateTime(_tender.SubmissionDeadline);
+        _technicalOpeningDate = ToDateTime(_tender.TechnicalOpeningDate);
+        _financialOpeningDate = ToDateTime(_tender.FinancialOpeningDate);
+        _awardDate = ToDateTime(_tender.AwardDate);
+        _contractStartDate = ToDateTime(_tender.ContractStartDate);
+        _contractEndDate = ToDateTime(_tender.ContractEndDate);
+    }
+
+    private static DateTime? ToDateTime(DateOnly? d) => d?.ToDateTime(TimeOnly.MinValue);
+    private static DateOnly? ToDateOnly(DateTime? d) => d is { } v ? DateOnly.FromDateTime(v) : null;
+
+    private async Task Save()
+    {
+        try
+        {
+            _tender.PublishDate = ToDateOnly(_publishDate);
+            _tender.SubmissionDeadline = ToDateOnly(_submissionDeadline);
+            _tender.TechnicalOpeningDate = ToDateOnly(_technicalOpeningDate);
+            _tender.FinancialOpeningDate = ToDateOnly(_financialOpeningDate);
+            _tender.AwardDate = ToDateOnly(_awardDate);
+            _tender.ContractStartDate = ToDateOnly(_contractStartDate);
+            _tender.ContractEndDate = ToDateOnly(_contractEndDate);
+
+            using var scope = ScopeFactory.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<ITenderService>();
+
+            if (_isNew)
+            {
+                var saved = await service.CreateAsync(_tender);
+                Snackbar.Add("Tender created.", Severity.Success);
+                Nav.NavigateTo($"/tender/tenders/{saved.Id}");
+            }
+            else
+            {
+                await service.UpdateAsync(_tender);
+                Snackbar.Add("Tender saved.", Severity.Success);
+                Nav.NavigateTo($"/tender/tenders/{Id}");
+            }
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

@@ -38,7 +38,7 @@ db_running() { [ -S "$SOCK" ] && "$PKG/usr/bin/mariadb-admin" --socket="$SOCK" -
 # One database per app, plus the shared identity database every app authenticates
 # against. The accounts module keeps the original `finance_erp` name so existing
 # installs upgrade in place rather than starting empty.
-DATABASES=(erp_identity finance_erp erp_repair erp_gatepass erp_hr erp_inventory erp_auto erp_ledger)
+DATABASES=(erp_identity finance_erp erp_repair erp_gatepass erp_hr erp_inventory erp_auto erp_ledger erp_tender)
 
 db_ensure() {
     local sql=""

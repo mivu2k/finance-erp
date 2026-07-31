@@ -1,0 +1,98 @@
+@page "/tender/tenders"
+@attribute [Authorize(Policy = TenderPermissions.TendersView)]
+@layout TenderLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+
+<PageTitle>Tenders</PageTitle>
+
+<div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <MudText Typo="Typo.h5">Tenders</MudText>
+    <MudSpacer />
+    <AuthorizeView Policy="@TenderPermissions.TendersManage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.AddBox"
+                   Href="/tender/tenders/new">New Tender</MudButton>
+    </AuthorizeView>
+</div>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="8">
+            <MudTextField @bind-Value="_search" Label="Search reference, title or authority" Margin="Margin.Dense"
+                          Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="LoadAsync"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudSelect T="TenderStatus?" Value="_status" ValueChanged="OnStatusChanged" Label="Status" Margin="Margin.Dense"
+                       Clearable="true">
+                @foreach (var s in Enum.GetValues<TenderStatus>())
+                {
+                    <MudSelectItem T="TenderStatus?" Value="@((TenderStatus?)s)">@s</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-2" Style="overflow-x:auto">
+    <MudSimpleTable Dense="true" Hover="true" Striped="true">
+        <thead>
+            <tr>
+                <th>Reference</th><th>Title</th><th>Authority</th><th>Estimated Value</th>
+                <th>Deadline</th><th>Status</th><th>Guarantees</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var t in _tenders)
+            {
+                <tr style="cursor:pointer" @onclick="@(() => Nav.NavigateTo($"/tender/tenders/{t.Id}"))">
+                    <td>@t.TenderNumber</td>
+                    <td>@t.Title</td>
+                    <td>@t.IssuingAuthority</td>
+                    <td>@t.EstimatedValue.ToString("N0")</td>
+                    <td>@t.SubmissionDeadline?.ToString("yyyy-MM-dd")</td>
+                    <td>
+                        <MudChip T="string" Size="Size.Small" Color="@StatusColor(t.Status)">@t.Status</MudChip>
+                    </td>
+                    <td>@t.Guarantees.Count</td>
+                </tr>
+            }
+            @if (_tenders.Count == 0)
+            {
+                <tr><td colspan="7" class="mud-text-secondary pa-4">No tenders match this filter.</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    private List<TenderRecord> _tenders = [];
+    private string? _search;
+    private TenderStatus? _status;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task OnStatusChanged(TenderStatus? status)
+    {
+        _status = status;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _tenders = await scope.ServiceProvider.GetRequiredService<ITenderService>()
+            .ListAsync(_search, _status);
+        StateHasChanged();
+    }
+
+    private static Color StatusColor(TenderStatus status) => status switch
+    {
+        TenderStatus.Won => Color.Success,
+        TenderStatus.Lost or TenderStatus.Cancelled or TenderStatus.Withdrawn => Color.Error,
+        TenderStatus.Submitted or TenderStatus.TechnicallyQualified => Color.Info,
+        _ => Color.Default
+    };
+}

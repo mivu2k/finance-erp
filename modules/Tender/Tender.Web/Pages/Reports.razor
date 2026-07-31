@@ -1,0 +1,162 @@
+@page "/tender/reports"
+@attribute [Authorize(Policy = TenderPermissions.ReportsView)]
+@layout TenderLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Tender Reports</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Reports</MudText>
+
+<MudGrid Spacing="3" Class="mb-2">
+    <MudItem xs="12" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Submitted</MudText>
+            <MudText Typo="Typo.h4">@_submittedCount</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Win rate (decided tenders)</MudText>
+            <MudText Typo="Typo.h4">@(_decidedCount == 0 ? "—" : $"{_winRate:N0}%")</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Awarded value (won)</MudText>
+            <MudText Typo="Typo.h4">@_awardedValue.ToString("N0")</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Active securities value</MudText>
+            <MudText Typo="Typo.h4">@_activeGuaranteeValue.ToString("N0")</MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudText Typo="Typo.subtitle1" Class="mb-2">Printable reports</MudText>
+    <MudSimpleTable Dense="true" Hover="true">
+        <thead><tr><th>Report</th><th style="width:120px"></th></tr></thead>
+        <tbody>
+            @foreach (var r in _catalog)
+            {
+                <tr>
+                    <td>@r.Title</td>
+                    <td>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Print"
+                                   Href="@($"/tender/print/report/{r.Key}")" Target="_blank">PDF</MudButton>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Pipeline by status</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>Status</th><th>Count</th><th>Estimated value</th></tr></thead>
+                <tbody>
+                    @foreach (var row in _byStatus)
+                    {
+                        <tr>
+                            <td>@row.Status</td>
+                            <td>@row.Count</td>
+                            <td>@row.Value.ToString("N0")</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Securities by status</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>Status</th><th>Count</th><th>Amount</th></tr></thead>
+                <tbody>
+                    @foreach (var row in _guaranteesByStatus)
+                    {
+                        <tr>
+                            <td>@row.Status</td>
+                            <td>@row.Count</td>
+                            <td>@row.Value.ToString("N0")</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Bank-wise exposure (active securities)</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>Bank</th><th>Instruments</th><th>Amount</th></tr></thead>
+                <tbody>
+                    @foreach (var row in _byBank)
+                    {
+                        <tr>
+                            <td>@row.Bank</td>
+                            <td>@row.Count</td>
+                            <td>@row.Value.ToString("N0")</td>
+                        </tr>
+                    }
+                    @if (_byBank.Count == 0)
+                    {
+                        <tr><td colspan="3" class="mud-text-secondary pa-4">No active securities.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private int _submittedCount, _decidedCount;
+    private decimal _winRate;
+    private decimal _awardedValue;
+    private decimal _activeGuaranteeValue;
+
+    private IReadOnlyList<TenderReportDefinition> _catalog = [];
+    private List<(TenderStatus Status, int Count, decimal Value)> _byStatus = [];
+    private List<(GuaranteeStatus Status, int Count, decimal Value)> _guaranteesByStatus = [];
+    private List<(string Bank, int Count, decimal Value)> _byBank = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var tenders = await scope.ServiceProvider.GetRequiredService<ITenderService>().ListAsync();
+        _catalog = scope.ServiceProvider.GetRequiredService<ITenderReportService>().Catalog;
+
+        _submittedCount = tenders.Count(t => t.Status != TenderStatus.Identified && t.Status != TenderStatus.InPreparation);
+        var decided = tenders.Where(t => t.Status is TenderStatus.Won or TenderStatus.Lost).ToList();
+        _decidedCount = decided.Count;
+        _winRate = _decidedCount == 0 ? 0 : decided.Count(t => t.Status == TenderStatus.Won) * 100m / _decidedCount;
+        _awardedValue = tenders.Where(t => t.Status == TenderStatus.Won).Sum(t => t.AwardedValue ?? t.EstimatedValue);
+
+        var allGuarantees = tenders.SelectMany(t => t.Guarantees).ToList();
+        _activeGuaranteeValue = allGuarantees.Where(g => g.Status == GuaranteeStatus.Active).Sum(g => g.Amount);
+
+        _byStatus = tenders.GroupBy(t => t.Status)
+            .Select(g => (g.Key, g.Count(), g.Sum(t => t.EstimatedValue)))
+            .OrderBy(r => r.Item1)
+            .ToList();
+
+        _guaranteesByStatus = allGuarantees.GroupBy(g => g.Status)
+            .Select(g => (g.Key, g.Count(), g.Sum(x => x.Amount)))
+            .OrderBy(r => r.Item1)
+            .ToList();
+
+        _byBank = allGuarantees.Where(g => g.Status == GuaranteeStatus.Active)
+            .GroupBy(g => string.IsNullOrWhiteSpace(g.BankName) ? "(unspecified)" : g.BankName!)
+            .Select(g => (g.Key, g.Count(), g.Sum(x => x.Amount)))
+            .OrderByDescending(r => r.Item3)
+            .ToList();
+    }
+}

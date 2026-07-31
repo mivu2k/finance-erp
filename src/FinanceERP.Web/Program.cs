@@ -8,6 +8,7 @@ using Repair.Infrastructure;
 using Inventory.Infrastructure;
 using Auto.Infrastructure;
 using Ledger.Infrastructure;
+using Tender.Infrastructure;
 using FinanceERP.Infrastructure.Persistence;
 using FinanceERP.Web.Components;
 using FinanceERP.Web.Components.Account;
@@ -18,6 +19,7 @@ using Repair.Web;
 using Inventory.Web;
 using Auto.Web;
 using Ledger.Web;
+using Tender.Web;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -72,6 +74,7 @@ builder.Services.AddRepairModule(builder.Configuration);
 builder.Services.AddInventoryModule(builder.Configuration);
 builder.Services.AddAutoModule(builder.Configuration);
 builder.Services.AddLedgerModule(builder.Configuration);
+builder.Services.AddTenderModule(builder.Configuration);
 
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
 
@@ -116,6 +119,7 @@ using (var scope = app.Services.CreateScope())
     await InventoryModule.SeedAsync(sp.GetRequiredService<InventoryDbContext>(), logger);
     await AutoModule.SeedAsync(sp.GetRequiredService<AutoDbContext>(), logger);
     await LedgerModule.SeedAsync(sp.GetRequiredService<LedgerDbContext>(), logger);
+    await TenderModule.SeedAsync(sp.GetRequiredService<TenderDbContext>(), logger);
 }
 
 if (app.Environment.IsDevelopment())
@@ -144,7 +148,8 @@ app.MapRazorComponents<App>()
         typeof(Repair.Web.Layout.RepairLayout).Assembly,
         typeof(Inventory.Web.Layout.InventoryLayout).Assembly,
         typeof(Auto.Web.Layout.AutoLayout).Assembly,
-        typeof(Ledger.Web.Layout.LedgerLayout).Assembly);
+        typeof(Ledger.Web.Layout.LedgerLayout).Assembly,
+        typeof(Tender.Web.Layout.TenderLayout).Assembly);
 
 app.MapAdditionalIdentityEndpoints();
 app.MapExportEndpoints();
@@ -154,6 +159,7 @@ app.MapRepairPrintEndpoints();
 app.MapHrExportEndpoints();
 app.MapHrKioskEndpoints();
 app.MapInventoryPrintEndpoints();
+app.MapTenderPrintEndpoints();
 
 // Authenticated receipt downloads (files live outside wwwroot).
 app.MapGet("/files/receipts/{name}", (string name, FinanceERP.Web.Services.ReceiptStorage storage) =>

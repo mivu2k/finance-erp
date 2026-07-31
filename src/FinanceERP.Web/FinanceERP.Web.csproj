@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\modules\Inventory\Inventory.Web\Inventory.Web.csproj" />
     <ProjectReference Include="..\..\modules\Auto\Auto.Web\Auto.Web.csproj" />
     <ProjectReference Include="..\..\modules\Ledger\Ledger.Web\Ledger.Web.csproj" />
+    <ProjectReference Include="..\..\modules\Tender\Tender.Web\Tender.Web.csproj" />
   </ItemGroup>
 
 </Project>

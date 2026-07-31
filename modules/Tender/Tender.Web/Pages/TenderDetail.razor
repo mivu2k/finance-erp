@@ -1,0 +1,610 @@
+@page "/tender/tenders/{Id:int}"
+@attribute [Authorize(Policy = TenderPermissions.TendersView)]
+@layout TenderLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_tender?.TenderNumber ?? "Tender")</PageTitle>
+
+@if (_tender is null)
+{
+    <MudText>Loading…</MudText>
+}
+else
+{
+    <div class="d-flex align-center mb-4 flex-wrap gap-2">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/tender/tenders" />
+        <MudText Typo="Typo.h5">@_tender.TenderNumber — @_tender.Title</MudText>
+        <MudChip T="string" Size="Size.Small" Color="@StatusColor(_tender.Status)">@_tender.Status</MudChip>
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Print"
+                   Href="@($"/tender/print/summary/{Id}")" Target="_blank">Summary Sheet</MudButton>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Receipt"
+                   Href="@($"/tender/print/security-register/{Id}")" Target="_blank">Security Register</MudButton>
+        <AuthorizeView Policy="@TenderPermissions.TendersManage">
+            <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.Edit"
+                       Href="@($"/tender/tenders/{Id}/edit")">Edit</MudButton>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Error"
+                       StartIcon="@Icons.Material.Filled.Delete"
+                       OnClick="@(() => _confirmDeleteTender = true)">Delete</MudButton>
+        </AuthorizeView>
+    </div>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.body2">Issuing authority: @_tender.IssuingAuthority</MudText>
+            <MudText Typo="Typo.body2">Department: @_tender.Department</MudText>
+            <MudText Typo="Typo.body2">Portal reference: @_tender.PortalReference</MudText>
+            <MudText Typo="Typo.body2">Submission mode: @_tender.SubmissionMode</MudText>
+            <MudText Typo="Typo.body2">Estimated value: @_tender.EstimatedValue.ToString("N2")</MudText>
+            <MudText Typo="Typo.body2">Tender fee: @_tender.TenderFee?.ToString("N2")</MudText>
+            <MudText Typo="Typo.body2">
+                EMD: @(_tender.IsEmdExempted ? $"Exempted ({_tender.EmdExemptionReason})" : _tender.EmdAmount?.ToString("N2"))
+            </MudText>
+            <MudText Typo="Typo.body2">Performance guarantee: @_tender.PerformanceGuaranteePercentage?.ToString("N2")%</MudText>
+            <MudText Typo="Typo.body2">Retention money: @_tender.RetentionMoneyPercentage?.ToString("N2")%</MudText>
+            @if (!string.IsNullOrWhiteSpace(_tender.Description))
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2">@_tender.Description</MudText>
+            }
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.body2">Publish date: @_tender.PublishDate?.ToString("yyyy-MM-dd")</MudText>
+            <MudText Typo="Typo.body2">Submission deadline: @_tender.SubmissionDeadline?.ToString("yyyy-MM-dd")</MudText>
+            <MudText Typo="Typo.body2">Technical opening: @_tender.TechnicalOpeningDate?.ToString("yyyy-MM-dd")</MudText>
+            <MudText Typo="Typo.body2">Financial opening: @_tender.FinancialOpeningDate?.ToString("yyyy-MM-dd")</MudText>
+            <MudText Typo="Typo.body2">Bid validity: @(_tender.BidValidityDays is { } bv ? $"{bv} days" : "-")</MudText>
+            @if (_tender.Status is TenderStatus.Won or TenderStatus.Lost)
+            {
+                <MudText Typo="Typo.body2" Class="mt-2">Our rank: @_tender.OurRank / L1 amount: @_tender.L1Amount?.ToString("N2")</MudText>
+            }
+            @if (_tender.Status == TenderStatus.Won)
+            {
+                <MudText Typo="Typo.body2">Awarded value: @_tender.AwardedValue?.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2">Award date: @_tender.AwardDate?.ToString("yyyy-MM-dd")</MudText>
+                <MudText Typo="Typo.body2">Work order: @_tender.WorkOrderNumber</MudText>
+                <MudText Typo="Typo.body2">Contract: @_tender.ContractStartDate?.ToString("yyyy-MM-dd") to @_tender.ContractEndDate?.ToString("yyyy-MM-dd")</MudText>
+                <MudText Typo="Typo.body2">Completion period: @(_tender.CompletionPeriodDays is { } cp ? $"{cp} days" : "-")</MudText>
+                <MudText Typo="Typo.body2">Defect liability: @(_tender.DefectLiabilityPeriodMonths is { } dl ? $"{dl} months" : "-")</MudText>
+            }
+            @if (!string.IsNullOrWhiteSpace(_tender.ContactPerson))
+            {
+                <MudText Typo="Typo.body2" Class="mt-2">Contact: @_tender.ContactPerson @_tender.ContactPhone @_tender.ContactEmail</MudText>
+            }
+        </MudItem>
+    </MudGrid>
+
+    @* --- Comparative statement of bidders --- *@
+    <MudPaper Class="pa-4 mt-4">
+        <MudText Typo="Typo.subtitle1" Class="mb-2">Comparative statement of bidders</MudText>
+        <MudSimpleTable Dense="true" Hover="true" Style="overflow-x:auto">
+            <thead>
+                <tr><th>Rank</th><th>Bidder</th><th>Quoted amount</th><th>Own bid</th><th>Remarks</th><th style="width:96px"></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var c in _tender.Competitors.OrderBy(x => x.Rank ?? int.MaxValue))
+                {
+                    <tr>
+                        <td>@c.Rank</td>
+                        <td>@c.BidderName</td>
+                        <td>@c.QuotedAmount.ToString("N2")</td>
+                        <td>@(c.IsOwnBid ? "Yes" : "")</td>
+                        <td>@c.Remarks</td>
+                        <td>
+                            <AuthorizeView Policy="@TenderPermissions.TendersManage" Context="cCtx">
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                               OnClick="@(() => OpenCompetitorEditor(c))" />
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                               OnClick="@(() => { _deleteCompetitor = c; })" />
+                            </AuthorizeView>
+                        </td>
+                    </tr>
+                }
+                @if (_tender.Competitors.Count == 0)
+                {
+                    <tr><td colspan="6" class="mud-text-secondary pa-4">No bidders recorded yet.</td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+
+        <AuthorizeView Policy="@TenderPermissions.TendersManage">
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                       Class="mt-3" OnClick="@(() => OpenCompetitorEditor(null))">Add bidder</MudButton>
+        </AuthorizeView>
+    </MudPaper>
+
+    @* --- Guarantees / EMD / bank guarantees --- *@
+    <MudPaper Class="pa-4 mt-4 mb-4">
+        <MudText Typo="Typo.subtitle1" Class="mb-2">Earnest money, bank guarantees &amp; other securities</MudText>
+        <MudSimpleTable Dense="true" Hover="true" Style="overflow-x:auto">
+            <thead>
+                <tr>
+                    <th>Type</th><th>Instrument</th><th>Bank / branch</th><th>Number</th><th>Amount</th>
+                    <th>Issue</th><th>Expiry</th><th>Status</th><th style="width:96px"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var g in _tender.Guarantees)
+                {
+                    var expiringSoon = g.Status == GuaranteeStatus.Active
+                        && g.ExpiryDate <= DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30);
+                    <tr>
+                        <td>@g.Type</td>
+                        <td>@g.InstrumentType</td>
+                        <td>@g.BankName @(!string.IsNullOrWhiteSpace(g.BranchName) ? $"({g.BranchName})" : "")</td>
+                        <td>@g.GuaranteeNumber</td>
+                        <td>@g.Amount.ToString("N2")</td>
+                        <td>@g.IssueDate.ToString("yyyy-MM-dd")</td>
+                        <td>
+                            <span style="@(expiringSoon ? "color:var(--mud-palette-warning-darken);font-weight:600" : "")">
+                                @g.ExpiryDate.ToString("yyyy-MM-dd")
+                            </span>
+                        </td>
+                        <td><MudChip T="string" Size="Size.Small" Color="@GuaranteeStatusColor(g.Status)">@g.Status</MudChip></td>
+                        <td>
+                            <AuthorizeView Policy="@TenderPermissions.GuaranteesManage" Context="gCtx">
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                               OnClick="@(() => OpenGuaranteeEditor(g))" />
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                               OnClick="@(() => { _deleteGuarantee = g; })" />
+                            </AuthorizeView>
+                        </td>
+                    </tr>
+                }
+                @if (_tender.Guarantees.Count == 0)
+                {
+                    <tr><td colspan="9" class="mud-text-secondary pa-4">No guarantees recorded yet.</td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+
+        <AuthorizeView Policy="@TenderPermissions.GuaranteesManage">
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                       Class="mt-3" OnClick="@(() => OpenGuaranteeEditor(null))">Add security</MudButton>
+        </AuthorizeView>
+    </MudPaper>
+
+    @* --- Documents --- *@
+    <MudPaper Class="pa-4 mb-4">
+        <MudText Typo="Typo.subtitle1" Class="mb-2">Related documents</MudText>
+        <MudSimpleTable Dense="true" Hover="true" Style="overflow-x:auto">
+            <thead>
+                <tr><th>Category</th><th>Name</th><th>Reference</th><th>Date</th><th style="width:96px"></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var d in _tender.Documents)
+                {
+                    <tr>
+                        <td>@d.Category</td>
+                        <td>@d.Name</td>
+                        <td>@d.ReferenceNumber</td>
+                        <td>@d.DocumentDate?.ToString("yyyy-MM-dd")</td>
+                        <td>
+                            <AuthorizeView Policy="@TenderPermissions.DocumentsManage" Context="dCtx">
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit"
+                                               OnClick="@(() => OpenDocumentEditor(d))" />
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                               OnClick="@(() => { _deleteDocument = d; })" />
+                            </AuthorizeView>
+                        </td>
+                    </tr>
+                }
+                @if (_tender.Documents.Count == 0)
+                {
+                    <tr><td colspan="5" class="mud-text-secondary pa-4">No documents logged yet.</td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+
+        <AuthorizeView Policy="@TenderPermissions.DocumentsManage">
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                       Class="mt-3" OnClick="@(() => OpenDocumentEditor(null))">Add document</MudButton>
+        </AuthorizeView>
+    </MudPaper>
+}
+
+@* --- guarantee editor overlay --- *@
+@if (_guaranteeForm is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:680px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_editingGuaranteeId is null ? "Add Security" : "Edit Security")</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="6">
+                    <MudSelect T="GuaranteeType" @bind-Value="_guaranteeForm.Type" Label="Type" Margin="Margin.Dense">
+                        @foreach (var t in Enum.GetValues<GuaranteeType>())
+                        {
+                            <MudSelectItem T="GuaranteeType" Value="@t">@t</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6">
+                    <MudSelect T="GuaranteeInstrumentType" @bind-Value="_guaranteeForm.InstrumentType" Label="Instrument" Margin="Margin.Dense">
+                        @foreach (var t in Enum.GetValues<GuaranteeInstrumentType>())
+                        {
+                            <MudSelectItem T="GuaranteeInstrumentType" Value="@t">@t</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6"><MudTextField @bind-Value="_guaranteeForm.BankName" Label="Bank name" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6"><MudTextField @bind-Value="_guaranteeForm.BranchName" Label="Branch" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6"><MudTextField @bind-Value="_guaranteeForm.BankContactPerson" Label="Bank contact person" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6"><MudTextField @bind-Value="_guaranteeForm.BankContactPhone" Label="Bank contact phone" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6"><MudTextField @bind-Value="_guaranteeForm.GuaranteeNumber" Label="Guarantee / instrument number" Required="true" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6"><MudNumericField T="decimal" @bind-Value="_guaranteeForm.Amount" Label="Amount" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6"><MudNumericField T="decimal?" @bind-Value="_guaranteeForm.Charges" Label="Bank charges / commission" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6">
+                    <MudSelect T="int?" @bind-Value="_guaranteeForm.RenewalOfGuaranteeId" Label="Renewal of" Margin="Margin.Dense" Clearable="true">
+                        @foreach (var g in _renewableGuarantees)
+                        {
+                            <MudSelectItem T="int?" Value="@((int?)g.Id)">@g.GuaranteeNumber (@g.ExpiryDate.ToString("yyyy-MM-dd"))</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="4"><MudDatePicker @bind-Date="_guaranteeIssueDate" Label="Issue date" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="4"><MudDatePicker @bind-Date="_guaranteeExpiryDate" Label="Expiry date" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="4"><MudDatePicker @bind-Date="_guaranteeClaimPeriodEndDate" Label="Claim period end" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6">
+                    <MudSelect T="GuaranteeStatus" @bind-Value="_guaranteeForm.Status" Label="Status" Margin="Margin.Dense">
+                        @foreach (var s in Enum.GetValues<GuaranteeStatus>())
+                        {
+                            <MudSelectItem T="GuaranteeStatus" Value="@s">@s</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6"><MudDatePicker @bind-Date="_guaranteeReleaseDate" Label="Release date" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12"><MudTextField @bind-Value="_guaranteeForm.ReleaseReference" Label="Release reference" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12"><MudTextField @bind-Value="_guaranteeForm.Remarks" Label="Remarks" Lines="2" Margin="Margin.Dense" /></MudItem>
+            </MudGrid>
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _guaranteeForm = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveGuaranteeAsync">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@* --- competitor editor overlay --- *@
+@if (_competitorForm is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:520px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_editingCompetitorId is null ? "Add Bidder" : "Edit Bidder")</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12"><MudTextField @bind-Value="_competitorForm.BidderName" Label="Bidder name" Required="true" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6"><MudNumericField T="decimal" @bind-Value="_competitorForm.QuotedAmount" Label="Quoted amount" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6"><MudNumericField T="int?" @bind-Value="_competitorForm.Rank" Label="Rank" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12"><MudCheckBox @bind-Value="_competitorForm.IsOwnBid" Label="This is our own bid" Dense="true" /></MudItem>
+                <MudItem xs="12"><MudTextField @bind-Value="_competitorForm.Remarks" Label="Remarks" Lines="2" Margin="Margin.Dense" /></MudItem>
+            </MudGrid>
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _competitorForm = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveCompetitorAsync">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_deleteCompetitor is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-2">Delete this bidder?</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">@_deleteCompetitor.BidderName will be removed.</MudText>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _deleteCompetitor = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="DeleteCompetitorAsync">Delete</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@* --- document editor overlay --- *@
+@if (_documentForm is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:520px;max-width:95vw;max-height:90vh;overflow-y:auto">
+            <MudText Typo="Typo.h6" Class="mb-3">@(_editingDocumentId is null ? "Add Document" : "Edit Document")</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12">
+                    <MudSelect T="DocumentCategory" @bind-Value="_documentForm.Category" Label="Category" Margin="Margin.Dense">
+                        @foreach (var c in Enum.GetValues<DocumentCategory>())
+                        {
+                            <MudSelectItem T="DocumentCategory" Value="@c">@c</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12"><MudTextField @bind-Value="_documentForm.Name" Label="Name" Required="true" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6"><MudTextField @bind-Value="_documentForm.ReferenceNumber" Label="Reference number" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6"><MudDatePicker @bind-Date="_documentDate" Label="Document date" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12"><MudTextField @bind-Value="_documentForm.Notes" Label="Notes" Lines="2" Margin="Margin.Dense" /></MudItem>
+            </MudGrid>
+            <div class="d-flex justify-end gap-2 mt-4">
+                <MudButton OnClick="@(() => _documentForm = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDocumentAsync">Save</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_confirmDeleteTender)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-2">Delete this tender?</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                @_tender?.TenderNumber and its guarantees and documents will be removed.
+            </MudText>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _confirmDeleteTender = false)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="DeleteTenderAsync">Delete</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_deleteGuarantee is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-2">Delete this security?</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">@_deleteGuarantee.GuaranteeNumber will be removed.</MudText>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _deleteGuarantee = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="DeleteGuaranteeAsync">Delete</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_deleteDocument is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="width:460px;max-width:95vw">
+            <MudText Typo="Typo.h6" Class="mb-2">Delete this document?</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">@_deleteDocument.Name will be removed.</MudText>
+            <div class="d-flex justify-end gap-2">
+                <MudButton OnClick="@(() => _deleteDocument = null)">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="DeleteDocumentAsync">Delete</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private TenderRecord? _tender;
+
+    private TenderGuarantee? _guaranteeForm;
+    private int? _editingGuaranteeId;
+    private DateTime? _guaranteeIssueDate, _guaranteeExpiryDate, _guaranteeClaimPeriodEndDate, _guaranteeReleaseDate;
+    private TenderGuarantee? _deleteGuarantee;
+    private List<TenderGuarantee> _renewableGuarantees = [];
+
+    private TenderDocument? _documentForm;
+    private int? _editingDocumentId;
+    private DateTime? _documentDate;
+    private TenderDocument? _deleteDocument;
+
+    private TenderCompetitor? _competitorForm;
+    private int? _editingCompetitorId;
+    private TenderCompetitor? _deleteCompetitor;
+
+    private bool _confirmDeleteTender;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        _tender = await scope.ServiceProvider.GetRequiredService<ITenderService>().GetAsync(Id);
+        _renewableGuarantees = _tender?.Guarantees.ToList() ?? [];
+    }
+
+    private static Color StatusColor(TenderStatus status) => status switch
+    {
+        TenderStatus.Won => Color.Success,
+        TenderStatus.Lost or TenderStatus.Cancelled or TenderStatus.Withdrawn => Color.Error,
+        TenderStatus.Submitted or TenderStatus.TechnicallyQualified => Color.Info,
+        _ => Color.Default
+    };
+
+    private static Color GuaranteeStatusColor(GuaranteeStatus status) => status switch
+    {
+        GuaranteeStatus.Active => Color.Success,
+        GuaranteeStatus.Invoked => Color.Error,
+        GuaranteeStatus.Expired => Color.Warning,
+        _ => Color.Default
+    };
+
+    // --- guarantees ---
+
+    private void OpenGuaranteeEditor(TenderGuarantee? g)
+    {
+        _editingGuaranteeId = g?.Id;
+        _guaranteeForm = g is null
+            ? new TenderGuarantee { IssueDate = DateOnly.FromDateTime(DateTime.Today), ExpiryDate = DateOnly.FromDateTime(DateTime.Today) }
+            : new TenderGuarantee
+            {
+                Id = g.Id, TenderRecordId = g.TenderRecordId, Type = g.Type, InstrumentType = g.InstrumentType,
+                BankName = g.BankName, BranchName = g.BranchName,
+                BankContactPerson = g.BankContactPerson, BankContactPhone = g.BankContactPhone,
+                GuaranteeNumber = g.GuaranteeNumber, Amount = g.Amount, Charges = g.Charges,
+                IssueDate = g.IssueDate, ExpiryDate = g.ExpiryDate, ClaimPeriodEndDate = g.ClaimPeriodEndDate,
+                Status = g.Status, ReleaseDate = g.ReleaseDate, ReleaseReference = g.ReleaseReference,
+                Remarks = g.Remarks, RenewalOfGuaranteeId = g.RenewalOfGuaranteeId
+            };
+
+        _guaranteeIssueDate = _guaranteeForm.IssueDate.ToDateTime(TimeOnly.MinValue);
+        _guaranteeExpiryDate = _guaranteeForm.ExpiryDate.ToDateTime(TimeOnly.MinValue);
+        _guaranteeClaimPeriodEndDate = _guaranteeForm.ClaimPeriodEndDate?.ToDateTime(TimeOnly.MinValue);
+        _guaranteeReleaseDate = _guaranteeForm.ReleaseDate?.ToDateTime(TimeOnly.MinValue);
+    }
+
+    private async Task SaveGuaranteeAsync()
+    {
+        try
+        {
+            _guaranteeForm!.IssueDate = _guaranteeIssueDate is { } i ? DateOnly.FromDateTime(i) : DateOnly.FromDateTime(DateTime.UtcNow);
+            _guaranteeForm.ExpiryDate = _guaranteeExpiryDate is { } e ? DateOnly.FromDateTime(e) : DateOnly.FromDateTime(DateTime.UtcNow);
+            _guaranteeForm.ClaimPeriodEndDate = _guaranteeClaimPeriodEndDate is { } c ? DateOnly.FromDateTime(c) : null;
+            _guaranteeForm.ReleaseDate = _guaranteeReleaseDate is { } r ? DateOnly.FromDateTime(r) : null;
+
+            using var scope = ScopeFactory.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<ITenderService>();
+
+            if (_editingGuaranteeId is null)
+                await service.AddGuaranteeAsync(Id, _guaranteeForm);
+            else
+                await service.UpdateGuaranteeAsync(_guaranteeForm);
+
+            _guaranteeForm = null;
+            Snackbar.Add("Security saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DeleteGuaranteeAsync()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<ITenderService>().DeleteGuaranteeAsync(_deleteGuarantee!.Id);
+            _deleteGuarantee = null;
+            Snackbar.Add("Security deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _deleteGuarantee = null;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    // --- documents ---
+
+    private void OpenDocumentEditor(TenderDocument? d)
+    {
+        _editingDocumentId = d?.Id;
+        _documentForm = d is null
+            ? new TenderDocument()
+            : new TenderDocument
+            {
+                Id = d.Id, TenderRecordId = d.TenderRecordId, Category = d.Category, Name = d.Name,
+                ReferenceNumber = d.ReferenceNumber, DocumentDate = d.DocumentDate, Notes = d.Notes
+            };
+
+        _documentDate = _documentForm.DocumentDate?.ToDateTime(TimeOnly.MinValue);
+    }
+
+    private async Task SaveDocumentAsync()
+    {
+        try
+        {
+            _documentForm!.DocumentDate = _documentDate is { } d ? DateOnly.FromDateTime(d) : null;
+
+            using var scope = ScopeFactory.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<ITenderService>();
+
+            if (_editingDocumentId is null)
+                await service.AddDocumentAsync(Id, _documentForm);
+            else
+                await service.UpdateDocumentAsync(_documentForm);
+
+            _documentForm = null;
+            Snackbar.Add("Document saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DeleteDocumentAsync()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<ITenderService>().DeleteDocumentAsync(_deleteDocument!.Id);
+            _deleteDocument = null;
+            Snackbar.Add("Document deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _deleteDocument = null;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    // --- competitors ---
+
+    private void OpenCompetitorEditor(TenderCompetitor? c)
+    {
+        _editingCompetitorId = c?.Id;
+        _competitorForm = c is null
+            ? new TenderCompetitor()
+            : new TenderCompetitor
+            {
+                Id = c.Id, TenderRecordId = c.TenderRecordId, BidderName = c.BidderName,
+                QuotedAmount = c.QuotedAmount, Rank = c.Rank, IsOwnBid = c.IsOwnBid, Remarks = c.Remarks
+            };
+    }
+
+    private async Task SaveCompetitorAsync()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<ITenderService>();
+
+            if (_editingCompetitorId is null)
+                await service.AddCompetitorAsync(Id, _competitorForm!);
+            else
+                await service.UpdateCompetitorAsync(_competitorForm!);
+
+            _competitorForm = null;
+            Snackbar.Add("Bidder saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DeleteCompetitorAsync()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<ITenderService>().DeleteCompetitorAsync(_deleteCompetitor!.Id);
+            _deleteCompetitor = null;
+            Snackbar.Add("Bidder deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _deleteCompetitor = null;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    // --- tender ---
+
+    private async Task DeleteTenderAsync()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<ITenderService>().DeleteAsync(Id);
+            Snackbar.Add("Tender deleted.", Severity.Success);
+            Nav.NavigateTo("/tender/tenders");
+        }
+        catch (Exception ex)
+        {
+            _confirmDeleteTender = false;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

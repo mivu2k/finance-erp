@@ -14,6 +14,7 @@ public static class AppModules
     public const string Inventory = "inventory";
     public const string Auto = "auto";
     public const string Ledger = "ledger";
+    public const string Tender = "tender";
 
     /// <summary>Every module tile the portal can show, in display order.</summary>
     public static readonly IReadOnlyList<ModuleDefinition> All =
@@ -31,7 +32,9 @@ public static class AppModules
         new(Auto, "Auto", "Company vehicle fleet and maintenance tracking.",
             "/auto", "DirectionsCar", "#5d4037", 6),
         new(Ledger, "Plain Ledger", "Hand-ledger books: main ledgers, sub-ledgers and transfers.",
-            "/ledger", "AccountTree", "#c2185b", 7)
+            "/ledger", "AccountTree", "#c2185b", 7),
+        new(Tender, "Tender & Projects", "Tender records, EMDs, bank guarantees and other securities.",
+            "/tender", "Gavel", "#455a64", 8)
     ];
 
     public static ModuleDefinition? Find(string key) =>

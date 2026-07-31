@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Tender.Web</RootNamespace>
+    <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MudBlazor" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Tender.Domain\Tender.Domain.csproj" />
+    <ProjectReference Include="..\Tender.Infrastructure\Tender.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\shared\ErpPlatform.Shared.Web\ErpPlatform.Shared.Web.csproj" />
+    <ProjectReference Include="..\..\..\shared\ErpPlatform.Shared.Printing\ErpPlatform.Shared.Printing.csproj" />
+  </ItemGroup>
+
+</Project>

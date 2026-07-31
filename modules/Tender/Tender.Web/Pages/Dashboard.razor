@@ -1,0 +1,126 @@
+@page "/tender"
+@attribute [Authorize(Policy = "module:tender")]
+@layout TenderLayout
+@rendermode InteractiveServer
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Tender & Projects</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Tender Overview</MudText>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Open tenders</MudText>
+            <MudText Typo="Typo.h4">@_openCount</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Won</MudText>
+            <MudText Typo="Typo.h4" Color="Color.Success">@_wonCount</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Active guarantees value</MudText>
+            <MudText Typo="Typo.h4">@_activeGuaranteeValue.ToString("N0")</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">Guarantees expiring soon</MudText>
+            <MudText Typo="Typo.h4" Color="@(_expiringGuarantees.Count > 0 ? Color.Warning : Color.Default)">
+                @_expiringGuarantees.Count
+            </MudText>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Submission deadlines within 14 days</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead>
+                    <tr><th>Tender</th><th>Authority</th><th>Deadline</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var t in _upcomingDeadlines)
+                    {
+                        var overdue = t.SubmissionDeadline is { } d && d < DateOnly.FromDateTime(DateTime.UtcNow);
+                        <tr>
+                            <td><MudLink Href="@($"/tender/tenders/{t.Id}")">@t.TenderNumber — @t.Title</MudLink></td>
+                            <td>@t.IssuingAuthority</td>
+                            <td>
+                                <span style="@(overdue ? "color:var(--mud-palette-error);font-weight:600" : "")">
+                                    @t.SubmissionDeadline?.ToString("yyyy-MM-dd")
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                    @if (_upcomingDeadlines.Count == 0)
+                    {
+                        <tr><td colspan="3" class="mud-text-secondary pa-4">Nothing due soon.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Guarantees expiring within 30 days</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead>
+                    <tr><th>Tender</th><th>Type</th><th>Bank / number</th><th>Expiry</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var g in _expiringGuarantees)
+                    {
+                        var overdue = g.ExpiryDate < DateOnly.FromDateTime(DateTime.UtcNow);
+                        <tr>
+                            <td><MudLink Href="@($"/tender/tenders/{g.TenderRecordId}")">@g.TenderRecord.TenderNumber</MudLink></td>
+                            <td>@g.Type</td>
+                            <td>@g.BankName @g.GuaranteeNumber</td>
+                            <td>
+                                <span style="@(overdue ? "color:var(--mud-palette-error);font-weight:600" : "")">
+                                    @g.ExpiryDate.ToString("yyyy-MM-dd")
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                    @if (_expiringGuarantees.Count == 0)
+                    {
+                        <tr><td colspan="4" class="mud-text-secondary pa-4">Nothing expiring soon.</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private int _openCount, _wonCount;
+    private decimal _activeGuaranteeValue;
+    private List<TenderRecord> _upcomingDeadlines = [];
+    private List<TenderGuarantee> _expiringGuarantees = [];
+
+    private static readonly TenderStatus[] OpenStatuses =
+    [
+        TenderStatus.Identified, TenderStatus.InPreparation, TenderStatus.Submitted, TenderStatus.TechnicallyQualified
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<ITenderService>();
+
+        var tenders = await service.ListAsync();
+        _openCount = tenders.Count(t => OpenStatuses.Contains(t.Status));
+        _wonCount = tenders.Count(t => t.Status == TenderStatus.Won);
+
+        _upcomingDeadlines = await service.ListUpcomingDeadlinesAsync();
+        _expiringGuarantees = await service.ListExpiringGuaranteesAsync();
+        _activeGuaranteeValue = tenders.SelectMany(t => t.Guarantees)
+            .Where(g => g.Status == GuaranteeStatus.Active).Sum(g => g.Amount);
+    }
+}

@@ -1,0 +1,20 @@
+<MudNavMenu>
+    <MudNavLink Href="/tender" Icon="@Icons.Material.Filled.Dashboard" Match="NavLinkMatch.All">
+        Dashboard
+    </MudNavLink>
+
+    <AuthorizeView Policy="@TenderPermissions.TendersView">
+        <MudNavGroup Title="Tenders" Icon="@Icons.Material.Filled.Gavel" Expanded="true">
+            <MudNavLink Href="/tender/tenders" Icon="@Icons.Material.Filled.List">All Tenders</MudNavLink>
+            <AuthorizeView Policy="@TenderPermissions.TendersManage" Context="c">
+                <MudNavLink Href="/tender/tenders/new" Icon="@Icons.Material.Filled.AddBox">New Tender</MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@TenderPermissions.ReportsView" Context="r">
+        <MudNavLink Href="/tender/reports" Icon="@Icons.Material.Filled.Assessment">
+            Reports
+        </MudNavLink>
+    </AuthorizeView>
+</MudNavMenu>

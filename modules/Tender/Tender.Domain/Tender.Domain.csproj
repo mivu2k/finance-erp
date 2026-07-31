@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Tender.Domain</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="ErpPlatform.Shared.Kernel" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\shared\ErpPlatform.Shared.Kernel\ErpPlatform.Shared.Kernel.csproj" />
+  </ItemGroup>
+
+</Project>
