@@ -243,6 +243,7 @@ Seven apps behind one login, chosen from the portal at `/`:
 | Inventory | `/inventory` | `erp_inventory` | products → models → accessories, stock ledger, full CRUD |
 | Auto | `/auto` | `erp_auto` | company vehicle fleet + maintenance history, full CRUD |
 | Plain Ledger | `/ledger` | `erp_ledger` | hand-ledger tree: main/sub ledgers, paired transfers, own nested heads |
+| Tender & Projects | `/tender` | `erp_tender` | tender records, EMDs, bank guarantees and other securities |
 
 
 Implemented and wired end-to-end (service + page + nav): accounts, vouchers, ledger,

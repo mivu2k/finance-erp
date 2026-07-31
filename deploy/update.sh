@@ -19,7 +19,7 @@ SERVICE="${FINANCE_ERP_SERVICE:-finance-erp}"
 # Every database the platform owns. erp_identity holds the users, roles and the
 # company profile and has no other copy, so backing up finance_erp alone would
 # leave a failed migration unrecoverable. Override with a space-separated list.
-DATABASES="${FINANCE_ERP_DBS:-erp_identity finance_erp erp_repair erp_gatepass erp_hr erp_inventory erp_auto erp_ledger}"
+DATABASES="${FINANCE_ERP_DBS:-erp_identity finance_erp erp_repair erp_gatepass erp_hr erp_inventory erp_auto erp_ledger erp_tender}"
 APP_USER="${FINANCE_ERP_APP_USER:-finance-erp}"
 HEALTH_URL="${FINANCE_ERP_HEALTH_URL:-http://localhost:5000/}"
 KEEP_BACKUPS="${FINANCE_ERP_KEEP_BACKUPS:-10}"

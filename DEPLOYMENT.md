@@ -14,7 +14,7 @@ Target: Ubuntu 24.04 LXC on Proxmox, MariaDB, the app under systemd, nginx in fr
 
 ## What you are installing
 
-One process hosting seven apps, chosen from a portal at `/` after a single login:
+One process hosting eight apps, chosen from a portal at `/` after a single login:
 
 | App | Route | Database |
 |---|---|---|
@@ -25,9 +25,10 @@ One process hosting seven apps, chosen from a portal at `/` after a single login
 | Inventory | `/inventory` | `erp_inventory` |
 | Auto | `/auto` | `erp_auto` |
 | Plain Ledger | `/ledger` | `erp_ledger` |
+| Tender & Projects | `/tender` | `erp_tender` |
 
 Plus `erp_identity` — the one shared database holding users, roles, permissions,
-per-user app access and the company letterhead. **Eight databases.** That matters for
+per-user app access and the company letterhead. **Nine databases.** That matters for
 every backup and restore instruction below.
 
 ---
@@ -134,7 +135,7 @@ If only the first appears, you installed the base runtime — the app needs ASP.
 
 ---
 
-## 4. Create the eight databases
+## 4. Create the nine databases
 
 On Ubuntu, MariaDB's `root` authenticates over a **unix socket**. `mysql -u root -p`
 prompts for a password that doesn't exist and fails; since you are already root, just
@@ -150,6 +151,7 @@ CREATE DATABASE erp_hr        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE DATABASE erp_inventory CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE DATABASE erp_auto      CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE DATABASE erp_ledger    CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE erp_tender    CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 CREATE USER 'finance'@'localhost' IDENTIFIED BY 'CHANGE_THIS_PASSWORD';
 GRANT ALL PRIVILEGES ON erp_identity.*  TO 'finance'@'localhost';
@@ -160,6 +162,7 @@ GRANT ALL PRIVILEGES ON erp_hr.*        TO 'finance'@'localhost';
 GRANT ALL PRIVILEGES ON erp_inventory.* TO 'finance'@'localhost';
 GRANT ALL PRIVILEGES ON erp_auto.*      TO 'finance'@'localhost';
 GRANT ALL PRIVILEGES ON erp_ledger.*    TO 'finance'@'localhost';
+GRANT ALL PRIVILEGES ON erp_tender.*    TO 'finance'@'localhost';
 FLUSH PRIVILEGES;
 SQL
 ```
@@ -168,7 +171,7 @@ Choose a password with **no `;` and no `"`** — it goes into both a connection 
 and a JSON file, and each uses one of those characters structurally. `@`, `!`, `#`
 are fine.
 
-**Check** — must succeed *as the finance user* and list all eight:
+**Check** — must succeed *as the finance user* and list all nine:
 
 ```bash
 mysql -u finance -p -e "SHOW DATABASES;"
@@ -284,6 +287,7 @@ cfg = {
             ("InventoryConnection", "erp_inventory"),
             ("AutoConnection",      "erp_auto"),
             ("LedgerConnection",    "erp_ledger"),
+            ("TenderConnection",    "erp_tender"),
         ]
     },
     "Seed": {
@@ -305,10 +309,10 @@ Edit the `Seed` values before first boot — they create the first admin and are
 
 - **SMTP is optional** and omitted above. Notifications stay off unless you add an
   `Smtp` block with a non-empty `Host`. Nothing else depends on it.
-- There is **no `DefaultConnection`** any more. The build looks up each of the eight
+- There is **no `DefaultConnection`** any more. The build looks up each of the nine
   names explicitly and never falls back.
 
-**Check** — prints the file, eight connection strings, no syntax error:
+**Check** — prints the file, nine connection strings, no syntax error:
 
 ```bash
 python3 -m json.tool /opt/finance-erp/appsettings.Production.json
@@ -327,7 +331,7 @@ systemctl enable --now finance-erp
 
 The service binds `http://127.0.0.1:5000` — loopback only, nginx in front.
 
-**First boot takes about three minutes.** It migrates eight databases and seeds the
+**First boot takes about three minutes.** It migrates nine databases and seeds the
 module catalog, roles for every app, the admin account, the company profile and
 every module's reference data. Watch it rather than guessing:
 
@@ -349,6 +353,7 @@ INF] Seeded repair symptoms / accessories / device types
 INF] Inventory database is up to date
 INF] Auto database is up to date
 INF] Ledger database is up to date
+INF] Tender database is up to date
 INF] Attendance polling every 15 minute(s)
 ```
 
@@ -518,7 +523,7 @@ DEST=/var/backups/mei-erp
 mkdir -p "$DEST"
 STAMP=$(date +%F)
 
-for db in erp_identity finance_erp erp_repair erp_gatepass erp_hr erp_inventory erp_auto erp_ledger; do
+for db in erp_identity finance_erp erp_repair erp_gatepass erp_hr erp_inventory erp_auto erp_ledger erp_tender; do
     mysqldump --single-transaction --routines "$db" | gzip > "$DEST/$db-$STAMP.sql.gz"
 done
 
@@ -641,7 +646,7 @@ zcat /var/backups/finance-erp/finance_erp-<stamp>.sql.gz  | mysql finance_erp
 | `FINANCE_ERP_APP_DIR` | `/opt/finance-erp` |
 | `FINANCE_ERP_SRC` | `/opt/src/finance-erp` (path B) |
 | `FINANCE_ERP_SERVICE` | `finance-erp` |
-| `FINANCE_ERP_DBS` | `erp_identity finance_erp erp_repair erp_gatepass erp_hr erp_inventory erp_auto erp_ledger` |
+| `FINANCE_ERP_DBS` | `erp_identity finance_erp erp_repair erp_gatepass erp_hr erp_inventory erp_auto erp_ledger erp_tender` |
 | `FINANCE_ERP_APP_USER` | `finance-erp` |
 | `FINANCE_ERP_BRANCH` | `main` (path B) |
 | `FINANCE_ERP_HEALTH_URL` | `http://localhost:5000/` |
