@@ -75,6 +75,24 @@ Ranked. None are blocking, all are real.
 8. **64k lines of generated migrations vs 31k of code.** Worth squashing to a
    baseline at some point.
 
+## The CI workflow is not yet pushed
+
+`.github/workflows/ci.yml` exists in the working tree but **is not on GitHub**:
+pushing a workflow file needs a token with `workflow` scope, which the session that
+wrote it did not have. Until it is pushed, everything else here is in place but
+nothing is enforced automatically.
+
+To land it, either:
+
+```bash
+git add .github/workflows/ci.yml
+git commit -m "Add CI workflow"
+git push          # from a session/token that has `workflow` scope
+```
+
+or paste the file into GitHub → Actions → new workflow. It needs no secrets: the
+MariaDB service container and the grants it needs are declared inline.
+
 ## Conventions this review establishes
 
 - **A build warning that hides a runtime failure is an error.** See
