@@ -19,4 +19,8 @@
     <ProjectReference Include="..\..\shared\ErpPlatform.Shared.Printing\ErpPlatform.Shared.Printing.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\shared\ErpPlatform.Shared.Web\ErpPlatform.Shared.Web.csproj" />
+  </ItemGroup>
+
 </Project>

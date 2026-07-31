@@ -26,3 +26,6 @@ appsettings.*.local.json
 uploads/
 keys/
 appsettings.Development.json
+
+# Pushing workflow files needs a token with `workflow` scope; see docs/ENGINEERING-REVIEW.md
+.github/workflows/

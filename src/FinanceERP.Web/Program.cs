@@ -1,3 +1,6 @@
+using MudBlazor;
+using Hr.Domain;
+using ErpPlatform.Shared.Web.Layout;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
@@ -84,6 +87,17 @@ builder.Services.AddPlatformIdentity(builder.Configuration);
 // its tile on the portal and its roles into the identity seeder.
 builder.Services.AddFinanceModule(builder.Configuration);
 builder.Services.AddHrModule(builder.Configuration);
+
+// The rotating attendance QR belongs one tap away, not four clicks deep inside HR:
+// people open it at a door, twice a day, with a queue behind them. Registered here in
+// the composition root so the shared shell needs no reference to the HR module.
+ShellQuickActions.Register(new ShellQuickAction(
+    Key: "hr.my-attendance-code",
+    Title: "My attendance code",
+    Icon: Icons.Material.Filled.QrCode2,
+    Href: "/hr/my-code",
+    Policy: HrPermissions.AttendanceViewOwn,
+    Order: 10));
 builder.Services.AddGatePassModule(builder.Configuration);
 builder.Services.AddRepairModule(builder.Configuration);
 builder.Services.AddInventoryModule(builder.Configuration);

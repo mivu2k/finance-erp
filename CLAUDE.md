@@ -470,6 +470,14 @@ in full screen.
   `/hr/stations` when a link leaks or a PC walks.
 - **`Employee.CardNumber` is unique.** Two people on one card would merge their
   attendance, which is worse than no attendance.
+- **The employee's own QR is one tap from anywhere.** A shortcut sits on the platform
+  app bar (`/hr/my-code`), not just in HR's nav — people open it at a door twice a day
+  with a queue behind them, and four clicks was three too many. It is registered via
+  `ShellQuickActions` in the host's `Program.cs`, so the shared shell needs no reference
+  to the HR module; any module can add a shortcut the same way. It is gated on
+  `hr.attendance.viewown` rather than on whether the person actually has an employee
+  record, because checking that would mean a database hit on every page render — the
+  page itself explains the fix when a login isn't linked.
 - **The QR rotates every 30 seconds** — HMAC over (employee, half-minute) against a
   per-employee secret, like an authenticator app. A photograph of someone's screen
   is worthless a minute later, which is the entire point of not using a static
